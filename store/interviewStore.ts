@@ -3,6 +3,7 @@ import { persist } from "zustand/middleware";
 
 export type InterviewMode = "text" | "voice";
 export type Speaker = "user" | "recruiter" | "system";
+
 export type VapiStatus =
   | "idle"
   | "starting"
@@ -147,7 +148,7 @@ const defaultScore: LiveScore = {
 
 const defaultSetup: InterviewSetup = {
   targetRole: "",
-  targetMarket: "",
+  targetMarket: "Global",
   companyStyle: "Realistic",
   recruiterPersonality: "analytical_hiring_manager",
   cvText: "",
@@ -163,18 +164,28 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+function normalize(value: string) {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
 function detectPatterns(answer: string): string[] {
   const text = answer.toLowerCase();
   const patterns: string[] = [];
+  const wordCount = answer.split(/\s+/).filter(Boolean).length;
 
-  if (
-    !text.includes("%") &&
-    !text.includes("impact") &&
-    !text.includes("result") &&
-    !text.includes("improved") &&
-    !text.includes("reduced") &&
-    !text.includes("increased")
-  ) {
+  const hasMetrics =
+    text.includes("%") ||
+    text.includes("impact") ||
+    text.includes("result") ||
+    text.includes("improved") ||
+    text.includes("reduced") ||
+    text.includes("increased") ||
+    text.includes("saved") ||
+    text.includes("users") ||
+    text.includes("customers") ||
+    text.includes("tickets");
+
+  if (!hasMetrics) {
     patterns.push("Avoids measurable impact");
   }
 
@@ -182,7 +193,8 @@ function detectPatterns(answer: string): string[] {
     text.includes("maybe") ||
     text.includes("i think") ||
     text.includes("probably") ||
-    text.includes("not sure")
+    text.includes("not sure") ||
+    text.includes("kind of")
   ) {
     patterns.push("Uses uncertain language");
   }
@@ -196,15 +208,11 @@ function detectPatterns(answer: string): string[] {
     patterns.push("Uses generic interview claims");
   }
 
-  if (
-    !text.includes("i ") &&
-    !text.includes("my ") &&
-    !text.includes("me ")
-  ) {
+  if (!text.includes("i ") && !text.includes("my ") && !text.includes("me ")) {
     patterns.push("Weak ownership signal");
   }
 
-  if (answer.split(/\s+/).filter(Boolean).length < 25) {
+  if (wordCount < 25) {
     patterns.push("Answers too briefly");
   }
 
@@ -240,14 +248,13 @@ export const useInterviewStore = create<InterviewState>()(
       recruiterTrustHistory: [],
 
       setMode: (mode) => set({ mode }),
-
       setVapiStatus: (status) => set({ vapiStatus: status }),
 
       setVapiError: (error) =>
-        set({
+        set((state) => ({
           vapiError: error,
-          vapiStatus: error ? "error" : get().vapiStatus,
-        }),
+          vapiStatus: error ? "error" : state.vapiStatus,
+        })),
 
       updateSetup: (setup) =>
         set((state) => ({
@@ -298,37 +305,83 @@ export const useInterviewStore = create<InterviewState>()(
         }),
 
       setCurrentQuestion: (question) => set({ currentQuestion: question }),
-
       setLastUserAnswer: (answer) => set({ lastUserAnswer: answer }),
 
       addTranscript: (item) =>
-        set((state) => ({
-          transcript: [
-            ...state.transcript,
-            {
-              ...item,
-              id: createId("msg"),
-              timestamp: Date.now(),
-            },
-          ],
-        })),
+        set((state) => {
+          const last = state.transcript[state.transcript.length - 1];
+
+          if (
+            last &&
+            last.speaker === item.speaker &&
+            normalize(last.text) === normalize(item.text)
+          ) {
+            return { transcript: state.transcript };
+          }
+
+          return {
+            transcript: [
+              ...state.transcript,
+              {
+                ...item,
+                id: createId("msg"),
+                timestamp: Date.now(),
+              },
+            ].slice(-80),
+          };
+        }),
 
       clearTranscript: () => set({ transcript: [] }),
 
       addRecruiterMemory: (item) =>
-        set((state) => ({
-          recruiterMemory: [
-            ...state.recruiterMemory,
-            {
-              ...item,
-              id: createId("memory"),
-            },
-          ].slice(-20),
-        })),
+        set((state) => {
+          const normalizedLabel = normalize(item.label);
+          const normalizedValue = normalize(item.value);
+
+          const alreadyExists = state.recruiterMemory.some(
+            (memory) =>
+              normalize(memory.label) === normalizedLabel &&
+              normalize(memory.value) === normalizedValue
+          );
+
+          if (alreadyExists) {
+            return {
+              recruiterMemory: state.recruiterMemory,
+            };
+          }
+
+          const sameLabelIndex = state.recruiterMemory.findIndex(
+            (memory) => normalize(memory.label) === normalizedLabel
+          );
+
+          if (sameLabelIndex !== -1) {
+            const updatedMemory = [...state.recruiterMemory];
+
+            updatedMemory[sameLabelIndex] = {
+              ...updatedMemory[sameLabelIndex],
+              value: item.value,
+              importance: item.importance,
+            };
+
+            return {
+              recruiterMemory: updatedMemory.slice(-12),
+            };
+          }
+
+          return {
+            recruiterMemory: [
+              ...state.recruiterMemory,
+              {
+                ...item,
+                id: createId("memory"),
+              },
+            ].slice(-12),
+          };
+        }),
 
       setRecruiterMemory: (items) =>
         set({
-          recruiterMemory: items.slice(-20),
+          recruiterMemory: items.slice(-12),
         }),
 
       updateLiveScore: (score) =>
@@ -354,18 +407,22 @@ export const useInterviewStore = create<InterviewState>()(
         }),
 
       setPressureLevel: (level) =>
-        set((state) => ({
-          pressureLevel: Math.max(0, Math.min(100, Math.round(level))),
-          emotionTimeline: [
-            ...state.emotionTimeline,
-            {
-              id: createId("emotion"),
-              emotion: state.emotionState,
-              pressureLevel: Math.max(0, Math.min(100, Math.round(level))),
-              timestamp: Date.now(),
-            },
-          ].slice(-50),
-        })),
+        set((state) => {
+          const nextPressure = Math.max(0, Math.min(100, Math.round(level)));
+
+          return {
+            pressureLevel: nextPressure,
+            emotionTimeline: [
+              ...state.emotionTimeline,
+              {
+                id: createId("emotion"),
+                emotion: state.emotionState,
+                pressureLevel: nextPressure,
+                timestamp: Date.now(),
+              },
+            ].slice(-50),
+          };
+        }),
 
       setEmotionState: (emotion) =>
         set((state) => ({
@@ -382,24 +439,22 @@ export const useInterviewStore = create<InterviewState>()(
         })),
 
       recordAnswerHistory: (answer, mode) => {
-        const state = get();
-
         const detectedPatterns = detectPatterns(answer);
 
         detectedPatterns.forEach((pattern) => {
           get().recordPersistentPattern(pattern, "medium");
         });
 
-        set((current) => ({
+        set((state) => ({
           answerHistory: [
-            ...current.answerHistory,
+            ...state.answerHistory,
             {
               id: createId("answer"),
               answer,
               mode,
-              score: current.liveScore,
-              emotionState: current.emotionState,
-              pressureLevel: current.pressureLevel,
+              score: state.liveScore,
+              emotionState: state.emotionState,
+              pressureLevel: state.pressureLevel,
               timestamp: Date.now(),
             },
           ].slice(-100),
@@ -407,28 +462,41 @@ export const useInterviewStore = create<InterviewState>()(
       },
 
       recordInterruption: (message, severity) =>
-        set((state) => ({
-          interruptionHistory: [
-            ...state.interruptionHistory,
-            {
-              id: createId("interrupt"),
-              message,
-              severity,
-              timestamp: Date.now(),
-            },
-          ].slice(-50),
-        })),
+        set((state) => {
+          const last =
+            state.interruptionHistory[state.interruptionHistory.length - 1];
+
+          if (last && normalize(last.message) === normalize(message)) {
+            return {
+              interruptionHistory: state.interruptionHistory,
+            };
+          }
+
+          return {
+            interruptionHistory: [
+              ...state.interruptionHistory,
+              {
+                id: createId("interrupt"),
+                message,
+                severity,
+                timestamp: Date.now(),
+              },
+            ].slice(-50),
+          };
+        }),
 
       recordPersistentPattern: (label, severity = "medium") =>
         set((state) => {
+          const normalizedLabel = normalize(label);
+
           const existing = state.persistentPatterns.find(
-            (item) => item.label === label
+            (item) => normalize(item.label) === normalizedLabel
           );
 
           if (existing) {
             return {
               persistentPatterns: state.persistentPatterns.map((item) =>
-                item.label === label
+                normalize(item.label) === normalizedLabel
                   ? {
                       ...item,
                       count: item.count + 1,
