@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import SessionFreshnessGuard from "@/components/SessionFreshnessGuard";
 
 export const metadata: Metadata = {
   title: "WorkZo AI | Real Interview AI",
@@ -25,7 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SessionFreshnessGuard />
+        {children}
+      </body>
     </html>
   );
 }

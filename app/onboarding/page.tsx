@@ -355,7 +355,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#020712] text-white">
+    <main className="wz-mobile-no-animation wz-mobile-bottom-safe min-h-screen overflow-x-hidden bg-[#020712] text-white">
       <style jsx global>{`
         @keyframes wzPulseBar {
           0%, 100% { transform: scaleY(0.72); opacity: 0.72; }
@@ -696,7 +696,7 @@ export default function OnboardingPage() {
                     </p>
 
                     <button
-                      onClick={() => void startInterview()}
+                      onClick={() => router.push("/dashboard")}
                       className="mt-8 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-8 text-base font-black text-white shadow-[0_18px_45px_rgba(14,165,233,0.34)] transition hover:scale-[1.02]"
                     >
                       Enter Interview Room
@@ -726,11 +726,9 @@ export default function OnboardingPage() {
                 </button>
               ) : (
                 <button
-                  type="button"
-                  onClick={() => router.push("/dashboard")}
-                  className="..."
+                  onClick={() => void startInterview()}
+                  className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-6 py-2.5 text-sm font-black text-white shadow-[0_14px_34px_rgba(37,99,235,0.30)] transition hover:scale-[1.02]"
                 >
-
                   Go to Dashboard
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -738,7 +736,7 @@ export default function OnboardingPage() {
             </div>
           </div>
 
-          <aside className="min-h-0 rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
+          <aside className="min-h-0 wz-mobile-soft-card wz-mobile-compact-card rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
             <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/10 bg-[#050b16] p-4">
               <div className="pointer-events-none absolute inset-0">
                 <div className="absolute left-1/2 top-28 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-500/18 blur-[80px]" />
@@ -755,7 +753,7 @@ export default function OnboardingPage() {
                   <h2 className="mt-3 text-2xl font-black tracking-tight">
                     Preparing recruiter intelligence
                   </h2>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">
+                  <p className="wz-mobile-compact-subtitle mt-2 max-w-md text-sm leading-6 text-slate-400">
                     WorkZo is assembling your CV, role, market, and recruiter style into one interview simulation.
                   </p>
                 </div>

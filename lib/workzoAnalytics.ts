@@ -28,6 +28,18 @@ export type WorkZoAnalyticsPayload = {
   metadata?: Record<string, unknown>;
 };
 
+function isLocalHost() {
+  if (typeof window === "undefined") return true;
+
+  return (
+    window.location.hostname === "localhost" ||
+    window.location.hostname === "127.0.0.1" ||
+    window.location.hostname.startsWith("192.168.") ||
+    window.location.hostname.startsWith("10.") ||
+    window.location.hostname.endsWith(".local")
+  );
+}
+
 function getOrCreateSessionId() {
   if (typeof window === "undefined") return "";
 
@@ -48,10 +60,16 @@ function getOrCreateSessionId() {
 export function trackWorkZoEvent(payload: WorkZoAnalyticsPayload) {
   if (typeof window === "undefined") return;
 
+  // Do not send local development/testing events to founder analytics.
+  if (isLocalHost()) return;
+
   const body = {
     ...payload,
     sessionId: payload.sessionId || getOrCreateSessionId(),
     path: window.location.pathname,
+    host: window.location.host,
+    origin: window.location.origin,
+    isLocal: false,
     userAgent: navigator.userAgent,
     timestamp: new Date().toISOString(),
   };

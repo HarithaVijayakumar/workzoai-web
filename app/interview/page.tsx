@@ -413,7 +413,7 @@ function RecruiterRoom({
   liveStatus: string;
 }) {
   return (
-    <section className="relative min-h-[560px] overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.045] shadow-[0_34px_120px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:min-h-[640px] lg:min-h-[calc(100vh-116px)]">
+    <section className="relative min-h-[560px] overflow-hidden wz-interview-mobile-hero wz-mobile-soft-card rounded-[32px] border border-white/10 bg-white/[0.045] shadow-[0_34px_120px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:min-h-[640px] lg:min-h-[calc(100vh-116px)]">
       <div className="absolute inset-0">
         <img
           src={getRecruiterImage(recruiterName)}
@@ -1151,14 +1151,14 @@ export default function InterviewPage() {
 
   if (!isHydrated) {
     return (
-      <main className="min-h-screen overflow-x-hidden bg-[#020712] px-3 py-3 text-white sm:px-5">
+      <main className="wz-mobile-no-animation wz-mobile-bottom-safe min-h-screen overflow-x-hidden bg-[#020712] px-3 py-3 text-white sm:px-5">
         <div className="mx-auto max-w-[1540px]">
           <div className="mb-3 h-[72px] animate-pulse rounded-3xl border border-white/10 bg-white/[0.045]" />
-          <div className="grid gap-3 lg:grid-cols-[1fr_420px]">
+          <div className="wz-interview-mobile-grid grid gap-3 lg:grid-cols-[1fr_420px]">
             <div className="min-h-[620px] animate-pulse rounded-[32px] border border-white/10 bg-white/[0.045]" />
             <div className="space-y-3">
-              <div className="h-40 animate-pulse rounded-[24px] border border-white/10 bg-white/[0.045]" />
-              <div className="h-56 animate-pulse rounded-[24px] border border-white/10 bg-white/[0.045]" />
+              <div className="h-40 animate-pulse wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045]" />
+              <div className="h-56 animate-pulse wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045]" />
             </div>
           </div>
         </div>
@@ -1280,7 +1280,7 @@ export default function InterviewPage() {
                 debugRows={debugRows}
               />
 
-              <div className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+              <div className="wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-5 w-5 text-emerald-200" />
                   <h2 className="text-lg font-black">What will happen</h2>
@@ -1308,8 +1308,8 @@ export default function InterviewPage() {
                 liveStatus={liveStatus}
               />
 
-              <section className="grid gap-3 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px]">
-                <div className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+              <section className="wz-interview-mobile-grid grid gap-3 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px]">
+                <div className="wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <h2 className="text-xl font-black">Your answer</h2>
@@ -1345,7 +1345,7 @@ export default function InterviewPage() {
                   </div>
                 </div>
 
-                <div className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+                <div className="wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
                   <div className="flex items-start justify-between">
                     <div>
                       <h2 className="text-xl font-black">Voice mode</h2>
@@ -1403,7 +1403,7 @@ export default function InterviewPage() {
                 debugRows={debugRows}
               />
 
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+              <section className="wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
                 <div className="flex items-center justify-between">
                   <h2 className="text-xl font-black">Recruiter signal</h2>
                   <Brain className="h-5 w-5 text-cyan-200" />
@@ -1439,7 +1439,7 @@ export default function InterviewPage() {
                 </div>
               </section>
 
-              <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+              <section className="wz-interview-mobile-panel wz-mobile-compact-card rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
                 <button
                   type="button"
                   onClick={() => setTranscriptOpen((value) => !value)}

@@ -7,12 +7,14 @@
 
 html {
   scroll-behavior: smooth;
+  overflow-x: hidden;
 }
 
 body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
+  overflow-x: hidden;
 }
 
 * {
@@ -28,8 +30,136 @@ textarea,
 input,
 select {
   color: white;
+  font-size: 16px;
 }
 
 ::selection {
   background: rgba(59, 130, 246, 0.35);
+}
+
+/* =========================================
+   MOBILE PERFORMANCE + LAYOUT POLISH
+========================================= */
+
+@media (max-width: 767px) {
+  /* Disable heavy animations on phones */
+  .wz-mobile-no-animation,
+  .wz-mobile-no-animation *,
+  [class*="animate-"],
+  [style*="animation"] {
+    animation: none !important;
+    transition-duration: 120ms !important;
+  }
+
+  /* Softer mobile shadows */
+  .wz-mobile-soft-card {
+    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.24) !important;
+    backdrop-filter: blur(10px) !important;
+  }
+
+  /* Prevent bottom buttons covering content */
+  .wz-mobile-bottom-safe {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Sticky mobile CTA */
+  .wz-mobile-sticky-cta {
+    position: sticky !important;
+    bottom: env(safe-area-inset-bottom) !important;
+    z-index: 40 !important;
+    margin-inline: -0.25rem !important;
+    border-radius: 1.5rem !important;
+  }
+
+  /* Compact cards */
+  .wz-mobile-compact-card {
+    padding: 1.1rem !important;
+    border-radius: 1.45rem !important;
+  }
+
+  /* Compact headings */
+  .wz-mobile-compact-title {
+    font-size: clamp(2rem, 9vw, 3.25rem) !important;
+    line-height: 0.98 !important;
+    letter-spacing: -0.05em !important;
+  }
+
+  /* Compact subtitles */
+  .wz-mobile-compact-subtitle {
+    font-size: 1rem !important;
+    line-height: 1.65 !important;
+  }
+
+  /* Interview mobile layout */
+  .wz-interview-mobile-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 1rem !important;
+  }
+
+  .wz-interview-mobile-hero {
+    min-height: auto !important;
+    max-height: none !important;
+  }
+
+  .wz-interview-mobile-panel {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Prevent iOS zoom */
+  textarea,
+  input,
+  select,
+  button {
+    font-size: 16px !important;
+  }
+}
+
+/* =========================================
+   LIGHTWEIGHT ANIMATIONS
+========================================= */
+
+@keyframes wzPulseBar {
+  0% {
+    transform: scaleY(0.6);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scaleY(0.6);
+    opacity: 0.6;
+  }
+}
+
+@keyframes wzDotPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+}
+
+@keyframes wzScan {
+  0% {
+    transform: translateY(-120%);
+  }
+
+  100% {
+    transform: translateY(300%);
+  }
 }

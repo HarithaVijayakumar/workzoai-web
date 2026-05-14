@@ -17,6 +17,9 @@ type AnalyticsEvent = {
   trust?: number;
   pressure?: number;
   path?: string;
+  host?: string;
+  origin?: string;
+  isLocal?: boolean;
   userAgent?: string;
   timestamp?: string;
   metadata?: Record<string, unknown>;
@@ -24,6 +27,19 @@ type AnalyticsEvent = {
 
 const ANALYTICS_DIR = path.join(process.cwd(), ".workzo");
 const ANALYTICS_FILE = path.join(ANALYTICS_DIR, "analytics.jsonl");
+
+function isLocalAnalyticsEvent(event: Partial<AnalyticsEvent>) {
+  const host = String(event.host || event.origin || "").toLowerCase();
+
+  return (
+    event.isLocal === true ||
+    host.includes("localhost") ||
+    host.includes("127.0.0.1") ||
+    host.includes("192.168.") ||
+    host.includes("10.0.") ||
+    host.includes(".local")
+  );
+}
 
 async function ensureFile() {
   await fs.mkdir(ANALYTICS_DIR, { recursive: true });
@@ -47,6 +63,9 @@ function cleanEvent(input: AnalyticsEvent) {
     trust: typeof input.trust === "number" ? input.trust : null,
     pressure: typeof input.pressure === "number" ? input.pressure : null,
     path: String(input.path || "").slice(0, 200),
+    host: String(input.host || "").slice(0, 200),
+    origin: String(input.origin || "").slice(0, 250),
+    isLocal: Boolean(input.isLocal),
     userAgent: String(input.userAgent || "").slice(0, 400),
     metadata: input.metadata || {},
     timestamp: input.timestamp || new Date().toISOString(),
@@ -70,6 +89,15 @@ async function readEvents() {
       }
     })
     .filter(Boolean)
+    .filter((event) => {
+      if (!event) return false;
+
+      return !isLocalAnalyticsEvent({
+        host: event.host,
+        origin: event.origin,
+        isLocal: event.isLocal,
+      });
+    })
     .slice(-1200) as Array<ReturnType<typeof cleanEvent>>;
 }
 
@@ -109,6 +137,11 @@ function summarize(events: Array<ReturnType<typeof cleanEvent>>) {
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as AnalyticsEvent;
+
+    if (isLocalAnalyticsEvent(body)) {
+      return NextResponse.json({ ok: true, ignored: "local-development-event" });
+    }
+
     const event = cleanEvent(body);
 
     await ensureFile();
@@ -122,6 +155,7 @@ export async function POST(request: Request) {
 
 export async function GET() {
   const events = await readEvents();
+
   return NextResponse.json({
     summary: summarize(events),
     events: events.slice(-250).reverse(),
