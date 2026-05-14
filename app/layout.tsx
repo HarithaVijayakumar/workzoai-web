@@ -7,14 +7,16 @@ export const metadata: Metadata = {
   description:
     "Practice a real interview before the real one with an AI recruiter that reads your CV, asks follow-ups, applies pressure, and gives honest feedback.",
   icons: {
-    icon: "/workzo_icon.png",
+    icon: [
+      { url: "/workzo_icon.png", type: "image/png" },
+      { url: "/favicon.ico" },
+    ],
     shortcut: "/workzo_icon.png",
     apple: "/workzo_icon.png",
   },
   openGraph: {
     title: "WorkZo AI | Real Interview AI",
-    description:
-      "Face a real interview before the real one.",
+    description: "Face a real interview before the real one.",
     images: ["/workzo_icon.png"],
   },
 };
