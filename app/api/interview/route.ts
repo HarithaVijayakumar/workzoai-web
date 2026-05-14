@@ -2,212 +2,206 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 import {
-  buildRecruiterSystemPrompt,
-  evaluateRecruiterPsychology,
-  mergeMemory,
-  type RecruiterMemory,
-} from "@/lib/recruiterPsychologyEngine";
-import {
-  buildPostInterviewWowSummary,
-  createWowMoment,
-} from "@/lib/wowMomentEngine";
-import {
-  buildPostInterviewPsychologyReport,
-  createLiveUiState,
-  createTrustTimelineEvent,
-  detectRealTimeSignals,
-  getInterviewArc,
-  type TrustTimelineEvent,
-} from "@/lib/realtimeInterviewEngine";
+  buildRecruiterMemoryPrompt,
+  normalizeInterviewSetup,
+  type WorkZoInterviewSetup,
+} from "@/lib/workzoInterviewSetup";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type RequestBody = {
   answer?: string;
-  partialAnswer?: string;
-  elapsedSeconds?: number;
-  mode?: "final" | "realtime" | "realtime-interview";
   currentQuestion?: string;
   transcript?: Array<{ role?: string; text?: string; time?: string }>;
-  messages?: Array<{ role?: string; content?: string; text?: string }>;
-  setup?: {
-    cvText?: string;
-    targetRole?: string;
-    jobDescription?: string;
-    targetMarket?: string;
-    country?: string;
-    companyStyle?: string;
-    recruiterStyle?: string;
-    recruiterPersonality?: string;
-    language?: string;
-  };
+  setup?: Partial<WorkZoInterviewSetup>;
   cvText?: string;
   jobDescription?: string;
   targetRole?: string;
   targetMarket?: string;
-  country?: string;
   companyStyle?: string;
   recruiterPersonality?: string;
   pressure?: number;
-  trust?: number;
   recruiterTrust?: number;
-  scores?: {
-    confidence?: number;
-    clarity?: number;
-    relevance?: number;
-    evidence?: number;
-    structure?: number;
-    overall?: number;
+  scores?: Record<string, number>;
+  memory?: {
+    strengths?: string[];
+    weaknesses?: string[];
+    improvements?: string[];
+    risks?: string[];
+    contradictions?: string[];
+    missingMetrics?: string[];
+    vagueAnswers?: string[];
+    repeatedPatterns?: string[];
   };
-  memory?: Partial<RecruiterMemory>;
   contradictions?: string[];
-  trustTimeline?: TrustTimelineEvent[];
-  productDirection?: string;
+  trustTimeline?: Array<{
+    direction?: "up" | "down" | "stable";
+    value?: number;
+    reason?: string;
+  }>;
 };
-
-type ModelJsonResponse = {
-  recruiterMessage?: string;
-  followUpQuestion?: string;
-  feedback?: string;
-  question?: string;
-  reply?: string;
-  message?: string;
-  content?: string;
-};
-
-function cleanJsonText(value: string) {
-  return value
-    .replace(/^```json/i, "")
-    .replace(/^```/i, "")
-    .replace(/```$/i, "")
-    .trim();
-}
-
-function toTranscript(body: RequestBody) {
-  if (Array.isArray(body.transcript) && body.transcript.length > 0) {
-    return body.transcript;
-  }
-
-  if (Array.isArray(body.messages) && body.messages.length > 0) {
-    return body.messages.map((item) => ({
-      role:
-        item.role === "recruiter"
-          ? "assistant"
-          : item.role === "candidate"
-            ? "user"
-            : item.role,
-      text: item.text || item.content || "",
-      time: "",
-    }));
-  }
-
-  return [];
-}
 
 function safeNumber(value: unknown, fallback: number) {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : fallback;
 }
 
-function fallbackQuestion(
-  psychology: ReturnType<typeof evaluateRecruiterPsychology>
-) {
-  if (psychology.contradictions.length) {
-    return `Wait — I need to clarify this before we continue. ${psychology.contradictions[0]}`;
-  }
+function resolveRecruiterIdentity(recruiterPersonality: string) {
+  const key = recruiterPersonality.toLowerCase();
 
-  if (psychology.memory.missingMetrics.length) {
-    return "Hmm… you mentioned improvement, but I still do not know how you measured it. What was the actual result or number?";
-  }
-
-  if (psychology.memory.vagueAnswers.length) {
-    return "Okay, but your ownership is still unclear. What exactly did YOU do, not the team?";
-  }
-
-  if (psychology.score.structure < 40) {
-    return "Let me stop you there. Give me the same answer again, but start with the result first and then one example.";
-  }
-
-  if (psychology.score.relevance < 40) {
-    return "I understand the example, but I need you to connect it to this role. Why would that experience matter for this position?";
-  }
-
-  return "Interesting. Now give me one specific example where your action created a measurable result.";
-}
-
-function parseModelResponse(
-  raw: string,
-  psychology: ReturnType<typeof evaluateRecruiterPsychology>
-) {
-  try {
-    const parsed = JSON.parse(cleanJsonText(raw)) as ModelJsonResponse;
-
+  if (key.includes("markus") || key.includes("german") || key.includes("corporate")) {
     return {
-      recruiterMessage:
-        parsed.recruiterMessage ||
-        parsed.reply ||
-        parsed.message ||
-        psychology.recruiterReaction,
-      followUpQuestion:
-        parsed.followUpQuestion ||
-        parsed.question ||
-        parsed.content ||
-        fallbackQuestion(psychology),
-      feedback: parsed.feedback || psychology.psychologicalInsight,
-    };
-  } catch {
-    return {
-      recruiterMessage: psychology.recruiterReaction,
-      followUpQuestion: raw?.trim() || fallbackQuestion(psychology),
-      feedback: psychology.psychologicalInsight,
+      name: "Markus",
+      role: "Corporate Recruiter",
+      style: "structured, formal, precise, analytical, process-oriented",
     };
   }
+
+  if (key.includes("priya") || key.includes("startup")) {
+    return {
+      name: "Priya",
+      role: "Startup Recruiter",
+      style: "fast-paced, practical, ownership-focused, impact-oriented",
+    };
+  }
+
+  if (key.includes("sarah") || key.includes("friendly") || key.includes("hr")) {
+    return {
+      name: "Sarah",
+      role: "HR Recruiter",
+      style: "warm, supportive, communication-focused, emotionally intelligent",
+    };
+  }
+
+  return {
+    name: "Daniel",
+    role: "Hiring Manager",
+    style: "analytical, skeptical, evidence-focused, detailed",
+  };
 }
 
-function buildWowAwarePrompt(
-  psychologyInput: Parameters<typeof buildRecruiterSystemPrompt>[0],
-  psychology: ReturnType<typeof evaluateRecruiterPsychology>,
-  wowMoment: ReturnType<typeof createWowMoment>,
-  arc: ReturnType<typeof getInterviewArc>
-) {
-  const basePrompt = buildRecruiterSystemPrompt(psychologyInput, psychology);
+function getScore(answer: string, setup: WorkZoInterviewSetup, previousTrust: number) {
+  const words = answer.trim().split(/\s+/).filter(Boolean);
+  const text = answer.toLowerCase();
+
+  const hasMetric = /\d|%|percent|reduced|increased|improved|saved|users|customers|tickets|revenue|time/i.test(answer);
+  const hasOwnership = /\b(i|my|me)\b/i.test(answer);
+  const allSkills = [
+    ...(setup.jobMemoryProfile?.requiredSkills || []),
+    ...(setup.recruiterMemoryProfile?.skills.technical || []),
+    ...(setup.recruiterMemoryProfile?.skills.business || []),
+  ];
+  const hasRoleFit = allSkills.some((skill) => text.includes(skill.toLowerCase()));
+
+  const clarity = words.length < 25 ? 38 : words.length > 160 ? 52 : 76;
+  const evidence = hasMetric ? 82 : 42;
+  const confidence = hasOwnership ? 74 : 45;
+  const relevance = hasRoleFit ? 78 : 54;
+  const structure = /first|then|finally|result|because|situation|action|impact/i.test(answer) ? 76 : 52;
+
+  const overall = Math.round((clarity + evidence + confidence + relevance + structure) / 5);
+  const recruiterTrust = Math.max(18, Math.min(94, previousTrust + Math.round((overall - 58) / 4)));
+
+  return {
+    score: {
+      clarity,
+      relevance,
+      confidence,
+      evidence,
+      structure,
+      overall,
+    },
+    recruiterTrust,
+  };
+}
+
+function fallbackQuestion(setup: WorkZoInterviewSetup, score: ReturnType<typeof getScore>["score"]) {
+  const name = setup.recruiterMemoryProfile?.candidateName;
+  const prefix = name ? `${name}, ` : "";
+  const role = setup.jobMemoryProfile?.roleTitle || setup.targetRole || "this role";
+  const skill = setup.jobMemoryProfile?.requiredSkills?.[0] || setup.recruiterMemoryProfile?.skills.technical?.[0];
+  const fact = setup.recruiterMemoryProfile?.recruiterMemory?.[0];
+
+  if (score.evidence < 55) {
+    return `${prefix}I need a measurable result. Can you give me one number, outcome, or business impact from that example?`;
+  }
+
+  if (score.confidence < 55) {
+    return `${prefix}what exactly did you personally own in that situation?`;
+  }
+
+  if (skill) {
+    return `${prefix}this role seems to require ${skill}. Can you connect one real example from your background to that requirement?`;
+  }
+
+  if (fact) {
+    return `${prefix}I noticed this from your profile: ${fact}. Can you explain how it prepares you for ${role}?`;
+  }
+
+  return `${prefix}connect your answer directly to ${role}. What is your strongest proof that you can do this job?`;
+}
+
+function buildSystemPrompt(input: {
+  setup: WorkZoInterviewSetup;
+  recruiter: ReturnType<typeof resolveRecruiterIdentity>;
+  currentQuestion: string;
+  previousTrust: number;
+}) {
+  const { setup, recruiter, currentQuestion, previousTrust } = input;
+  const memory = buildRecruiterMemoryPrompt(setup);
 
   return `
-${basePrompt}
+You are ${recruiter.name}, ${recruiter.role}, inside WorkZo AI.
 
-INTERVIEW ARC:
-- Current phase: ${arc.phase}
-- Phase instruction: ${arc.instruction}
+RECRUITER IDENTITY LOCK:
+- Your name is ${recruiter.name}.
+- Your role is ${recruiter.role}.
+- Your style is ${recruiter.style}.
+- Never call yourself Alex.
+- If asked your name, say: "I'm ${recruiter.name}, your WorkZo AI recruiter for this interview."
 
-WOW MOMENT REQUIREMENT:
-The product must make the candidate feel: "This AI actually understood me."
+CV/JD ACCESS LOCK:
+- You CAN see the Recruiter Memory Profile and Job Memory Profile below.
+- If asked whether you can see the CV or JD, say yes and mention one real detail from the memory profile.
+- Never say you cannot access the CV when the memory profile exists.
+- Never invent role, company, industry, background, or metrics.
+- Only use facts present in the memory profiles or raw backup text.
+- If the role is unclear, say it is unclear. Do not invent "Senior Data Analyst" or financial services.
 
-Current wow moment:
-- Triggered: ${wowMoment.shouldTrigger ? "yes" : "no"}
-- Type: ${wowMoment.type}
-- Emotional tag: ${wowMoment.emotionalTag}
-- Recruiter line: ${wowMoment.line || "None"}
+PRODUCT PROMISE:
+"The closest thing to a real interview."
 
-If wow moment is triggered:
-1. Use the recruiter line naturally.
-2. Do not soften it too much.
-3. Then ask exactly one focused follow-up question.
-4. Make the candidate feel the recruiter remembered or understood something specific.
+Previous recruiter trust: ${previousTrust}/100
+Current question: ${currentQuestion || "Opening question"}
 
-If trust dropped:
-- Be direct and explain what is missing.
+${memory}
 
-If trust recovered:
-- Acknowledge that this answer was stronger than the earlier answer.
+RAW CV BACKUP ONLY IF NEEDED:
+${setup.cvText.slice(0, 2200) || "No raw CV text loaded."}
 
-If repeated weakness exists:
-- Call it out naturally.
+RAW JD BACKUP ONLY IF NEEDED:
+${setup.jobDescription.slice(0, 1800) || "No raw JD loaded."}
 
-Return JSON only:
+HOW TO RESPOND:
+- Sound like a real recruiter, not a coach.
+- Keep it short: 2–4 sentences.
+- Ask exactly one focused follow-up question.
+- Use at least one specific memory profile detail when possible.
+- Challenge vague answers.
+- Ask for metrics if proof is missing.
+- Ask for ownership if the answer sounds team-based.
+- Do not repeat long CV details.
+- Return JSON only.
+
+JSON:
 {
   "recruiterMessage": "short realistic recruiter reaction",
-  "followUpQuestion": "exactly one focused follow-up question",
-  "feedback": "one sentence explaining what changed in recruiter perception"
+  "followUpQuestion": "one specific follow-up question",
+  "feedback": "one sentence about recruiter perception",
+  "memoryStrength": "one remembered strength",
+  "memoryWeakness": "one concern or gap"
 }
 `.trim();
 }
@@ -215,288 +209,221 @@ Return JSON only:
 export async function POST(request: Request): Promise<Response> {
   try {
     const body = (await request.json()) as RequestBody;
-    const setup = body.setup || {};
-    const transcript = toTranscript(body);
 
-    const cvText = body.cvText || setup.cvText || "";
-    const jobDescription = body.jobDescription || setup.jobDescription || "";
-    const targetRole = body.targetRole || setup.targetRole || "General Role";
-    const targetMarket =
-      body.targetMarket ||
-      body.country ||
-      setup.targetMarket ||
-      setup.country ||
-      "Global";
-    const companyStyle =
-      body.companyStyle ||
-      setup.companyStyle ||
-      setup.recruiterStyle ||
-      "Realistic";
-    const recruiterPersonality =
-      body.recruiterPersonality ||
-      setup.recruiterPersonality ||
-      "analytical_hiring_manager";
-
-    const previousTrust = safeNumber(
-      body.recruiterTrust ?? body.trust,
-      58
-    );
-
-    const previousMemory = mergeMemory({
-      ...body.memory,
-      contradictions: [
-        ...(body.memory?.contradictions || []),
-        ...(body.contradictions || []),
-      ],
+    const setup = normalizeInterviewSetup({
+      ...(body.setup || {}),
+      cvText: body.cvText || body.setup?.cvText || "",
+      jobDescription: body.jobDescription || body.setup?.jobDescription || "",
+      targetRole: body.targetRole || body.setup?.targetRole || "General Role",
+      targetMarket: body.targetMarket || body.setup?.targetMarket || "Global",
+      companyStyle: body.companyStyle || body.setup?.companyStyle || "Realistic",
+      recruiterPersonality:
+        body.recruiterPersonality ||
+        body.setup?.recruiterPersonality ||
+        "analytical_hiring_manager",
     });
-
-    if (body.mode === "realtime") {
-      const realtimeSignals = detectRealTimeSignals({
-        partialAnswer: body.partialAnswer || "",
-        elapsedSeconds: safeNumber(body.elapsedSeconds, 0),
-        memory: previousMemory,
-        score: {
-          confidence: safeNumber(body.scores?.confidence, 0),
-          clarity: safeNumber(body.scores?.clarity, 0),
-          relevance: safeNumber(body.scores?.relevance, 0),
-          evidence: safeNumber(body.scores?.evidence, 0),
-          structure: safeNumber(body.scores?.structure, 0),
-        },
-        mood: previousMemory.recruiterMoodHistory.at(-1) || "neutral",
-        pressure: safeNumber(body.pressure, 35),
-      });
-
-      return NextResponse.json({
-        mode: "realtime",
-        realtimeSignals,
-        primarySignal: realtimeSignals[0] || null,
-      });
-    }
 
     const answer = body.answer?.trim();
 
     if (!answer) {
-      return NextResponse.json(
-        { error: "Answer is required." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Answer is required." }, { status: 400 });
     }
 
-    const psychologyInput = {
-      answer,
-      currentQuestion: body.currentQuestion,
-      cvText,
-      jobDescription,
-      targetRole,
-      targetMarket,
-      companyStyle,
-      recruiterPersonality,
-      previousMemory,
-      previousTrust,
-      previousPressure: body.pressure,
-      previousScores: body.scores,
-      transcript,
-    };
+    const previousTrust = safeNumber(body.recruiterTrust, 58);
+    const recruiter = resolveRecruiterIdentity(setup.recruiterPersonality);
+    const scoreResult = getScore(answer, setup, previousTrust);
 
-    const psychology = evaluateRecruiterPsychology(psychologyInput);
-
-    const answerCount =
-      transcript.filter(
-        (item) => item.role === "candidate" || item.role === "user"
-      ).length + 1;
-
-    const arc = getInterviewArc(
-      answerCount,
-      psychology.recruiterTrust,
-      psychology.pressure
-    );
-
-    const wowMoment = createWowMoment({
-      answer,
-      currentQuestion: body.currentQuestion,
-      cvText,
-      jobDescription,
-      targetRole,
-      targetMarket,
-      recruiterName: psychology.recruiterProfile.name,
-      recruiterRole: psychology.recruiterProfile.role,
-      mood: psychology.mood,
-      score: psychology.score,
-      recruiterTrust: psychology.recruiterTrust,
-      previousTrust,
-      pressure: psychology.pressure,
-      memory: psychology.memory,
-      transcript,
-      contradictions: psychology.contradictions,
-    });
-
-    const trustEvent = createTrustTimelineEvent({
-      previousTrust,
-      currentTrust: psychology.recruiterTrust,
-      reason: wowMoment.shouldTrigger
-        ? wowMoment.emotionalTag
-        : psychology.psychologicalInsight,
-    });
-
-    const trustTimeline = [...(body.trustTimeline || []), trustEvent].slice(-12);
-
-    const liveUiState = createLiveUiState({
-      mood: psychology.mood,
-      pressure: psychology.pressure,
-      trust: psychology.recruiterTrust,
-    });
-
-    let recruiterMessage = wowMoment.shouldTrigger
-      ? wowMoment.line
-      : psychology.recruiterReaction;
-
-    let followUpQuestion = fallbackQuestion(psychology);
-
-    let feedback = wowMoment.shouldTrigger
-      ? wowMoment.emotionalTag
-      : psychology.psychologicalInsight;
+    let recruiterMessage = "I understand the direction of your answer.";
+    let followUpQuestion = fallbackQuestion(setup, scoreResult.score);
+    let feedback = "The recruiter is evaluating relevance, proof, and ownership.";
+    let memoryStrength =
+      setup.recruiterMemoryProfile?.recruiterMemory?.[0] ||
+      setup.recruiterMemoryProfile?.skills.technical?.[0] ||
+      "";
+    let memoryWeakness =
+      scoreResult.score.evidence < 55
+        ? "The answer needs a clearer measurable result."
+        : "";
 
     if (process.env.OPENAI_API_KEY) {
-      const openai = new OpenAI({
-        apiKey: process.env.OPENAI_API_KEY,
-      });
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
       const completion = await openai.chat.completions.create({
         model: process.env.OPENAI_INTERVIEW_MODEL || "gpt-4o-mini",
-        temperature: 0.55,
-        max_tokens: 520,
+        temperature: 0.45,
+        max_tokens: 650,
         response_format: { type: "json_object" },
         messages: [
           {
             role: "system",
-            content: buildWowAwarePrompt(
-              psychologyInput,
-              psychology,
-              wowMoment,
-              arc
-            ),
+            content: buildSystemPrompt({
+              setup,
+              recruiter,
+              currentQuestion: body.currentQuestion || "",
+              previousTrust,
+            }),
           },
           {
             role: "user",
             content: JSON.stringify({
-              currentQuestion: body.currentQuestion,
               candidateAnswer: answer,
-              cvExcerpt: cvText.slice(0, 3200),
-              jobDescriptionExcerpt: jobDescription.slice(0, 2200),
-              recentTranscript: transcript.slice(-8),
-              memory: psychology.memory,
-              trust: psychology.recruiterTrust,
-              pressure: psychology.pressure,
-              arc,
-              wowMoment,
+              recentTranscript: body.transcript?.slice(-8) || [],
+              required:
+                "Use recruiter memory profile first. Do not invent role/company/industry. Ask one specific follow-up.",
             }),
           },
         ],
       });
 
-      const raw = completion.choices[0]?.message?.content || "";
-      const parsed = parseModelResponse(raw, psychology);
+      const parsed = JSON.parse(completion.choices[0]?.message?.content || "{}");
 
-      recruiterMessage = wowMoment.shouldTrigger
-        ? wowMoment.line
-        : parsed.recruiterMessage;
-
-      followUpQuestion = parsed.followUpQuestion;
-
-      feedback = wowMoment.shouldTrigger
-        ? `${wowMoment.emotionalTag}. ${parsed.feedback}`
-        : parsed.feedback;
+      recruiterMessage = parsed.recruiterMessage || recruiterMessage;
+      followUpQuestion = parsed.followUpQuestion || followUpQuestion;
+      feedback = parsed.feedback || feedback;
+      memoryStrength = parsed.memoryStrength || memoryStrength;
+      memoryWeakness = parsed.memoryWeakness || memoryWeakness;
     }
 
-    const finalQuestion = psychology.interruption.shouldInterrupt
-      ? psychology.interruption.interruptionMessage
-      : `${recruiterMessage} ${followUpQuestion}`.trim();
-
-    const postInterviewWowSummary = buildPostInterviewWowSummary(
-      psychology.memory,
-      psychology.memory.trustHistory
-    );
-
-    const postInterviewPsychologyReport = buildPostInterviewPsychologyReport({
-      memory: psychology.memory,
-      trustTimeline,
-      finalTrust: psychology.recruiterTrust,
-      score: psychology.score,
-    });
-
-    const realtimeSignals = detectRealTimeSignals({
-      partialAnswer: answer,
-      elapsedSeconds: 60,
-      memory: psychology.memory,
-      score: psychology.score,
-      mood: psychology.mood,
-      pressure: psychology.pressure,
-    });
+    const finalQuestion = `${recruiterMessage} ${followUpQuestion}`.trim();
+    const trustDirection =
+      scoreResult.recruiterTrust > previousTrust
+        ? "up"
+        : scoreResult.recruiterTrust < previousTrust
+          ? "down"
+          : "stable";
 
     return NextResponse.json({
-      recruiterName: psychology.recruiterProfile.name,
-      recruiterRole: psychology.recruiterProfile.role,
-      recruiterPersonality: psychology.recruiterProfile.key,
+      recruiterName: recruiter.name,
+      recruiterRole: recruiter.role,
+      recruiterPersonality: setup.recruiterPersonality,
 
-      recruiterMessage,
       question: finalQuestion,
       reply: finalQuestion,
       message: finalQuestion,
       content: finalQuestion,
-      followUpQuestion: finalQuestion,
+      recruiterMessage,
+      followUpQuestion,
       feedback,
 
-      mood: psychology.mood,
-      emotion: psychology.mood,
-      pressure: psychology.pressure,
-      recruiterTrust: psychology.recruiterTrust,
-      trust: psychology.recruiterTrust,
-      score: psychology.score,
-      scores: psychology.score,
+      mood:
+        scoreResult.recruiterTrust >= 72
+          ? "impressed"
+          : scoreResult.recruiterTrust <= 42
+            ? "skeptical"
+            : "neutral",
+      emotion:
+        scoreResult.recruiterTrust >= 72
+          ? "impressed"
+          : scoreResult.recruiterTrust <= 42
+            ? "skeptical"
+            : "neutral",
+      pressure:
+        scoreResult.score.overall < 55
+          ? Math.min(88, safeNumber(body.pressure, 35) + 12)
+          : Math.max(25, safeNumber(body.pressure, 35) - 4),
+      recruiterTrust: scoreResult.recruiterTrust,
+      trust: scoreResult.recruiterTrust,
+      score: scoreResult.score,
+      scores: scoreResult.score,
 
-      memory: psychology.memory,
-      contradictions: psychology.memory.contradictions,
-      contradiction: psychology.contradictions[0] || "",
-      interruption: psychology.interruption,
-      psychologicalInsight: psychology.psychologicalInsight,
+      memory: {
+        strengths: [memoryStrength].filter(Boolean),
+        weaknesses: [memoryWeakness].filter(Boolean),
+        improvements: [
+          scoreResult.score.evidence < 55
+            ? "Add measurable impact."
+            : "Connect the answer more tightly to the JD.",
+        ],
+        risks: [],
+        contradictions: body.contradictions || [],
+        missingMetrics:
+          scoreResult.score.evidence < 55
+            ? ["No clear metric or outcome in the answer."]
+            : [],
+        vagueAnswers:
+          scoreResult.score.confidence < 55
+            ? ["Ownership was not clear enough."]
+            : [],
+        repeatedPatterns: setup.recruiterMemoryProfile?.recruiterMemory || [],
+      },
 
-      wowMoment,
-      arc,
-      trustTimeline,
-      liveUiState,
-      realtimeSignals,
-      postInterviewWowSummary,
-      postInterviewPsychologyReport,
+      interruption: {
+        shouldInterrupt: scoreResult.score.overall < 45,
+        severity: scoreResult.score.overall < 35 ? "high" : "medium",
+        interruptionMessage:
+          scoreResult.score.overall < 45
+            ? "Let me stop you there. I need a more concrete example with your action and the result."
+            : "",
+      },
 
-      recruiterMemory: [
+      wowMoment: {
+        shouldTrigger: scoreResult.recruiterTrust < previousTrust - 6,
+        type: trustDirection === "down" ? "trust_drop" : "neutral",
+        line:
+          trustDirection === "down"
+            ? "Your answer is not fully convincing yet because the proof is still too vague."
+            : "",
+        emotionalTag:
+          trustDirection === "down"
+            ? "Trust dropped because the answer lacked proof."
+            : "Trust remained stable.",
+      },
+
+      arc: {
+        phase:
+          scoreResult.recruiterTrust < 45
+            ? "pressure"
+            : scoreResult.recruiterTrust > 70
+              ? "probing"
+              : "opening",
+        instruction:
+          "Continue adapting questions based on recruiter memory profile, JD relevance, evidence, and ownership.",
+      },
+
+      trustTimeline: [
+        ...(body.trustTimeline || []),
         {
-          label: "Wow moment",
-          value: wowMoment.shouldTrigger
-            ? wowMoment.line
-            : "No major wow moment needed yet.",
-          importance: wowMoment.shouldTrigger ? "high" : "medium",
+          direction: trustDirection,
+          value: scoreResult.recruiterTrust,
+          reason: feedback,
         },
-        {
-          label: "Interview arc",
-          value: `${arc.phase}: ${arc.instruction}`,
-          importance: "high",
-        },
-        {
-          label: "Current recruiter impression",
-          value: psychology.psychologicalInsight,
-          importance: "high",
-        },
-        {
-          label: "Trust",
-          value: `${psychology.recruiterTrust}/100`,
-          importance: "medium",
-        },
-        {
-          label: "Pressure",
-          value: `${psychology.pressure}/100`,
-          importance: "medium",
-        },
-      ],
+      ].slice(-12),
+
+      liveUiState: {
+        label:
+          trustDirection === "up"
+            ? "Recruiter confidence improved"
+            : trustDirection === "down"
+              ? "Recruiter trust dropped"
+              : "Recruiter is still evaluating",
+      },
+
+      postInterviewPsychologyReport: {
+        finalDecision:
+          scoreResult.recruiterTrust > 70
+            ? "continue"
+            : scoreResult.recruiterTrust > 48
+              ? "borderline"
+              : "reject",
+        finalPerception: feedback,
+        strongestSignal: memoryStrength,
+        weakestPattern: memoryWeakness,
+        nextPracticeAction:
+          scoreResult.score.evidence < 55
+            ? "Practice adding measurable impact to every answer."
+            : "Practice connecting each answer to the job description.",
+      },
+
+      contextDebug: {
+        hasCvText: setup.cvText.length > 50,
+        hasJobDescription: setup.jobDescription.length > 30,
+        hasRecruiterMemoryProfile: Boolean(setup.recruiterMemoryProfile),
+        hasJobMemoryProfile: Boolean(setup.jobMemoryProfile),
+        candidateName: setup.recruiterMemoryProfile?.candidateName || "",
+        roleTitle: setup.jobMemoryProfile?.roleTitle || setup.targetRole,
+        memoryFacts: setup.recruiterMemoryProfile?.recruiterMemory || [],
+        jobResponsibilities: setup.jobMemoryProfile?.responsibilities || [],
+      },
     });
   } catch (error) {
     const message =
@@ -505,11 +432,10 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json(
       {
         error: message,
-        recruiterMessage: "Hmm... something went wrong on my side.",
         question:
-          "Let us continue simply. Give me one specific example with your action and measurable result.",
+          "Something went wrong. Please continue with one specific example from your background and connect it to the job description.",
         reply:
-          "Let us continue simply. Give me one specific example with your action and measurable result.",
+          "Something went wrong. Please continue with one specific example from your background and connect it to the job description.",
       },
       { status: 500 }
     );

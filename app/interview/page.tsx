@@ -2,45 +2,44 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import type { FormEvent, ReactNode } from "react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   ArrowLeft,
   ArrowRight,
   Brain,
-  CheckCircle2,
   ChevronDown,
   Clock3,
+  Loader2,
   Mic,
   MicOff,
+  Play,
   RotateCcw,
   Send,
-  ShieldAlert,
+  ShieldCheck,
   Sparkles,
-  TrendingDown,
-  TrendingUp,
   Volume2,
   Zap,
 } from "lucide-react";
 
 import { useInterviewStore } from "@/store/interviewStore";
+import { trackWorkZoEvent } from "@/lib/workzoAnalytics";
+
 import {
-  getRecruiterSystemBehavior,
+  clearAllInterviewSetup,
+  getInterviewSetupDebugInfo,
+  readLatestInterviewSetup,
+  saveLatestInterviewSetup,
+  type WorkZoInterviewSetup,
+} from "@/lib/workzoInterviewSetup";
+import {
   getRecruiterVoiceProfile,
   getVapiAssistantIdForRecruiter,
 } from "@/lib/recruiterVoiceConfig";
 
-type InterviewSetup = {
-  cvText?: string;
-  targetRole?: string;
-  jobDescription?: string;
-  targetMarket?: string;
-  country?: string;
-  companyStyle?: string;
-  recruiterStyle?: string;
-  recruiterPersonality?: string;
-  language?: string;
+type TranscriptItem = {
+  role: "recruiter" | "candidate" | "system";
+  text: string;
+  time: string;
 };
 
 type ScoreSet = {
@@ -49,6 +48,7 @@ type ScoreSet = {
   relevance: number;
   evidence: number;
   structure: number;
+  overall?: number;
 };
 
 type MemoryBlock = {
@@ -60,9 +60,6 @@ type MemoryBlock = {
   missingMetrics?: string[];
   vagueAnswers?: string[];
   repeatedPatterns?: string[];
-  confidenceTrend?: number[];
-  trustHistory?: number[];
-  recruiterMoodHistory?: string[];
 };
 
 type Interruption = {
@@ -71,41 +68,22 @@ type Interruption = {
   severity: "low" | "medium" | "high";
 };
 
-type TranscriptItem = {
-  role: "recruiter" | "candidate" | "system";
-  text: string;
-  time: string;
-};
-
 type WowMoment = {
   shouldTrigger?: boolean;
-  type?: string;
   line?: string;
   emotionalTag?: string;
-  intensity?: "low" | "medium" | "high";
+  type?: string;
 };
 
 type TrustTimelineEvent = {
-  time?: string;
   direction?: "up" | "down" | "stable";
   value?: number;
   reason?: string;
 };
 
-type RealtimeSignal = {
-  type?: string;
-  label?: string;
-  message?: string;
-  intensity?: "low" | "medium" | "high";
-  delayMs?: number;
-};
-
 type LiveUiState = {
-  theme?: string;
-  glow?: string;
-  recruiterExpression?: string;
-  motion?: string;
   label?: string;
+  theme?: string;
 };
 
 type InterviewArc = {
@@ -116,16 +94,16 @@ type InterviewArc = {
 type PsychologyReport = {
   finalDecision?: "continue" | "borderline" | "reject";
   finalPerception?: string;
-  trustTimeline?: TrustTimelineEvent[];
   strongestSignal?: string;
   weakestPattern?: string;
-  recoveryMoment?: string;
-  biggestTrustDrop?: string;
   nextPracticeAction?: string;
 };
 
 type InterviewApiResponse = {
   question?: string;
+  reply?: string;
+  message?: string;
+  content?: string;
   recruiterMessage?: string;
   followUpQuestion?: string;
   feedback?: string;
@@ -133,6 +111,7 @@ type InterviewApiResponse = {
   emotion?: string;
   pressure?: number;
   recruiterTrust?: number;
+  trust?: number;
   score?: Partial<ScoreSet>;
   scores?: Partial<ScoreSet>;
   memory?: Partial<MemoryBlock>;
@@ -143,23 +122,20 @@ type InterviewApiResponse = {
   arc?: InterviewArc;
   trustTimeline?: TrustTimelineEvent[];
   liveUiState?: LiveUiState;
-  realtimeSignals?: RealtimeSignal[];
   postInterviewPsychologyReport?: PsychologyReport;
 };
 
-type StoreLike = {
-  setup?: InterviewSetup;
-  interviewSetup?: InterviewSetup;
-  setSetup?: (setup: InterviewSetup) => void;
-  updateSetup?: (setup: InterviewSetup) => void;
-  addAnswer?: (answer: string) => void;
-  setResults?: (result: unknown) => void;
-  updateResults?: (result: unknown) => void;
-  resetInterview?: () => void;
-};
-
 const DEFAULT_QUESTION =
-  "Good to meet you. Let’s begin. Tell me about yourself and keep it relevant to this position.";
+  "Good to meet you. I’ve reviewed your profile and the role details. Please introduce yourself briefly and connect your background to this position.";
+
+const defaultScores: ScoreSet = {
+  confidence: 0,
+  clarity: 0,
+  relevance: 0,
+  evidence: 0,
+  structure: 0,
+  overall: 0,
+};
 
 const defaultMemory: MemoryBlock = {
   strengths: [],
@@ -170,79 +146,12 @@ const defaultMemory: MemoryBlock = {
   missingMetrics: [],
   vagueAnswers: [],
   repeatedPatterns: [],
-  confidenceTrend: [],
-  trustHistory: [],
-  recruiterMoodHistory: [],
 };
 
-const defaultScores: ScoreSet = {
-  confidence: 0,
-  clarity: 0,
-  relevance: 0,
-  evidence: 0,
-  structure: 0,
-};
-
-const waveform = [
-  8, 18, 27, 12, 21, 34, 16, 24, 10, 29, 19, 36, 13, 23, 17, 31, 11, 22,
-  15, 30, 18, 25, 12, 28, 14, 21, 9, 18, 13, 26, 11, 19, 8, 16,
-];
-
-const emotionTheme: Record<
-  string,
-  {
-    glow: string;
-    border: string;
-    badge: string;
-    label: string;
-    wave: string;
-  }
-> = {
-  neutral: {
-    glow: "from-blue-500/26 via-cyan-500/8 to-transparent",
-    border: "border-blue-300/20",
-    badge: "bg-blue-400/12 text-blue-100",
-    label: "Recruiter is listening closely",
-    wave: "from-blue-500 via-cyan-300 to-emerald-300",
-  },
-  skeptical: {
-    glow: "from-amber-500/35 via-blue-500/8 to-transparent",
-    border: "border-amber-300/35",
-    badge: "bg-amber-400/14 text-amber-100",
-    label: "Recruiter is not fully convinced",
-    wave: "from-amber-500 via-orange-300 to-cyan-300",
-  },
-  pressure: {
-    glow: "from-rose-500/38 via-blue-500/8 to-transparent",
-    border: "border-rose-300/40",
-    badge: "bg-rose-400/14 text-rose-100",
-    label: "Pressure is increasing",
-    wave: "from-rose-500 via-orange-300 to-cyan-300",
-  },
-  impressed: {
-    glow: "from-emerald-500/35 via-blue-500/8 to-transparent",
-    border: "border-emerald-300/35",
-    badge: "bg-emerald-400/14 text-emerald-100",
-    label: "Recruiter confidence is improving",
-    wave: "from-emerald-500 via-cyan-300 to-blue-300",
-  },
-  clarifying: {
-    glow: "from-cyan-500/34 via-blue-500/8 to-transparent",
-    border: "border-cyan-300/35",
-    badge: "bg-cyan-400/14 text-cyan-100",
-    label: "Recruiter is checking consistency",
-    wave: "from-cyan-500 via-blue-300 to-emerald-300",
-  },
-};
+const waveform = [10, 22, 15, 34, 18, 26, 12, 30, 16, 24, 38, 14, 27, 19, 33, 21];
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
-}
-
-function safeNumber(value: unknown, fallback = 0) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return fallback;
-  return Math.max(0, Math.min(100, Math.round(number)));
 }
 
 function timeLabel() {
@@ -252,8 +161,20 @@ function timeLabel() {
   });
 }
 
-function getSetupFromStore(store: StoreLike): InterviewSetup {
-  return store.setup || store.interviewSetup || {};
+function safeNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+function getOverallScore(scores: ScoreSet) {
+  if (typeof scores.overall === "number" && scores.overall > 0) return scores.overall;
+
+  const values = [scores.confidence, scores.clarity, scores.relevance, scores.evidence, scores.structure];
+  const active = values.filter((value) => value > 0);
+  if (!active.length) return 0;
+
+  return Math.round(active.reduce((sum, value) => sum + value, 0) / active.length);
 }
 
 function normalizeMemory(memory?: Partial<MemoryBlock>): MemoryBlock {
@@ -266,9 +187,6 @@ function normalizeMemory(memory?: Partial<MemoryBlock>): MemoryBlock {
     missingMetrics: memory?.missingMetrics || [],
     vagueAnswers: memory?.vagueAnswers || [],
     repeatedPatterns: memory?.repeatedPatterns || [],
-    confidenceTrend: memory?.confidenceTrend || [],
-    trustHistory: memory?.trustHistory || [],
-    recruiterMoodHistory: memory?.recruiterMoodHistory || [],
   };
 }
 
@@ -278,6 +196,7 @@ function normalizeInterruption(value: InterviewApiResponse["interruption"]): Int
   if (typeof value === "string") {
     const text = value.trim();
     if (!text) return null;
+
     return {
       shouldInterrupt: true,
       interruptionMessage: text,
@@ -294,226 +213,526 @@ function normalizeInterruption(value: InterviewApiResponse["interruption"]): Int
   };
 }
 
-function getOverallScore(scores: ScoreSet) {
-  const values = [
-    scores.confidence,
-    scores.clarity,
-    scores.relevance,
-    scores.evidence,
-    scores.structure,
-  ];
-  const active = values.filter((item) => item > 0);
-  if (!active.length) return 0;
-  return Math.round(active.reduce((sum, item) => sum + item, 0) / active.length);
+function normalizeSetup(input?: Partial<WorkZoInterviewSetup> | null): WorkZoInterviewSetup {
+  const source = input || readLatestInterviewSetup();
+
+  return {
+    cvText: source.cvText || "",
+    jobDescription: source.jobDescription || "",
+    targetRole: source.targetRole || "General Role",
+    targetMarket: source.targetMarket || "Global",
+    companyStyle: source.companyStyle || "Realistic",
+    recruiterPersonality: source.recruiterPersonality || "analytical_hiring_manager",
+    language: source.language || "English",
+    recruiterMemoryProfile: source.recruiterMemoryProfile || null,
+    jobMemoryProfile: source.jobMemoryProfile || null,
+    source: source.source || "latest-upload",
+    setupVersion: 4,
+    setupId: source.setupId || "",
+    updatedAt: source.updatedAt || "",
+  };
 }
 
-function getPressureLabel(pressure: number) {
-  if (pressure >= 72) return "High pressure";
-  if (pressure >= 42) return "Probing deeper";
-  return "Calm pressure";
+function getRecruiterImage(recruiterName: string) {
+  const name = recruiterName.toLowerCase();
+
+  if (name.includes("markus")) return "/recruiters/markus.png";
+  if (name.includes("daniel")) return "/recruiters/daniel.png";
+  if (name.includes("priya")) return "/recruiters/priya.png";
+  if (name.includes("sarah")) return "/recruiters/sarah.png";
+
+  return "/recruiters/daniel.png";
 }
 
-function recruiterEmoji(name: string) {
-  if (name === "Sarah") return "👩🏻‍💼";
-  if (name === "Priya") return "👩🏽‍💼";
-  if (name === "Markus") return "👨🏼‍💼";
-  return "👨🏻‍💼";
+function getRecruiterEmoji(recruiterName: string) {
+  const name = recruiterName.toLowerCase();
+
+  if (name.includes("markus")) return "👨🏼‍💼";
+  if (name.includes("daniel")) return "👨🏻‍💼";
+  if (name.includes("priya")) return "👩🏽‍💼";
+  if (name.includes("sarah")) return "👩🏻‍💼";
+
+  return "👤";
 }
 
-function normalizeThemeKey(state?: LiveUiState, mood?: string, pressure?: number, trust?: number) {
-  const raw = (state?.theme || mood || "neutral").toLowerCase();
+function getLocalSignal(answer: string) {
+  const text = answer.trim();
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
 
-  if (raw.includes("pressure") || raw.includes("interrupt") || (pressure || 0) >= 70) return "pressure";
-  if (raw.includes("skept") || raw.includes("doubt") || (trust || 50) < 42) return "skeptical";
-  if (raw.includes("impress") || (trust || 0) >= 70) return "impressed";
-  if (raw.includes("clarif")) return "clarifying";
-  return "neutral";
-}
-
-function getSignalPhrase(label: string, value: number) {
-  const normalized = label.toLowerCase();
-
-  if (normalized.includes("pressure")) {
-    if (value >= 70) return "High pressure";
-    if (value >= 40) return "Probing deeper";
-    return "Calm";
+  if (!text) {
+    return {
+      label: "Ready",
+      message: "Recruiter is waiting for your answer.",
+      intensity: "low",
+    };
   }
 
-  if (normalized.includes("trust")) {
-    if (value >= 70) return "Trust rising";
-    if (value >= 40) return "Still evaluating";
-    return "Needs proof";
+  const hasMetric = /\d|%|percent|reduced|increased|improved|saved|customers|users|tickets|revenue/i.test(text);
+  const hasOwnership = /\b(i|my|me)\b/i.test(text);
+
+  if (wordCount < 25) {
+    return {
+      label: "Too brief",
+      message: "Add situation, action, and result.",
+      intensity: "medium",
+    };
   }
 
-  if (value >= 70) return "Strong";
-  if (value >= 40) return "Building";
-  if (value > 0) return "Weak";
-  return "Awaiting answer";
+  if (wordCount > 150) {
+    return {
+      label: "Too long",
+      message: "Shorten and lead with the result.",
+      intensity: "medium",
+    };
+  }
+
+  if (!hasMetric) {
+    return {
+      label: "Needs proof",
+      message: "Add a number, result, user impact, or time saved.",
+      intensity: "high",
+    };
+  }
+
+  if (!hasOwnership) {
+    return {
+      label: "Ownership unclear",
+      message: "Make clear what you personally did.",
+      intensity: "medium",
+    };
+  }
+
+  return {
+    label: "Strong signal",
+    message: "This answer has ownership and proof.",
+    intensity: "low",
+  };
+}
+
+
+function analyzeVoiceConfidence(text: string) {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lower = text.toLowerCase();
+
+  const fillerMatches =
+    lower.match(/\b(um|uh|like|you know|actually|basically|maybe|probably|i think|kind of|sort of)\b/g) || [];
+
+  const hesitationScore = Math.min(100, fillerMatches.length * 12);
+  const tooShort = words.length < 18;
+  const tooLong = words.length > 170;
+  const hasMetric = /\d|%|percent|reduced|increased|improved|saved|users|customers|tickets|revenue|time/i.test(text);
+  const hasOwnership = /\b(i|my|me)\b/i.test(text);
+
+  const confidence = Math.max(
+    12,
+    Math.min(
+      96,
+      78 -
+        hesitationScore -
+        (tooShort ? 18 : 0) -
+        (tooLong ? 12 : 0) +
+        (hasMetric ? 10 : 0) +
+        (hasOwnership ? 8 : 0)
+    )
+  );
+
+  return {
+    fillerCount: fillerMatches.length,
+    wordCount: words.length,
+    confidence: Math.round(confidence),
+    nervousPacing: tooShort || tooLong || fillerMatches.length >= 3,
+    shouldInterrupt:
+      words.length > 130 ||
+      fillerMatches.length >= 5 ||
+      (!hasMetric && words.length > 85),
+    interruptReason:
+      words.length > 130
+        ? "You are giving too much context. Give me the result first."
+        : fillerMatches.length >= 5
+          ? "You sound uncertain. Slow down and give me one concrete example."
+          : !hasMetric && words.length > 85
+            ? "I am still missing measurable impact."
+            : "",
+  };
+}
+
+function buildResultsPayload(input: {
+  setup: WorkZoInterviewSetup;
+  scores: ScoreSet;
+  memory: MemoryBlock;
+  contradictions: string[];
+  transcript: TranscriptItem[];
+  recruiter: ReturnType<typeof getRecruiterVoiceProfile>;
+  pressure: number;
+  recruiterTrust: number;
+  feedback: string;
+  wowMoment: WowMoment | null;
+  arc: InterviewArc | null;
+  trustTimeline: TrustTimelineEvent[];
+  liveUiState: LiveUiState | null;
+  postInterviewPsychologyReport: PsychologyReport | null;
+}) {
+  return {
+    setup: input.setup,
+    overallScore: getOverallScore(input.scores),
+    scores: input.scores,
+    memory: input.memory,
+    contradictions: input.contradictions,
+    transcript: input.transcript,
+    recruiter: input.recruiter,
+    pressure: input.pressure,
+    recruiterTrust: input.recruiterTrust,
+    feedback: input.feedback,
+    wowMoment: input.wowMoment,
+    arc: input.arc,
+    trustTimeline: input.trustTimeline,
+    liveUiState: input.liveUiState,
+    postInterviewPsychologyReport: input.postInterviewPsychologyReport,
+  };
+}
+
+function RecruiterRoom({
+  recruiterName,
+  recruiterRole,
+  question,
+  hasStarted,
+  recruiterThinking,
+  voiceActive,
+  recruiterTrust,
+  pressure,
+  liveStatus,
+}: {
+  recruiterName: string;
+  recruiterRole: string;
+  question: string;
+  hasStarted: boolean;
+  recruiterThinking: boolean;
+  voiceActive: boolean;
+  recruiterTrust: number;
+  pressure: number;
+  liveStatus: string;
+}) {
+  return (
+    <section className="relative min-h-[560px] overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.045] shadow-[0_34px_120px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:min-h-[640px] lg:min-h-[calc(100vh-116px)]">
+      <div className="absolute inset-0">
+        <img
+          src={getRecruiterImage(recruiterName)}
+          alt={`${recruiterName} recruiter`}
+          className="absolute inset-0 h-full w-full object-cover object-center opacity-95"
+        />
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,7,18,.82)_0%,rgba(2,7,18,.25)_38%,rgba(2,7,18,.45)_100%),linear-gradient(180deg,rgba(2,7,18,.08)_0%,rgba(2,7,18,.15)_45%,rgba(2,7,18,.88)_100%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(34,211,238,0.18),transparent_28%),radial-gradient(circle_at_80%_70%,rgba(99,102,241,0.18),transparent_32%)]" />
+      </div>
+
+      <div className="relative z-10 flex min-h-[560px] flex-col justify-between p-4 sm:min-h-[640px] sm:p-6 lg:min-h-[calc(100vh-116px)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="rounded-3xl border border-white/10 bg-slate-950/58 p-4 shadow-2xl backdrop-blur-2xl">
+            <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">
+              AI Recruiter
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="relative flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/12 text-xl">
+                {getRecruiterEmoji(recruiterName)}
+                <span className="absolute -bottom-1 -right-1 h-4 w-4 rounded-full border-2 border-slate-950 bg-emerald-400" />
+              </div>
+              <div>
+                <p className="text-xl font-black text-white">{recruiterName}</p>
+                <p className="text-sm text-slate-300">{recruiterRole}</p>
+              </div>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-black text-emerald-200">
+                {voiceActive ? "Voice live" : "Ready"}
+              </span>
+              <span className="rounded-full bg-blue-400/12 px-3 py-1 text-xs font-black text-blue-100">
+                {liveStatus}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-white/10 bg-black/32 px-4 py-3 text-sm font-black text-slate-200 backdrop-blur-2xl">
+            <div className="flex items-center gap-2">
+              <Clock3 className="h-4 w-4 text-cyan-200" />
+              {timeLabel()}
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-3xl rounded-[28px] border border-white/10 bg-slate-950/72 p-5 shadow-[0_28px_100px_rgba(0,0,0,0.58)] backdrop-blur-2xl sm:p-6">
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-black text-emerald-200">
+              {hasStarted ? "Recruiter says" : "Interview room ready"}
+            </span>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white">
+              Trust {recruiterTrust}/100
+            </span>
+            <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-black text-white">
+              Pressure {pressure}/100
+            </span>
+          </div>
+
+          <p className="text-2xl font-black leading-tight tracking-tight text-white sm:text-3xl lg:text-4xl">
+            {recruiterThinking
+              ? "I’m evaluating your answer..."
+              : hasStarted
+                ? `“${question}”`
+                : "Step into a real interview simulation."}
+          </p>
+
+          {!hasStarted && (
+            <p className="mt-4 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
+              WorkZo has prepared {recruiterName} using your recruiter memory profile,
+              job description, target role, and interview market. Start when you are ready.
+            </p>
+          )}
+
+          <div className="mt-5 flex h-8 items-end gap-1 overflow-hidden">
+            {waveform.map((height, index) => (
+              <span
+                key={index}
+                className={cn(
+                  "w-2 shrink-0 rounded-full bg-gradient-to-t from-blue-500 via-cyan-300 to-emerald-300",
+                  recruiterThinking || voiceActive ? "animate-pulse" : ""
+                )}
+                style={{ height: Math.max(8, height) }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ContextCheck({
+  setup,
+  open,
+  onToggle,
+  onRefresh,
+  onClear,
+  debugRows,
+}: {
+  setup: WorkZoInterviewSetup;
+  open: boolean;
+  onToggle: () => void;
+  onRefresh: () => void;
+  onClear: () => void;
+  debugRows: ReturnType<typeof getInterviewSetupDebugInfo>;
+}) {
+  const profile = setup.recruiterMemoryProfile;
+  const job = setup.jobMemoryProfile;
+
+  return (
+    <section className="rounded-[24px] border border-amber-300/20 bg-amber-500/10 p-4 text-amber-50 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+      <button type="button" onClick={onToggle} className="flex w-full items-center justify-between gap-3 text-left">
+        <div>
+          <h2 className="text-base font-black">Check recruiter context</h2>
+          <p className="mt-1 text-xs leading-5 text-amber-100/80">
+            Testing panel: verifies what the recruiter can see.
+          </p>
+        </div>
+        <ChevronDown className={cn("h-4 w-4 transition", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="mt-4 space-y-3">
+          <div className="grid gap-2 text-xs sm:grid-cols-2">
+            <div className="rounded-2xl bg-black/20 p-3">
+              <span className="font-black">Name:</span> {profile?.candidateName || "Not detected"}
+            </div>
+            <div className="rounded-2xl bg-black/20 p-3">
+              <span className="font-black">Role:</span> {job?.roleTitle || setup.targetRole}
+            </div>
+            <div className="rounded-2xl bg-black/20 p-3">
+              <span className="font-black">Memory:</span> {profile ? "Loaded" : "Missing"}
+            </div>
+            <div className="rounded-2xl bg-black/20 p-3">
+              <span className="font-black">JD:</span> {job ? "Loaded" : "Missing"}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/70">
+              Recruiter memory facts
+            </p>
+            <div className="mt-1 max-h-32 overflow-auto rounded-2xl bg-black/25 p-3 text-xs leading-5">
+              {profile?.recruiterMemory?.length
+                ? profile.recruiterMemory.map((item) => <div key={item}>• {item}</div>)
+                : "No recruiter memory profile found. Go back to onboarding and rebuild setup."}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-100/70">
+              Job focus
+            </p>
+            <div className="mt-1 max-h-28 overflow-auto rounded-2xl bg-black/25 p-3 text-xs leading-5">
+              {job?.interviewFocus?.length
+                ? job.interviewFocus.map((item) => <div key={item}>• {item}</div>)
+                : setup.jobDescription.slice(0, 700) || "No job description loaded."}
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onRefresh}
+              className="rounded-2xl border border-amber-100/20 bg-white/10 px-3 py-2 text-xs font-black"
+            >
+              Refresh check
+            </button>
+            <button
+              type="button"
+              onClick={onClear}
+              className="rounded-2xl border border-red-100/20 bg-red-500/20 px-3 py-2 text-xs font-black text-red-50"
+            >
+              Clear stored setup
+            </button>
+          </div>
+
+          {debugRows.length > 0 && (
+            <div className="max-h-28 overflow-auto rounded-2xl bg-black/20 p-2 text-[11px] text-amber-50/80">
+              {debugRows.map((row) => (
+                <div key={row.key} className="border-b border-white/10 py-1 last:border-0">
+                  {row.key}: {row.exists ? "exists" : "empty"} · CV {row.cvChars} · JD {row.jdChars}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export default function InterviewPage() {
-  const router = useRouter();
-  const store = useInterviewStore() as unknown as StoreLike;
-  const setup = getSetupFromStore(store);
+  const [, startTransition] = useTransition();
+  const updateSetup = useInterviewStore((state) => state.updateSetup);
+  const resetSession = useInterviewStore((state) => state.resetSession);
 
-  const recruiterProfile = getRecruiterVoiceProfile(setup.recruiterPersonality);
-  const recruiterBehavior = getRecruiterSystemBehavior(setup.recruiterPersonality);
-
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [activeSetup, setActiveSetup] = useState<WorkZoInterviewSetup>(() =>
+    normalizeSetup(readLatestInterviewSetup())
+  );
+  const [hasStarted, setHasStarted] = useState(false);
   const [answer, setAnswer] = useState("");
   const [question, setQuestion] = useState(DEFAULT_QUESTION);
   const [feedback, setFeedback] = useState("");
-  const [mood, setMood] = useState("neutral");
-  const [pressure, setPressure] = useState(35);
-  const [recruiterTrust, setRecruiterTrust] = useState(46);
   const [scores, setScores] = useState<ScoreSet>(defaultScores);
   const [memory, setMemory] = useState<MemoryBlock>(defaultMemory);
   const [contradictions, setContradictions] = useState<string[]>([]);
   const [interruption, setInterruption] = useState<Interruption | null>(null);
+  const [pressure, setPressure] = useState(35);
+  const [recruiterTrust, setRecruiterTrust] = useState(46);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [voiceActive, setVoiceActive] = useState(false);
-  const [voiceError, setVoiceError] = useState("");
   const [voiceStatus, setVoiceStatus] = useState("Voice ready");
+  const [voiceError, setVoiceError] = useState("");
+  const [contextOpen, setContextOpen] = useState(false);
+  const [debugRows, setDebugRows] = useState<ReturnType<typeof getInterviewSetupDebugInfo>>([]);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
-  const [clientTime, setClientTime] = useState("--:--");
-  const [liveUiState, setLiveUiState] = useState<LiveUiState | null>(null);
+  const [recruiterThinking, setRecruiterThinking] = useState(false);
   const [trustTimeline, setTrustTimeline] = useState<TrustTimelineEvent[]>([]);
-  const [realtimeSignals, setRealtimeSignals] = useState<RealtimeSignal[]>([
-    {
-      type: "listening",
-      label: "Listening",
-      message: "Recruiter is evaluating clarity, proof, and ownership.",
-      intensity: "low",
-    },
-  ]);
   const [wowMoment, setWowMoment] = useState<WowMoment | null>(null);
-  const [interviewArc, setInterviewArc] = useState<InterviewArc | null>({
-    phase: "opening",
-    instruction: "Start professional and establish baseline confidence.",
-  });
+  const [interviewArc, setInterviewArc] = useState<InterviewArc | null>(null);
+  const [liveUiState, setLiveUiState] = useState<LiveUiState | null>(null);
   const [postInterviewPsychologyReport, setPostInterviewPsychologyReport] =
     useState<PsychologyReport | null>(null);
-  const [recruiterThinking, setRecruiterThinking] = useState(false);
-  const [liveStatus, setLiveStatus] = useState("Recruiter is listening closely");
-  const [transcript, setTranscript] = useState<TranscriptItem[]>([
-    {
-      role: "recruiter",
-      text: DEFAULT_QUESTION,
-      time: "--:--",
-    },
-  ]);
+  const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
 
   const vapiRef = useRef<unknown>(null);
-  const realtimeAbortRef = useRef<AbortController | null>(null);
 
-  const role = setup.targetRole || "General Role";
-  const market = setup.targetMarket || setup.country || "Global";
-  const companyStyle = setup.companyStyle || setup.recruiterStyle || "Realistic";
+  const recruiterProfile = useMemo(
+    () => getRecruiterVoiceProfile(activeSetup.recruiterPersonality),
+    [activeSetup.recruiterPersonality]
+  );
+
   const overallScore = useMemo(() => getOverallScore(scores), [scores]);
-
-  const themeKey = normalizeThemeKey(liveUiState || undefined, mood, pressure, recruiterTrust);
-  const theme = emotionTheme[themeKey] || emotionTheme.neutral;
-
-  const speakingText = recruiterThinking
-    ? "Hmm... let me think about that for a moment."
-    : interruption?.shouldInterrupt
-      ? interruption.interruptionMessage
-      : question;
-
-  const arcLabel = interviewArc?.phase
-    ? interviewArc.phase.charAt(0).toUpperCase() + interviewArc.phase.slice(1)
-    : "Opening";
+  const localSignal = useMemo(() => getLocalSignal(answer), [answer]);
+  const role = activeSetup.jobMemoryProfile?.roleTitle || activeSetup.targetRole || "General Role";
+  const market = activeSetup.targetMarket || "Global";
+  const liveStatus = liveUiState?.label || localSignal.message || "Recruiter is listening";
 
   useEffect(() => {
-    setClientTime(timeLabel());
-    const interval = window.setInterval(() => setClientTime(timeLabel()), 30_000);
+    trackWorkZoEvent({
+      event: "interview_room_viewed",
+      setupId: activeSetup.setupId,
+      role,
+      market,
+      recruiter: recruiterProfile.name,
+    });
 
-    setTranscript((items) =>
-      items.map((item, index) =>
-        index === 0 && item.time === "--:--" ? { ...item, time: timeLabel() } : item
-      )
-    );
-
-    return () => window.clearInterval(interval);
+    const latest = normalizeSetup(readLatestInterviewSetup());
+    setActiveSetup(latest);
+    updateSetup(latest);
+    setDebugRows(getInterviewSetupDebugInfo());
+    setIsHydrated(true);
+    // Run only once to avoid Zustand/localStorage hydration loops.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    const saved =
-      window.localStorage.getItem("workzo-interview-setup") ||
-      window.localStorage.getItem("workzo_setup");
-
-    if (!saved) return;
-
-    try {
-      const parsed = JSON.parse(saved) as InterviewSetup;
-
-      if (!setup.cvText && parsed.cvText) {
-        if (typeof store.setSetup === "function") store.setSetup(parsed);
-        else if (typeof store.updateSetup === "function") store.updateSetup(parsed);
+    return () => {
+      const current = vapiRef.current as { stop?: () => void } | null;
+      try {
+        current?.stop?.();
+      } catch {
+        // Vapi/Krisp cleanup can fail if WASM worker is not ready.
       }
+      vapiRef.current = null;
+    };
+  }, []);
+
+  const persistResults = useCallback((payload: ReturnType<typeof buildResultsPayload>) => {
+    try {
+      window.localStorage.setItem("workzo-last-results", JSON.stringify(payload));
     } catch {
-      // Ignore invalid storage.
+      // Ignore storage errors.
     }
   }, []);
 
-  useEffect(() => {
-    if (!answer.trim() || answer.trim().length < 24) return;
+  const startInterview = useCallback(() => {
+    const setup = normalizeSetup(readLatestInterviewSetup());
+    const saved = saveLatestInterviewSetup(setup);
+    setActiveSetup(saved);
+    updateSetup(saved);
+    trackWorkZoEvent({
+      event: "interview_started",
+      setupId: saved.setupId,
+      role: saved.jobMemoryProfile?.roleTitle || saved.targetRole,
+      market: saved.targetMarket,
+      recruiter: recruiterProfile.name,
+      mode: "text",
+    });
 
-    const timer = window.setTimeout(() => {
-      realtimeAbortRef.current?.abort();
+    setHasStarted(true);
+    setQuestion(DEFAULT_QUESTION);
+    setTranscript([
+      {
+        role: "recruiter",
+        text: DEFAULT_QUESTION,
+        time: timeLabel(),
+      },
+    ]);
+    setContextOpen(false);
+  }, [recruiterProfile.name, updateSetup]);
 
-      const controller = new AbortController();
-      realtimeAbortRef.current = controller;
-
-      fetch("/api/interview", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        signal: controller.signal,
-        body: JSON.stringify({
-          mode: "realtime",
-          partialAnswer: answer,
-          elapsedSeconds: Math.min(120, Math.round(answer.trim().split(/\s+/).length / 2.1)),
-          pressure,
-          recruiterTrust,
-          scores,
-          memory,
-        }),
-      })
-        .then((response) => response.json())
-        .then((data) => {
-          if (data?.realtimeSignals?.length) {
-            setRealtimeSignals(data.realtimeSignals);
-            setLiveStatus(data.primarySignal?.message || data.realtimeSignals[0]?.message || liveStatus);
-          }
-        })
-        .catch(() => {
-          // Ignore live signal failures so typing remains smooth.
-        });
-    }, 650);
-
-    return () => window.clearTimeout(timer);
-  }, [answer, pressure, recruiterTrust, scores, memory, liveStatus]);
-
-  async function submitAnswer(event?: FormEvent) {
-    event?.preventDefault();
-
+  const submitAnswer = useCallback(async () => {
     const candidateAnswer = answer.trim();
     if (!candidateAnswer || isSubmitting) return;
 
     setIsSubmitting(true);
     setRecruiterThinking(true);
-    setLiveStatus("Recruiter is thinking");
     setFeedback("");
     setInterruption(null);
-    setWowMoment(null);
 
     const nextTranscript: TranscriptItem[] = [
       ...transcript,
       {
         role: "candidate",
         text: candidateAnswer,
-        time: clientTime !== "--:--" ? clientTime : timeLabel(),
+        time: timeLabel(),
       },
     ];
 
@@ -521,9 +740,34 @@ export default function InterviewPage() {
     setAnswer("");
 
     try {
-      if (typeof store.addAnswer === "function") store.addAnswer(candidateAnswer);
+      const voiceConfidence = analyzeVoiceConfidence(candidateAnswer);
 
-      await new Promise((resolve) => window.setTimeout(resolve, 850));
+      trackWorkZoEvent({
+        event: "answer_submitted",
+        setupId: activeSetup.setupId,
+        role,
+        market,
+        recruiter: recruiterProfile.name,
+        mode: "text",
+        score: voiceConfidence.confidence,
+        trust: recruiterTrust,
+        pressure,
+        metadata: voiceConfidence,
+      });
+
+      if (voiceConfidence.shouldInterrupt) {
+        trackWorkZoEvent({
+          event: "voice_interruption",
+          setupId: activeSetup.setupId,
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          mode: "text",
+          trust: recruiterTrust,
+          pressure,
+          metadata: voiceConfidence,
+        });
+      }
 
       const response = await fetch("/api/interview", {
         method: "POST",
@@ -533,18 +777,14 @@ export default function InterviewPage() {
         body: JSON.stringify({
           answer: candidateAnswer,
           currentQuestion: question,
-          transcript: nextTranscript,
-          setup,
-          cvText: setup.cvText || "",
-          jobDescription: setup.jobDescription || "",
-          targetRole: role,
-          country: market,
-          targetMarket: market,
-          companyStyle,
-          recruiterPersonality: setup.recruiterPersonality,
-          recruiterBehavior,
-          recruiterName: recruiterProfile.name,
-          recruiterRole: recruiterProfile.role,
+          transcript: nextTranscript.slice(-10),
+          setup: activeSetup,
+          cvText: activeSetup.cvText,
+          jobDescription: activeSetup.jobDescription,
+          targetRole: activeSetup.targetRole,
+          targetMarket: activeSetup.targetMarket,
+          companyStyle: activeSetup.companyStyle,
+          recruiterPersonality: activeSetup.recruiterPersonality,
           pressure,
           recruiterTrust,
           scores,
@@ -557,15 +797,17 @@ export default function InterviewPage() {
       const data = (await response.json().catch(() => ({}))) as InterviewApiResponse;
 
       if (!response.ok) {
-        throw new Error(data?.feedback || "Interview response failed");
+        throw new Error(data.feedback || data.message || "Interview response failed.");
       }
 
       const normalizedInterruption = normalizeInterruption(data.interruption);
       const nextQuestion =
         data.followUpQuestion ||
         data.question ||
-        data.recruiterMessage ||
-        "Let me push further. What was your specific contribution, and what changed because of it?";
+        data.reply ||
+        data.message ||
+        data.content ||
+        "Give me one specific example from your background and connect it to this job.";
 
       const mergedScores: ScoreSet = {
         confidence: safeNumber(data.score?.confidence ?? data.scores?.confidence, scores.confidence),
@@ -573,9 +815,13 @@ export default function InterviewPage() {
         relevance: safeNumber(data.score?.relevance ?? data.scores?.relevance, scores.relevance),
         evidence: safeNumber(data.score?.evidence ?? data.scores?.evidence, scores.evidence),
         structure: safeNumber(data.score?.structure ?? data.scores?.structure, scores.structure),
+        overall: safeNumber(data.score?.overall ?? data.scores?.overall, scores.overall || 0),
       };
 
-      const uniqueContradictions = Array.from(
+      const nextTrust = safeNumber(data.recruiterTrust ?? data.trust, recruiterTrust);
+      const nextPressure = safeNumber(data.pressure, pressure);
+      const nextMemory = normalizeMemory(data.memory);
+      const nextContradictions = Array.from(
         new Set([
           ...contradictions,
           ...(data.contradiction ? [data.contradiction] : []),
@@ -583,7 +829,6 @@ export default function InterviewPage() {
         ].filter(Boolean))
       ).slice(-6);
 
-      const normalizedMemory = normalizeMemory(data.memory);
       const recruiterText = normalizedInterruption?.shouldInterrupt
         ? normalizedInterruption.interruptionMessage
         : nextQuestion;
@@ -597,53 +842,44 @@ export default function InterviewPage() {
         },
       ];
 
-      setQuestion(nextQuestion);
-      setFeedback(data.feedback || "");
-      setMood(data.mood || data.emotion || "neutral");
-      setPressure(safeNumber(data.pressure, pressure));
-      setRecruiterTrust(safeNumber(data.recruiterTrust, recruiterTrust));
-      setScores(mergedScores);
-      setMemory(normalizedMemory);
-      setContradictions(uniqueContradictions);
-      setInterruption(normalizedInterruption);
-      setTranscript(finalTranscript);
-      setWowMoment(data.wowMoment || null);
-      setInterviewArc(data.arc || null);
-      setTrustTimeline(data.trustTimeline || trustTimeline);
-      setLiveUiState(data.liveUiState || null);
-      setRealtimeSignals(data.realtimeSignals?.length ? data.realtimeSignals : realtimeSignals);
-      setPostInterviewPsychologyReport(data.postInterviewPsychologyReport || null);
-      setLiveStatus(data.liveUiState?.label || data.wowMoment?.emotionalTag || "Recruiter is listening closely");
+      startTransition(() => {
+        setQuestion(nextQuestion);
+        setFeedback(data.feedback || "");
+        setPressure(nextPressure);
+        setRecruiterTrust(nextTrust);
+        setScores(mergedScores);
+        setMemory(nextMemory);
+        setContradictions(nextContradictions);
+        setInterruption(normalizedInterruption);
+        setTranscript(finalTranscript.slice(-30));
+        setWowMoment(data.wowMoment || null);
+        setInterviewArc(data.arc || null);
+        setTrustTimeline(data.trustTimeline || trustTimeline);
+        setLiveUiState(data.liveUiState || null);
+        setPostInterviewPsychologyReport(data.postInterviewPsychologyReport || null);
+      });
 
-      const resultsPayload = {
-        setup,
-        overallScore: getOverallScore(mergedScores),
-        scores: mergedScores,
-        memory: normalizedMemory,
-        contradictions: uniqueContradictions,
-        transcript: finalTranscript,
-        recruiter: recruiterProfile,
-        pressure: safeNumber(data.pressure, pressure),
-        recruiterTrust: safeNumber(data.recruiterTrust, recruiterTrust),
-        feedback: data.feedback || "",
-        wowMoment: data.wowMoment || null,
-        arc: data.arc || null,
-        trustTimeline: data.trustTimeline || trustTimeline,
-        liveUiState: data.liveUiState || null,
-        realtimeSignals: data.realtimeSignals || [],
-        postInterviewPsychologyReport: data.postInterviewPsychologyReport || null,
-      };
-
-      if (typeof store.setResults === "function") store.setResults(resultsPayload);
-      if (typeof store.updateResults === "function") store.updateResults(resultsPayload);
-
-      try {
-        window.localStorage.setItem("workzo-last-results", JSON.stringify(resultsPayload));
-      } catch {
-        // Ignore storage issues.
-      }
+      persistResults(
+        buildResultsPayload({
+          setup: activeSetup,
+          scores: mergedScores,
+          memory: nextMemory,
+          contradictions: nextContradictions,
+          transcript: finalTranscript.slice(-30),
+          recruiter: recruiterProfile,
+          pressure: nextPressure,
+          recruiterTrust: nextTrust,
+          feedback: data.feedback || "",
+          wowMoment: data.wowMoment || null,
+          arc: data.arc || null,
+          trustTimeline: data.trustTimeline || trustTimeline,
+          liveUiState: data.liveUiState || null,
+          postInterviewPsychologyReport: data.postInterviewPsychologyReport || null,
+        })
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The recruiter could not respond.";
+      const message =
+        error instanceof Error ? error.message : "The recruiter could not respond.";
 
       setFeedback(message);
       setTranscript([
@@ -655,22 +891,42 @@ export default function InterviewPage() {
         },
       ]);
     } finally {
-      setRecruiterThinking(false);
       setIsSubmitting(false);
+      setRecruiterThinking(false);
     }
-  }
+  }, [
+    activeSetup,
+    answer,
+    contradictions,
+    isSubmitting,
+    memory,
+    persistResults,
+    pressure,
+    question,
+    recruiterProfile,
+    recruiterTrust,
+    scores,
+    startTransition,
+    transcript,
+    trustTimeline,
+  ]);
 
-  async function startVoiceInterview() {
+  const startVoiceInterview = useCallback(async () => {
     setVoiceError("");
 
     try {
       const publicKey = process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY;
-      const assistantId = getVapiAssistantIdForRecruiter(setup.recruiterPersonality);
+      const assistantId = getVapiAssistantIdForRecruiter(activeSetup.recruiterPersonality);
 
       if (!publicKey || !assistantId) {
-        throw new Error(
-          "Missing Vapi key or recruiter assistant ID. Add NEXT_PUBLIC_VAPI_PUBLIC_KEY and recruiter assistant IDs in .env.local."
-        );
+        throw new Error("Missing Vapi public key or recruiter assistant ID.");
+      }
+
+      const existing = vapiRef.current as { stop?: () => void } | null;
+      try {
+        existing?.stop?.();
+      } catch {
+        // Ignore stale Vapi cleanup.
       }
 
       const VapiModule = await import("@vapi-ai/web");
@@ -679,18 +935,33 @@ export default function InterviewPage() {
 
       vapiRef.current = vapi;
       setVoiceStatus(`${recruiterProfile.name} voice connecting...`);
-      setLiveStatus(`${recruiterProfile.name} voice connecting`);
 
       vapi.on("call-start", () => {
+        trackWorkZoEvent({
+          event: "voice_started",
+          setupId: activeSetup.setupId,
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          mode: "voice",
+        });
+
         setVoiceActive(true);
         setVoiceStatus(`${recruiterProfile.name} is listening`);
-        setLiveStatus(`${recruiterProfile.name} is listening`);
       });
 
       vapi.on("call-end", () => {
+        trackWorkZoEvent({
+          event: "voice_stopped",
+          setupId: activeSetup.setupId,
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          mode: "voice",
+        });
+
         setVoiceActive(false);
         setVoiceStatus("Voice interview stopped");
-        setLiveStatus("Recruiter is listening closely");
       });
 
       vapi.on("message", (message: unknown) => {
@@ -701,15 +972,51 @@ export default function InterviewPage() {
           transcriptType?: string;
         };
 
-        if (payload.type === "transcript" && payload.transcript && payload.transcriptType === "final") {
-          setTranscript((items) => [
-            ...items,
-            {
-              role: payload.role === "assistant" ? "recruiter" : "candidate",
-              text: payload.transcript || "",
-              time: timeLabel(),
-            },
-          ]);
+        if (
+          payload.type === "transcript" &&
+          payload.transcript &&
+          payload.transcriptType === "final"
+        ) {
+          const roleFromVoice: TranscriptItem["role"] =
+            payload.role === "assistant" ? "recruiter" : "candidate";
+
+          const finalText = payload.transcript || "";
+
+          if (roleFromVoice === "candidate") {
+            const confidence = analyzeVoiceConfidence(finalText);
+
+            if (confidence.shouldInterrupt) {
+              setInterruption({
+                shouldInterrupt: true,
+                interruptionMessage: confidence.interruptReason,
+                severity: confidence.confidence < 45 ? "high" : "medium",
+              });
+
+              trackWorkZoEvent({
+                event: "voice_interruption",
+                setupId: activeSetup.setupId,
+                role,
+                market,
+                recruiter: recruiterProfile.name,
+                mode: "voice",
+                score: confidence.confidence,
+                trust: recruiterTrust,
+                pressure,
+                metadata: confidence,
+              });
+            }
+          }
+
+          setTranscript((items): TranscriptItem[] =>
+            [
+              ...items,
+              {
+                role: roleFromVoice,
+                text: finalText,
+                time: timeLabel(),
+              },
+            ].slice(-30)
+          );
         }
       });
 
@@ -720,117 +1027,154 @@ export default function InterviewPage() {
         setVoiceActive(false);
       });
 
-      await vapi.start(assistantId);
+      await vapi.start(assistantId, {
+        variableValues: {
+          recruiterName: recruiterProfile.name,
+          recruiterRole: recruiterProfile.role,
+          targetRole: role || "Unknown role",
+          targetMarket: market || "Global",
+          candidateCv: JSON.stringify(activeSetup.recruiterMemoryProfile || {}).slice(0, 4000),
+          jobDescription: JSON.stringify(activeSetup.jobMemoryProfile || {}).slice(0, 3000),
+        },
+      });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Could not start voice interview.";
+      const message =
+        error instanceof Error ? error.message : "Could not start voice interview.";
+
       setVoiceError(message);
       setVoiceStatus("Voice unavailable");
       setVoiceActive(false);
     }
-  }
+  }, [activeSetup, market, pressure, recruiterProfile.name, recruiterProfile.role, recruiterTrust, role]);
 
-  async function stopVoiceInterview() {
+  const stopVoiceInterview = useCallback(async () => {
     const current = vapiRef.current as { stop?: () => void } | null;
-    current?.stop?.();
+
+    try {
+      current?.stop?.();
+    } catch {
+      // Vapi/Krisp cleanup can fail if WASM worker is not ready.
+    }
+
+    vapiRef.current = null;
     setVoiceActive(false);
     setVoiceStatus("Voice interview stopped");
-    setLiveStatus("Recruiter is listening closely");
-  }
+  }, []);
 
-  function startFresh() {
+  const startFresh = useCallback(() => {
+    resetSession();
+    setHasStarted(false);
     setAnswer("");
     setQuestion(DEFAULT_QUESTION);
     setFeedback("");
-    setMood("neutral");
-    setPressure(35);
-    setRecruiterTrust(46);
     setScores(defaultScores);
     setMemory(defaultMemory);
     setContradictions([]);
     setInterruption(null);
-    setTranscriptOpen(false);
-    setLiveUiState(null);
+    setPressure(35);
+    setRecruiterTrust(46);
+    setTranscript([]);
     setTrustTimeline([]);
-    setRealtimeSignals([
-      {
-        type: "listening",
-        label: "Listening",
-        message: "Recruiter is evaluating clarity, proof, and ownership.",
-        intensity: "low",
-      },
-    ]);
     setWowMoment(null);
-    setInterviewArc({
-      phase: "opening",
-      instruction: "Start professional and establish baseline confidence.",
-    });
+    setInterviewArc(null);
+    setLiveUiState(null);
     setPostInterviewPsychologyReport(null);
-    setRecruiterThinking(false);
-    setLiveStatus("Recruiter is listening closely");
-    setTranscript([
-      {
-        role: "recruiter",
-        text: DEFAULT_QUESTION,
-        time: clientTime !== "--:--" ? clientTime : timeLabel(),
-      },
-    ]);
+  }, [resetSession]);
 
-    if (typeof store.resetInterview === "function") store.resetInterview();
-  }
+  const clearStoredContext = useCallback(() => {
+    trackWorkZoEvent({
+      event: "setup_cleared",
+      setupId: activeSetup.setupId,
+      role,
+      market,
+      recruiter: recruiterProfile.name,
+    });
 
-  function goToResults() {
-    router.push("/results");
+    clearAllInterviewSetup();
+    const empty = normalizeSetup(null);
+    setActiveSetup(empty);
+    updateSetup(empty);
+    setDebugRows(getInterviewSetupDebugInfo());
+    setContextOpen(true);
+  }, [activeSetup.setupId, market, recruiterProfile.name, role, updateSetup]);
+
+  const goToResults = useCallback(() => {
+    persistResults(
+      buildResultsPayload({
+        setup: activeSetup,
+        scores,
+        memory,
+        contradictions,
+        transcript,
+        recruiter: recruiterProfile,
+        pressure,
+        recruiterTrust,
+        feedback,
+        wowMoment,
+        arc: interviewArc,
+        trustTimeline,
+        liveUiState,
+        postInterviewPsychologyReport,
+      })
+    );
+
+    trackWorkZoEvent({
+      event: "results_viewed",
+      setupId: activeSetup.setupId,
+      role,
+      market,
+      recruiter: recruiterProfile.name,
+      score: getOverallScore(scores),
+      trust: recruiterTrust,
+      pressure,
+    });
+
+    window.location.href = "/results";
+  }, [
+    activeSetup,
+    contradictions,
+    feedback,
+    interviewArc,
+    liveUiState,
+    memory,
+    persistResults,
+    postInterviewPsychologyReport,
+    pressure,
+    recruiterProfile,
+    recruiterTrust,
+    scores,
+    transcript,
+    trustTimeline,
+    wowMoment,
+  ]);
+
+
+  if (!isHydrated) {
+    return (
+      <main className="min-h-screen overflow-x-hidden bg-[#020712] px-3 py-3 text-white sm:px-5">
+        <div className="mx-auto max-w-[1540px]">
+          <div className="mb-3 h-[72px] animate-pulse rounded-3xl border border-white/10 bg-white/[0.045]" />
+          <div className="grid gap-3 lg:grid-cols-[1fr_420px]">
+            <div className="min-h-[620px] animate-pulse rounded-[32px] border border-white/10 bg-white/[0.045]" />
+            <div className="space-y-3">
+              <div className="h-40 animate-pulse rounded-[24px] border border-white/10 bg-white/[0.045]" />
+              <div className="h-56 animate-pulse rounded-[24px] border border-white/10 bg-white/[0.045]" />
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (
-    <main className="min-h-screen overflow-y-auto bg-[#020712] text-white lg:h-screen lg:overflow-hidden">
-      <style jsx global>{`
-        @keyframes wzPulseBar {
-          0%, 100% { transform: scaleY(0.72); opacity: 0.68; }
-          50% { transform: scaleY(1.18); opacity: 1; }
-        }
-
-        @keyframes wzLivePulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.42); }
-          50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-        }
-
-        @keyframes wzCameraBreath {
-          0%, 100% { transform: scale(1) translateY(0); }
-          50% { transform: scale(1.014) translateY(-2px); }
-        }
-
-        @keyframes wzEyeFocus {
-          0%, 100% { opacity: .04; transform: translateX(-8px); }
-          50% { opacity: .16; transform: translateX(10px); }
-        }
-
-        @keyframes wzTrustLine {
-          from { stroke-dashoffset: 180; }
-          to { stroke-dashoffset: 0; }
-        }
-
-        @keyframes wzScan {
-          0% { transform: translateY(-80%); opacity: 0; }
-          25% { opacity: 0.28; }
-          60% { opacity: 0.52; }
-          100% { transform: translateY(520%); opacity: 0; }
-        }
-
-        @keyframes wzTextPulse {
-          0%, 100% { opacity: .78; }
-          50% { opacity: 1; }
-        }
-      `}</style>
-
+    <main className="min-h-screen overflow-x-hidden bg-[#020712] text-white">
       <div className="pointer-events-none fixed inset-0">
-        <div className="absolute left-[-260px] top-[-220px] h-[560px] w-[560px] rounded-full bg-blue-600/15 blur-[130px]" />
-        <div className="absolute right-[-220px] top-[-160px] h-[580px] w-[580px] rounded-full bg-cyan-400/12 blur-[140px]" />
-        <div className="absolute bottom-[-280px] left-1/2 h-[580px] w-[580px] -translate-x-1/2 rounded-full bg-indigo-600/12 blur-[140px]" />
+        <div className="absolute left-[-260px] top-[-220px] h-[520px] w-[520px] rounded-full bg-blue-600/13 blur-[120px]" />
+        <div className="absolute right-[-220px] top-[-160px] h-[520px] w-[520px] rounded-full bg-cyan-400/10 blur-[130px]" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1540px] flex-col px-3 py-3 sm:px-5 lg:h-screen lg:min-h-0">
-        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-white/[0.045] px-3 py-3 shadow-[0_20px_90px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:px-5 lg:h-[60px] lg:flex-nowrap lg:py-0">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1540px] flex-col px-3 py-3 sm:px-5">
+        <header className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-white/10 bg-white/[0.045] px-3 py-3 shadow-[0_20px_90px_rgba(0,0,0,0.32)] backdrop-blur-2xl sm:px-5">
           <Link href="/dashboard" className="flex items-center gap-3">
             <Image
               src="/workzo_icon.png"
@@ -854,8 +1198,8 @@ export default function InterviewPage() {
             <span className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2 text-sm font-bold text-slate-300">
               {market}
             </span>
-            <span className={cn("rounded-full border px-4 py-2 text-xs font-black uppercase tracking-[0.18em]", theme.badge, theme.border)}>
-              {arcLabel}
+            <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-cyan-100">
+              {hasStarted ? "Live" : "Ready"}
             </span>
           </div>
 
@@ -883,438 +1227,248 @@ export default function InterviewPage() {
           </div>
         </header>
 
-        <section className="grid flex-1 gap-3 py-3 lg:min-h-0 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_390px]">
-          <div className="grid gap-3 lg:min-h-0 lg:grid-rows-[minmax(0,1fr)_178px]">
-            <section className={cn("relative h-[430px] overflow-hidden rounded-[26px] border bg-white/[0.045] shadow-[0_34px_120px_rgba(0,0,0,0.46)] backdrop-blur-2xl sm:h-[500px] lg:h-auto lg:min-h-0", theme.border)}>
-              <div className="absolute inset-0">
-                <Image
-                  src="/workzo_recruiter_hero.png"
-                  alt={`${recruiterProfile.name} recruiter interview`}
-                  fill
-                  priority
-                  sizes="(min-width: 1024px) 70vw, 100vw"
-                  className={cn(
-                    "object-cover object-[center_34%] opacity-92 [animation:wzCameraBreath_9s_ease-in-out_infinite] sm:object-[center_37%]",
-                    recruiterThinking && "scale-[1.01]"
-                  )}
-                />
-                <div className={cn("absolute inset-0 bg-gradient-to-br opacity-80 transition-all duration-700", theme.glow)} />
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,7,18,.68)_0%,rgba(2,7,18,.18)_38%,rgba(2,7,18,.26)_100%),linear-gradient(180deg,rgba(2,7,18,.06)_0%,rgba(2,7,18,.12)_44%,rgba(2,7,18,.78)_100%)]" />
-                <div className="absolute inset-0 shadow-[inset_0_0_110px_rgba(0,0,0,.70)]" />
-                <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-cyan-300/7 to-transparent [animation:wzScan_4s_ease-in-out_infinite]" />
-                <div className="absolute left-[47%] top-[28%] h-20 w-44 rounded-full bg-white [animation:wzEyeFocus_5.5s_ease-in-out_infinite] blur-3xl" />
-              </div>
+        {!hasStarted ? (
+          <section className="grid flex-1 gap-3 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px]">
+            <div>
+              <RecruiterRoom
+                recruiterName={recruiterProfile.name}
+                recruiterRole={recruiterProfile.role}
+                question={question}
+                hasStarted={false}
+                recruiterThinking={false}
+                voiceActive={voiceActive}
+                recruiterTrust={recruiterTrust}
+                pressure={pressure}
+                liveStatus={activeSetup.recruiterMemoryProfile ? "Memory loaded" : "Memory missing"}
+              />
 
-              <div className="relative z-10 flex h-full min-h-0 flex-col justify-between p-3 sm:p-4">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="rounded-2xl border border-white/8 bg-black/30 p-2 shadow-2xl backdrop-blur-md sm:p-2.5">
-                    <div className="flex items-center gap-3">
-                      <div className="relative flex h-9 w-9 items-center justify-center rounded-2xl bg-blue-500/18 text-lg">
-                        {recruiterEmoji(recruiterProfile.name)}
-                        <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full border-2 border-slate-950 bg-emerald-400 [animation:wzLivePulse_1.8s_ease-in-out_infinite]" />
-                      </div>
+              <div className="mt-3 flex flex-col gap-3 rounded-[28px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_20px_90px_rgba(0,0,0,0.26)] backdrop-blur-2xl sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-black text-cyan-100">
+                    Recruiter memory profile
+                  </p>
+                  <p className="mt-1 text-sm text-slate-400">
+                    {activeSetup.recruiterMemoryProfile
+                      ? `Loaded for ${activeSetup.recruiterMemoryProfile.candidateName || "candidate"}`
+                      : "Missing — go back to onboarding and rebuild setup"}
+                    {" · "}
+                    {activeSetup.jobMemoryProfile
+                      ? `JD loaded: ${activeSetup.jobMemoryProfile.roleTitle || activeSetup.targetRole}`
+                      : "JD memory missing"}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={startInterview}
+                  className="inline-flex items-center justify-center gap-3 rounded-3xl bg-gradient-to-r from-cyan-500 to-blue-600 px-8 py-4 text-base font-black text-white shadow-[0_0_40px_rgba(34,211,238,0.32)] transition hover:scale-[1.02]"
+                >
+                  <Play className="h-5 w-5" />
+                  Start Real Interview
+                  <ArrowRight className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            <aside className="grid content-start gap-3">
+              <ContextCheck
+                setup={activeSetup}
+                open={contextOpen}
+                onToggle={() => setContextOpen((value) => !value)}
+                onRefresh={() => setDebugRows(getInterviewSetupDebugInfo())}
+                onClear={clearStoredContext}
+                debugRows={debugRows}
+              />
+
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-emerald-200" />
+                  <h2 className="text-lg font-black">What will happen</h2>
+                </div>
+                <div className="mt-4 space-y-3 text-sm leading-6 text-slate-300">
+                  <p>1. The recruiter starts with a realistic opening question.</p>
+                  <p>2. Your answer is judged for clarity, proof, ownership, and JD fit.</p>
+                  <p>3. Follow-ups use the recruiter memory profile instead of messy CV text.</p>
+                </div>
+              </div>
+            </aside>
+          </section>
+        ) : (
+          <section className="grid flex-1 gap-3 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px]">
+            <div className="space-y-3">
+              <RecruiterRoom
+                recruiterName={recruiterProfile.name}
+                recruiterRole={recruiterProfile.role}
+                question={interruption?.shouldInterrupt ? interruption.interruptionMessage : question}
+                hasStarted
+                recruiterThinking={recruiterThinking}
+                voiceActive={voiceActive}
+                recruiterTrust={recruiterTrust}
+                pressure={pressure}
+                liveStatus={liveStatus}
+              />
+
+              <section className="grid gap-3 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_420px]">
+                <div className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-xl font-black">Your answer</h2>
+                      <p className="mt-1 text-sm text-slate-400">
+                        Answer directly with result, action, and impact.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-black text-cyan-200">
+                      Text mode
+                    </span>
+                  </div>
+
+                  <textarea
+                    value={answer}
+                    onChange={(event) => setAnswer(event.target.value)}
+                    placeholder="Example: I handled customer escalations by..."
+                    className="mt-4 min-h-[190px] w-full resize-none rounded-3xl border border-white/10 bg-[#050b16] p-4 text-sm leading-6 text-white outline-none placeholder:text-slate-600 transition focus:border-cyan-300/50"
+                  />
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-xs text-slate-500">
+                      {localSignal.label}: {localSignal.message}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={submitAnswer}
+                      disabled={!answer.trim() || isSubmitting}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-3 text-sm font-black text-white shadow-[0_0_30px_rgba(34,211,238,0.25)] transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      {isSubmitting ? "Thinking..." : "Submit answer"}
+                      {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h2 className="text-xl font-black">Voice mode</h2>
+                      <p className="mt-1 text-sm text-slate-400">{voiceStatus}</p>
+                    </div>
+                    <span className={cn("rounded-full px-3 py-1 text-xs font-black", voiceActive ? "bg-emerald-400/12 text-emerald-200" : "bg-white/8 text-slate-300")}>
+                      {voiceActive ? "Live" : "Ready"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 rounded-3xl border border-white/10 bg-slate-950/60 p-4">
+                    <div className="flex items-center justify-between">
                       <div>
                         <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-200">
-                          AI Recruiter
+                          Recruiter voice
                         </p>
-                        <p className="mt-0.5 text-base font-black">{recruiterProfile.name}</p>
-                        <p className="text-xs text-slate-300">{recruiterProfile.role}</p>
+                        <p className="mt-1 font-black">
+                          {recruiterProfile.name} · {recruiterProfile.voiceGender}
+                        </p>
                       </div>
+                      <Volume2 className="h-5 w-5 text-cyan-200" />
                     </div>
 
-                    <div className="mt-2.5 flex flex-wrap gap-1.5">
-                      <span className="rounded-full bg-emerald-400/12 px-2 py-0.5 text-[10px] font-bold text-emerald-200">
-                        {voiceActive ? "Listening" : "Ready"}
-                      </span>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold", theme.badge)}>
-                        {liveStatus}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-black/28 px-3 py-2 backdrop-blur-md sm:px-4 sm:py-3">
-                    <div className="flex items-center gap-2 text-sm font-bold text-slate-200">
-                      <Clock3 className="h-4 w-4 text-slate-400" />
-                      {clientTime}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="max-w-[680px] rounded-[20px] border border-white/10 bg-slate-950/62 px-5 py-3 shadow-[0_22px_75px_rgba(0,0,0,0.56)] backdrop-blur-2xl">
-                  <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-emerald-400/12 px-3 py-1 text-xs font-black text-emerald-200">
-                      Recruiter says
-                    </span>
-                    <span className={cn("rounded-full px-3 py-1 text-xs font-black", theme.badge)}>
-                      {theme.label}
-                    </span>
-                    {interruption?.shouldInterrupt && (
-                      <span className="rounded-full bg-red-400/14 px-3 py-1 text-xs font-black text-red-100">
-                        Interruption
-                      </span>
+                    {voiceError && (
+                      <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-xs leading-5 text-amber-100">
+                        {voiceError}
+                      </div>
                     )}
-                  </div>
 
-                  <p className="text-[14px] font-black leading-[1.35] tracking-tight text-white sm:text-[16px] xl:text-[18px] [animation:wzTextPulse_2.2s_ease-in-out_infinite]">
-                    “{speakingText}”
-                  </p>
-
-                  <div className={cn("mt-2 flex h-5 items-end gap-1 overflow-hidden", pressure >= 70 && "animate-pulse")}>
-                    {waveform.map((height, index) => (
-                      <span
-                        key={index}
-                        className={cn("w-1.5 shrink-0 origin-bottom rounded-full bg-gradient-to-t shadow-[0_0_10px_rgba(34,211,238,.28)]", theme.wave)}
-                        style={{
-                          height: Math.max(6, Math.round(height * (pressure >= 70 ? 1 : 0.78))),
-                          animation: `wzPulseBar ${1.1 + (index % 5) * 0.12}s ease-in-out infinite`,
-                          animationDelay: `${index * 0.035}s`,
-                        }}
-                      />
-                    ))}
+                    <button
+                      type="button"
+                      onClick={voiceActive ? stopVoiceInterview : startVoiceInterview}
+                      className={cn(
+                        "mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-[0_16px_38px_rgba(14,165,233,.24)] transition hover:scale-[1.01]",
+                        voiceActive
+                          ? "bg-gradient-to-r from-red-500 to-rose-500"
+                          : "bg-gradient-to-r from-blue-500 to-cyan-400"
+                      )}
+                    >
+                      {voiceActive ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                      {voiceActive ? "Stop Voice" : "Start Voice"}
+                    </button>
                   </div>
                 </div>
-              </div>
-            </section>
+              </section>
+            </div>
 
-            <section className="grid min-h-0 gap-3 lg:grid-cols-[1fr_360px] xl:grid-cols-[1fr_390px]">
-              <form
-                onSubmit={submitAnswer}
-                className="flex min-h-[260px] flex-col rounded-[22px] border border-white/10 bg-white/[0.045] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl lg:min-h-0"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-base font-black sm:text-lg">Your answer</h2>
-                    <p className="mt-1 text-sm text-slate-400">
-                      {answer.trim().split(/\s+/).filter(Boolean).length > 110 ? "You may be losing the point." : answer.trim().split(/\s+/).filter(Boolean).length > 30 ? "Daniel is listening for proof." : "Answer directly with result, action, impact."}
+            <aside className="grid content-start gap-3 lg:sticky lg:top-3">
+              <ContextCheck
+                setup={activeSetup}
+                open={contextOpen}
+                onToggle={() => setContextOpen((value) => !value)}
+                onRefresh={() => setDebugRows(getInterviewSetupDebugInfo())}
+                onClear={clearStoredContext}
+                debugRows={debugRows}
+              />
+
+              <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-black">Recruiter signal</h2>
+                  <Brain className="h-5 w-5 text-cyan-200" />
+                </div>
+
+                <div className="mt-4 grid gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+                      Trust
                     </p>
+                    <p className="mt-1 text-2xl font-black">{recruiterTrust}/100</p>
                   </div>
-                  <span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-black text-cyan-200">
-                    Text mode
-                  </span>
-                </div>
-
-                <textarea
-                  value={answer}
-                  onChange={(event) => setAnswer(event.target.value)}
-                  placeholder="Answer directly. Example: I reduced ticket resolution time by 25% by..."
-                  className="mt-2 min-h-[130px] flex-1 resize-none rounded-3xl lg:min-h-0 border border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(34,211,238,0.08),transparent_34%),#050b16] p-4 text-sm leading-6 text-white outline-none placeholder:text-slate-600 transition focus:border-cyan-300/50 focus:shadow-[0_0_26px_rgba(34,211,238,0.10)]"
-                  onKeyDown={(event) => {
-                    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
-                      void submitAnswer();
-                    }
-                  }}
-                />
-
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <p className="text-xs text-slate-500">
-                    {recruiterThinking ? "Recruiter is thinking..." : "Tip: result → action → measurable impact."}
-                  </p>
-                  <button
-                    type="submit"
-                    disabled={!answer.trim() || isSubmitting}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-2 text-sm font-black text-white shadow-[0_0_30px_rgba(34,211,238,0.25)] transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-45"
-                  >
-                    {isSubmitting ? "Thinking..." : "Submit"}
-                    <Send className="h-4 w-4" />
-                  </button>
-                </div>
-              </form>
-
-              <div className="rounded-[22px] border border-white/10 bg-white/[0.045] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h2 className="text-base font-black sm:text-lg">Voice mode</h2>
-                    <p className="mt-1 text-sm text-slate-400">{voiceStatus}</p>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+                      Overall
+                    </p>
+                    <p className="mt-1 text-2xl font-black">{overallScore}/100</p>
                   </div>
-                  <span
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs font-black",
-                      voiceActive ? "bg-emerald-400/12 text-emerald-200" : "bg-white/8 text-slate-300"
-                    )}
-                  >
-                    {voiceActive ? "Live" : "Ready"}
-                  </span>
-                </div>
-
-                <div className="mt-2.5 rounded-3xl border border-white/10 bg-slate-950/60 p-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-200">
-                        Recruiter voice
-                      </p>
-                      <p className="mt-1 font-black">
-                        {recruiterProfile.name} · {recruiterProfile.voiceGender}
-                      </p>
-                    </div>
-                    <Volume2 className="h-5 w-5 text-cyan-200" />
-                  </div>
-
-                  <div className="mt-2 flex h-6 items-end gap-1 overflow-hidden rounded-2xl bg-black/18 px-3 py-1">
-                    {waveform.slice(0, 24).map((height, index) => (
-                      <span
-                        key={index}
-                        className={cn("w-1 shrink-0 origin-bottom rounded-full bg-gradient-to-t", voiceActive ? theme.wave : "from-blue-500 to-cyan-300")}
-                        style={{
-                          height: Math.max(5, Math.round(height * 0.48)),
-                          animation: `wzPulseBar ${1.1 + (index % 5) * 0.12}s ease-in-out infinite`,
-                          animationDelay: `${index * 0.04}s`,
-                        }}
-                      />
-                    ))}
-                  </div>
-
-                  {voiceError && (
-                    <div className="mt-2.5 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-xs leading-5 text-amber-100">
-                      {voiceError}
+                  {feedback && (
+                    <div className="rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
+                      {feedback}
                     </div>
                   )}
-
-                  <button
-                    onClick={voiceActive ? stopVoiceInterview : startVoiceInterview}
-                    className={cn(
-                      "mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-2xl px-5 py-2 text-sm font-black text-white shadow-[0_16px_38px_rgba(14,165,233,.24)] transition hover:scale-[1.01]",
-                      voiceActive
-                        ? "bg-gradient-to-r from-red-500 to-rose-500"
-                        : "bg-gradient-to-r from-blue-500 to-cyan-400"
-                    )}
-                  >
-                    {voiceActive ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-                    {voiceActive ? "Stop Voice" : "Start Voice"}
-                  </button>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <aside className="grid gap-3 lg:min-h-0 lg:grid-rows-[196px_minmax(0,1fr)]">
-            <section className="rounded-[22px] border border-white/10 bg-white/[0.045] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-base font-black sm:text-lg">Recruiter perception</h2>
-                  <p className="mt-1 text-sm text-slate-400">
-                    {liveUiState?.label || "Live signals from this answer."}
-                  </p>
-                </div>
-                <div className={cn("flex h-11 w-11 items-center justify-center rounded-2xl", theme.badge)}>
-                  <Brain className="h-5 w-5" />
-                </div>
-              </div>
-
-              <div className="mt-2.5 grid gap-2">
-                {realtimeSignals.slice(0, 2).map((signal, index) => (
-                  <div key={`${signal.label}-${index}`} className="rounded-2xl border border-white/10 bg-slate-950/46 p-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-black text-white">{signal.label || "Listening"}</p>
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-black", signal.intensity === "high" ? "bg-rose-400/14 text-rose-100" : signal.intensity === "medium" ? "bg-amber-400/14 text-amber-100" : "bg-blue-400/14 text-blue-100")}>
-                        {signal.intensity || "low"}
-                      </span>
+                  {wowMoment?.shouldTrigger && (
+                    <div className="rounded-2xl border border-rose-300/20 bg-rose-500/10 p-3 text-sm leading-6 text-rose-100">
+                      <div className="mb-1 flex items-center gap-2 font-black">
+                        <Zap className="h-4 w-4" />
+                        Recruiter challenge
+                      </div>
+                      {wowMoment.line}
                     </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-400">{signal.message}</p>
-                  </div>
-                ))}
-              </div>
-            </section>
-
-            <section className="min-h-0 overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.045] p-3 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-black">Recruiter memory</h2>
-                <Brain className="h-5 w-5 text-cyan-200" />
-              </div>
-              <p className="mt-1 text-sm text-slate-400">
-                What the recruiter is learning about you.
-              </p>
-
-              <div className="mt-2.5 grid gap-2">
-                {wowMoment?.shouldTrigger && (
-                  <div className="rounded-2xl border border-rose-300/25 bg-rose-500/12 p-3">
-                    <div className="flex items-center gap-2 text-sm font-black text-rose-100">
-                      <Zap className="h-4 w-4" />
-                      Recruiter challenge
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-rose-50/90">{wowMoment.line}</p>
-                  </div>
-                )}
-
-                {contradictions.length > 0 && (
-                  <div className="rounded-2xl border border-red-300/20 bg-red-500/12 p-3">
-                    <div className="flex items-center gap-2 text-sm font-black text-red-100">
-                      <ShieldAlert className="h-4 w-4" />
-                      Contradiction detected
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-red-50/90">
-                      {contradictions[contradictions.length - 1]}
-                    </p>
-                  </div>
-                )}
-
-                <MemoryCard
-                  title="What feels strong"
-                  icon={<CheckCircle2 className="h-4 w-4" />}
-                  items={memory.strengths}
-                  fallback={`${recruiterProfile.name} is waiting for one strong proof point.`}
-                  color="emerald"
-                />
-                <MemoryCard
-                  title="What worries the recruiter"
-                  icon={<ShieldAlert className="h-4 w-4" />}
-                  items={memory.weaknesses}
-                  fallback={`${recruiterProfile.name} has not spotted a repeated weakness yet.`}
-                  color="rose"
-                />
-                <MemoryCard
-                  title="Fix next"
-                  icon={<Sparkles className="h-4 w-4" />}
-                  items={memory.improvements}
-                  fallback={feedback || "Your next improvement will appear here."}
-                  color="amber"
-                />
-
-                <div className="rounded-2xl border border-white/10 bg-slate-950/46 p-2.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
-                      Recruiter trust
-                    </p>
-                    <span className="text-xs font-black text-slate-300">{recruiterTrust}/100</span>
-                  </div>
-
-                  <TrustSparkline values={trustTimeline.length ? trustTimeline.slice(-8).map((event) => event.value || recruiterTrust) : [46, recruiterTrust]} />
-
-                  <div className="mt-2 space-y-2">
-                    {trustTimeline.length ? (
-                      trustTimeline.slice(-2).map((event, index) => (
-                        <div key={`${event.time}-${index}`} className="rounded-xl bg-white/[0.04] px-3 py-2">
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="flex items-center gap-1.5 font-black text-white">
-                              {event.direction === "up" ? <TrendingUp className="h-3.5 w-3.5 text-emerald-200" /> : event.direction === "down" ? <TrendingDown className="h-3.5 w-3.5 text-rose-200" /> : <Brain className="h-3.5 w-3.5 text-blue-200" />}
-                              {event.direction === "up" ? "Trust improved" : event.direction === "down" ? "Trust dropped" : "Trust stable"}
-                            </span>
-                            <span className="text-slate-400">{event.value || recruiterTrust}/100</span>
-                          </div>
-                          <p className="mt-1 text-xs leading-5 text-slate-400">{event.reason}</p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs leading-5 text-slate-400">Timeline starts after your first answer.</p>
-                    )}
-                  </div>
+                  )}
                 </div>
-              </div>
+              </section>
 
-              <button
-                onClick={() => setTranscriptOpen((value) => !value)}
-                className="mt-2.5 inline-flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.07] px-4 py-2.5 text-sm font-black text-white transition hover:bg-white/12"
-              >
-                Transcript · {transcript.length} lines
-                <ChevronDown className={cn("h-4 w-4 transition", transcriptOpen && "rotate-180")} />
-              </button>
+              <section className="rounded-[24px] border border-white/10 bg-white/[0.045] p-4 shadow-[0_18px_70px_rgba(0,0,0,0.24)] backdrop-blur-2xl">
+                <button
+                  type="button"
+                  onClick={() => setTranscriptOpen((value) => !value)}
+                  className="flex w-full items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-cyan-200" />
+                    <h2 className="text-xl font-black">Transcript</h2>
+                  </div>
+                  <ChevronDown className={cn("h-4 w-4 transition", transcriptOpen && "rotate-180")} />
+                </button>
 
-              {transcriptOpen && (
-                <div className="mt-2 max-h-[180px] overflow-y-auto rounded-2xl lg:max-h-[120px] border border-white/10 bg-slate-950/55 p-3">
-                  <div className="space-y-3">
-                    {transcript.slice(-6).map((item, index) => (
-                      <div key={`${item.time}-${index}`}>
+                {transcriptOpen && (
+                  <div className="mt-4 max-h-[260px] space-y-3 overflow-y-auto">
+                    {transcript.map((item, index) => (
+                      <div key={`${item.time}-${index}`} className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
                         <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">
                           {item.role} · {item.time}
                         </p>
-                        <p className="mt-1 text-sm leading-5 text-slate-200">{item.text}</p>
+                        <p className="mt-1 text-sm leading-6 text-slate-200">{item.text}</p>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-
-              <button
-                onClick={goToResults}
-                className="mt-2.5 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/10 px-4 py-2.5 text-sm font-black text-white transition hover:bg-white/14"
-              >
-                View full report
-                <ArrowRight className="h-4 w-4" />
-              </button>
-            </section>
-          </aside>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-
-function TrustSparkline({ values }: { values: number[] }) {
-  const normalized = values.length ? values : [46, 46];
-  const width = 280;
-  const height = 54;
-  const step = width / Math.max(1, normalized.length - 1);
-  const points = normalized
-    .map((value, index) => {
-      const x = index * step;
-      const y = height - (Math.max(0, Math.min(100, value)) / 100) * height;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  return (
-    <svg className="mt-3 h-[54px] w-full overflow-visible" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="trustLineGradient" x1="0" x2="1" y1="0" y2="0">
-          <stop offset="0%" stopColor="#3b82f6" />
-          <stop offset="52%" stopColor="#22d3ee" />
-          <stop offset="100%" stopColor="#34d399" />
-        </linearGradient>
-      </defs>
-      <polyline
-        fill="none"
-        stroke="url(#trustLineGradient)"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        points={points}
-        style={{ strokeDasharray: 180, animation: "wzTrustLine 1.3s ease-out both" }}
-      />
-      {normalized.map((value, index) => {
-        const x = index * step;
-        const y = height - (Math.max(0, Math.min(100, value)) / 100) * height;
-        return <circle key={index} cx={x} cy={y} r="3.4" fill="#67e8f9" />;
-      })}
-    </svg>
-  );
-}
-
-function MemoryCard({
-  title,
-  icon,
-  items,
-  fallback,
-  color,
-}: {
-  title: string;
-  icon: ReactNode;
-  items: string[];
-  fallback: string;
-  color: "emerald" | "rose" | "amber";
-}) {
-  const colorClass = {
-    emerald: "bg-emerald-500/11 text-emerald-100 border-emerald-300/10",
-    rose: "bg-rose-500/11 text-rose-100 border-rose-300/10",
-    amber: "bg-amber-500/11 text-amber-100 border-amber-300/10",
-  }[color];
-
-  return (
-    <div className={cn("rounded-2xl border p-2.5", colorClass)}>
-      <div className="flex items-center gap-2 text-sm font-black">
-        {icon}
-        {title}
-      </div>
-      <div className="mt-2 space-y-1">
-        {items.length ? (
-          items.slice(0, 2).map((item) => (
-            <p key={item} className="text-sm leading-5 text-white/86">
-              {item}
-            </p>
-          ))
-        ) : (
-          <p className="text-sm leading-5 text-white/76">{fallback}</p>
+                )}
+              </section>
+            </aside>
+          </section>
         )}
       </div>
-    </div>
+    </main>
   );
 }

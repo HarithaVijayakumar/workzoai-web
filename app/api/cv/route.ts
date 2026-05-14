@@ -1,247 +1,361 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
+import OpenAI from "openai";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type CvApiResponse = {
-  ok: boolean;
-  text: string;
-  cvText: string;
-  fileName?: string;
-  fileType?: string;
-  warning?: string;
-  error?: string;
+type RequestBody = {
+  cvText?: string;
+  jobDescription?: string;
+  targetRole?: string;
+  targetMarket?: string;
+  language?: string;
 };
 
-function cleanText(value: string) {
+type PdfParseResult = {
+  text?: string;
+  numpages?: number;
+  info?: unknown;
+  metadata?: unknown;
+};
+
+type PdfParseFn = (buffer: Buffer) => Promise<PdfParseResult>;
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+
+function normalizeExtractedText(value: string) {
   return value
-    .replace(/\u0000/g, "")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{4,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\u0000/g, " ")
+    .replace(/\r/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
     .trim();
 }
 
-function createManualFallback(fileName: string, reason: string) {
-  return cleanText(`Uploaded CV file: ${fileName}
-
-WorkZo received your CV, but automatic PDF text extraction could not read this file in the current local environment.
-
-Please paste your CV text manually in the CV text box so the AI recruiter can ask accurate CV-aware questions.
-
-Reason: ${reason}`);
-}
-
-function extractReadablePdfStrings(buffer: Buffer) {
-  const raw = buffer.toString("latin1");
-
-  const matches = raw.match(/\(([^()]{3,})\)/g) || [];
-  const text = matches
-    .map((item) => item.slice(1, -1))
-    .join(" ")
-    .replace(/\\n/g, "\n")
-    .replace(/\\r/g, "\n")
-    .replace(/\\t/g, " ")
-    .replace(/\\\(/g, "(")
-    .replace(/\\\)/g, ")")
-    .replace(/\\-/g, "-")
-    .replace(/\\,/g, ",")
-    .replace(/\\\./g, ".")
-    .replace(/[^\x09\x0A\x0D\x20-\x7EÀ-ÿ]/g, " ");
-
-  return cleanText(text);
-}
-
-async function extractPdfWithPdfJs(buffer: Buffer) {
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-
+function jsonFromModel(raw: string) {
   try {
-    if ("GlobalWorkerOptions" in pdfjs && pdfjs.GlobalWorkerOptions) {
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-        "pdfjs-dist/legacy/build/pdf.worker.mjs",
-        import.meta.url
-      ).toString();
+    return JSON.parse(raw);
+  } catch {
+    const first = raw.indexOf("{");
+    const last = raw.lastIndexOf("}");
+
+    if (first >= 0 && last > first) {
+      try {
+        return JSON.parse(raw.slice(first, last + 1));
+      } catch {
+        return null;
+      }
     }
 
-    const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(buffer),
-      disableWorker: true,
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      disableFontFace: true,
-    } as any);
-
-    const document = await loadingTask.promise;
-    const pages: string[] = [];
-
-    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-      const page = await document.getPage(pageNumber);
-      const content = await page.getTextContent();
-
-      const pageText = content.items
-        .map((item: any) => {
-          if (typeof item?.str === "string") return item.str;
-          return "";
-        })
-        .filter(Boolean)
-        .join(" ");
-
-      pages.push(pageText);
-    }
-
-    await document.destroy?.();
-
-    return cleanText(pages.join("\n\n"));
-  } catch (error) {
-    const reason =
-      error instanceof Error ? error.message : "Unknown PDF.js extraction error.";
-    throw new Error(reason);
+    return null;
   }
 }
 
-async function extractPdfText(file: File) {
-  const buffer = Buffer.from(await file.arrayBuffer());
-
-  try {
-    const pdfJsText = await extractPdfWithPdfJs(buffer);
-
-    if (pdfJsText && pdfJsText.length >= 40) {
-      return {
-        text: pdfJsText,
-        warning: "",
-      };
-    }
-
-    throw new Error("PDF.js found too little readable text.");
-  } catch (error) {
-    const pdfJsReason =
-      error instanceof Error ? error.message : "PDF.js extraction failed.";
-
-    const fallbackText = extractReadablePdfStrings(buffer);
-
-    if (fallbackText && fallbackText.length >= 80) {
-      return {
-        text: fallbackText,
-        warning:
-          "PDF text was extracted using a fallback method. Please quickly verify the CV text before starting the interview.",
-      };
-    }
-
-    return {
-      text: createManualFallback(file.name, pdfJsReason),
-      warning:
-        "PDF uploaded, but automatic extraction failed in this local environment. Paste the CV text manually for accurate interview questions.",
-    };
-  }
+function sentences(value: string, limit = 8) {
+  return value
+    .split(/[.!?]/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 35)
+    .slice(0, limit);
 }
 
-async function extractTextFile(file: File) {
-  return cleanText(await file.text());
-}
-
-export async function POST(request: NextRequest) {
+async function extractPdfText(buffer: Buffer) {
   try {
-    const formData = await request.formData();
-    const file = formData.get("file");
+    type PdfParseFn = (buffer: Buffer) => Promise<{ text?: string }>;
 
-    if (!(file instanceof File)) {
-      return NextResponse.json<CvApiResponse>(
-        {
-          ok: false,
-          text: "",
-          cvText: "",
-          error: "No CV file uploaded.",
-        },
-        { status: 400 }
-      );
+    const pdfParse = require("pdf-parse/lib/pdf-parse.js") as PdfParseFn;
+
+    const result = await pdfParse(buffer);
+    const extracted = normalizeExtractedText(result.text || "");
+
+    if (extracted.length > 30) {
+      return extracted;
     }
 
-    const fileName = file.name || "uploaded-cv";
-    const fileType = file.type || "unknown";
-    const lowerName = fileName.toLowerCase();
-
-    if (file.size <= 0) {
-      return NextResponse.json<CvApiResponse>(
-        {
-          ok: false,
-          text: "",
-          cvText: "",
-          fileName,
-          fileType,
-          error: "The uploaded CV file is empty.",
-        },
-        { status: 400 }
-      );
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      return NextResponse.json<CvApiResponse>(
-        {
-          ok: false,
-          text: "",
-          cvText: "",
-          fileName,
-          fileType,
-          error: "The uploaded CV is too large. Please upload a file under 10MB.",
-        },
-        { status: 413 }
-      );
-    }
-
-    let extractedText = "";
-    let warning = "";
-
-    if (fileType.includes("pdf") || lowerName.endsWith(".pdf")) {
-      const result = await extractPdfText(file);
-      extractedText = result.text;
-      warning = result.warning;
-    } else if (
-      fileType.includes("text") ||
-      lowerName.endsWith(".txt") ||
-      lowerName.endsWith(".md")
-    ) {
-      extractedText = await extractTextFile(file);
-    } else {
-      warning =
-        "Only PDF and TXT extraction are supported right now. Please paste DOC/DOCX CV text manually.";
-      extractedText = createManualFallback(fileName, warning);
-    }
-
-    if (!extractedText || extractedText.length < 30) {
-      warning =
-        warning ||
-        "The CV was uploaded, but very little readable text was found. It may be a scanned/image-based PDF.";
-      extractedText = createManualFallback(fileName, warning);
-    }
-
-    return NextResponse.json<CvApiResponse>({
-      ok: true,
-      text: extractedText,
-      cvText: extractedText,
-      fileName,
-      fileType,
-      warning: warning || undefined,
-    });
+    throw new Error("PDF parser returned empty text.");
   } catch (error) {
-    const reason =
-      error instanceof Error ? error.message : "Unknown upload error.";
+    const message =
+      error instanceof Error ? error.message : "PDF extraction failed.";
 
-    return NextResponse.json<CvApiResponse>(
-      {
-        ok: false,
-        text: "",
-        cvText: "",
-        error: reason,
-      },
-      { status: 500 }
+    throw new Error(
+      "PDF uploaded, but WorkZo could not extract readable text. Parser note: " +
+        message
     );
   }
 }
 
-export async function GET() {
-  return NextResponse.json({
-    ok: true,
-    service: "WorkZo CV extraction API",
-    supported: ["pdf", "txt"],
+function normalizeCvText(raw: string) {
+  return raw
+    .replace(/\s+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/(WORK EXPERIENCE|EDUCATION|SKILLS|PROJECTS)/gi, "\n\n$1\n")
+    .replace(/ManageEngine/g, "ManageEngine")
+    .replace(/TextBlob/g, "TextBlob")
+    .replace(/LangChain/g, "LangChain")
+    .trim();
+}
+
+async function extractDocxText(buffer: Buffer) {
+  try {
+    const mammoth = await import("mammoth");
+    const result = await mammoth.extractRawText({ buffer });
+    const extracted = normalizeExtractedText(result.value || "");
+
+    if (extracted.length > 20) {
+      return extracted;
+    }
+  } catch {
+    // Continue to error below.
+  }
+
+  throw new Error("DOCX uploaded, but no readable CV text was found.");
+}
+
+async function extractFileText(file: File) {
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+
+  if (name.endsWith(".txt") || type.includes("text/plain")) {
+    const extracted = normalizeExtractedText(buffer.toString("utf-8"));
+
+    if (extracted.length > 5) {
+      return extracted;
+    }
+
+    throw new Error("TXT uploaded, but no readable text was found.");
+  }
+
+  if (name.endsWith(".pdf") || type.includes("pdf")) {
+    return extractPdfText(buffer);
+  }
+
+  if (name.endsWith(".docx") || type.includes("wordprocessingml")) {
+    return extractDocxText(buffer);
+  }
+
+  if (name.endsWith(".doc")) {
+    throw new Error("Old .doc files are not supported yet. Please upload PDF/DOCX/TXT or paste text.");
+  }
+
+  throw new Error("Unsupported file type. Please upload PDF, DOCX, or TXT.");
+}
+
+function emptyMemory(targetRole: string, targetMarket: string) {
+  return {
+    recruiterMemoryProfile: {
+      candidateName: "",
+      location: targetMarket || "Global",
+      targetRole: targetRole || "General Role",
+      summary: [],
+      skills: { technical: [], business: [], tools: [] },
+      experience: [],
+      projects: [],
+      education: [],
+      languages: [],
+      recruiterMemory: [],
+      possibleConcerns: ["No CV or job description was provided yet."],
+    },
+    jobMemoryProfile: {
+      roleTitle: targetRole || "General Role",
+      businessContext: "",
+      responsibilities: [],
+      requiredSkills: [],
+      softSkills: [],
+      interviewFocus: [
+        "Ask the candidate to provide CV and job description context before a full interview.",
+      ],
+    },
+    confidence: "skipped",
+  };
+}
+
+function fallbackMemory(input: {
+  cvText: string;
+  jobDescription: string;
+  targetRole: string;
+  targetMarket: string;
+  warning?: string;
+}) {
+  const cvLines = sentences(input.cvText, 12);
+  const jdLines = sentences(input.jobDescription, 8);
+
+  return {
+    recruiterMemoryProfile: {
+      candidateName: "",
+      location: input.targetMarket,
+      targetRole: input.targetRole,
+      summary: cvLines.slice(0, 4),
+      skills: { technical: [], business: [], tools: [] },
+      experience: [],
+      projects: [],
+      education: [],
+      languages: [],
+      recruiterMemory: cvLines,
+      possibleConcerns: [input.warning || "Fallback recruiter memory generated."],
+    },
+    jobMemoryProfile: {
+      roleTitle: input.targetRole,
+      businessContext: input.jobDescription.slice(0, 700),
+      responsibilities: jdLines,
+      requiredSkills: [],
+      softSkills: [],
+      interviewFocus: ["Ask for measurable examples.", "Ask for role-specific proof."],
+    },
+    confidence: "fallback",
+  };
+}
+
+async function buildMemoryFromJson(body: RequestBody) {
+  const cvText = text(body.cvText);
+  const jobDescription = text(body.jobDescription);
+  const targetRole = text(body.targetRole) || "General Role";
+  const targetMarket = text(body.targetMarket) || "Global";
+  const language = text(body.language) || "English";
+
+  if (!cvText && !jobDescription) {
+    return NextResponse.json(emptyMemory(targetRole, targetMarket));
+  }
+
+  const fallback = fallbackMemory({
+    cvText,
+    jobDescription,
+    targetRole,
+    targetMarket,
   });
+
+  try {
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(fallback);
+    }
+
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+    const completion = await openai.chat.completions.create({
+      model: process.env.OPENAI_CV_MODEL || "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 2500,
+      response_format: { type: "json_object" },
+      messages: [
+        {
+          role: "system",
+          content: `
+You are WorkZo AI's Recruiter Memory Builder.
+
+Extract compact recruiter memory from the uploaded CV and job description.
+
+Return valid JSON only:
+{
+  "recruiterMemoryProfile": {
+    "candidateName": "",
+    "location": "",
+    "targetRole": "",
+    "summary": [],
+    "skills": { "technical": [], "business": [], "tools": [] },
+    "experience": [{ "company": "", "role": "", "dates": "", "highlights": [] }],
+    "projects": [{ "name": "", "summary": "" }],
+    "education": [],
+    "languages": [],
+    "recruiterMemory": [],
+    "possibleConcerns": []
+  },
+  "jobMemoryProfile": {
+    "roleTitle": "",
+    "businessContext": "",
+    "responsibilities": [],
+    "requiredSkills": [],
+    "softSkills": [],
+    "interviewFocus": []
+  },
+  "confidence": "high"
+}
+`.trim(),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            targetRole,
+            targetMarket,
+            language,
+            rawCvText: cvText.slice(0, 12000),
+            rawJobDescription: jobDescription.slice(0, 8000),
+          }),
+        },
+      ],
+    });
+
+    const raw = completion.choices[0]?.message?.content || "";
+    const parsed = jsonFromModel(raw);
+
+    if (!parsed?.recruiterMemoryProfile || !parsed?.jobMemoryProfile) {
+      return NextResponse.json(fallback);
+    }
+
+    return NextResponse.json({
+      recruiterMemoryProfile: parsed.recruiterMemoryProfile,
+      jobMemoryProfile: parsed.jobMemoryProfile,
+      confidence: parsed.confidence || "medium",
+    });
+  } catch (error) {
+    return NextResponse.json(
+      fallbackMemory({
+        cvText,
+        jobDescription,
+        targetRole,
+        targetMarket,
+        warning:
+          error instanceof Error
+            ? error.message
+            : "Recruiter memory extraction failed.",
+      })
+    );
+  }
+}
+
+export async function POST(request: Request) {
+  const contentType = request.headers.get("content-type") || "";
+
+  if (contentType.includes("multipart/form-data")) {
+    try {
+      const formData = await request.formData();
+      const file = formData.get("file");
+
+      if (!(file instanceof File)) {
+        return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
+      }
+
+      const extracted = await extractFileText(file);
+      const cleanedCv = normalizeCvText(extracted);
+
+      return NextResponse.json({
+        text: extracted,
+        cvText: extracted,
+        content: extracted,
+        fileName: file.name,
+        chars: extracted.length,
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : "Could not extract text from this file.",
+        },
+        { status: 422 }
+      );
+    }
+  }
+
+  const body = (await request.json().catch(() => ({}))) as RequestBody;
+  return buildMemoryFromJson(body);
 }

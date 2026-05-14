@@ -1,0 +1,80 @@
+"use client";
+
+export type WorkZoEventName =
+  | "page_view"
+  | "cv_uploaded"
+  | "cv_memory_ready"
+  | "interview_room_viewed"
+  | "interview_started"
+  | "answer_submitted"
+  | "voice_started"
+  | "voice_stopped"
+  | "voice_interruption"
+  | "results_viewed"
+  | "setup_cleared"
+  | "product_hunt_asset_viewed";
+
+export type WorkZoAnalyticsPayload = {
+  event: WorkZoEventName;
+  sessionId?: string;
+  setupId?: string;
+  role?: string;
+  market?: string;
+  recruiter?: string;
+  mode?: "text" | "voice";
+  score?: number;
+  trust?: number;
+  pressure?: number;
+  metadata?: Record<string, unknown>;
+};
+
+function getOrCreateSessionId() {
+  if (typeof window === "undefined") return "";
+
+  const key = "workzo-analytics-session";
+  const existing = window.localStorage.getItem(key);
+
+  if (existing) return existing;
+
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
+  window.localStorage.setItem(key, id);
+  return id;
+}
+
+export function trackWorkZoEvent(payload: WorkZoAnalyticsPayload) {
+  if (typeof window === "undefined") return;
+
+  const body = {
+    ...payload,
+    sessionId: payload.sessionId || getOrCreateSessionId(),
+    path: window.location.pathname,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString(),
+  };
+
+  try {
+    const serialized = JSON.stringify(body);
+
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon("/api/analytics", new Blob([serialized], { type: "application/json" }));
+      return;
+    }
+
+    void fetch("/api/analytics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: serialized,
+      keepalive: true,
+    });
+  } catch {
+    // Analytics must never break the user flow.
+  }
+}
+
+export function getWorkZoAnalyticsSessionId() {
+  return getOrCreateSessionId();
+}

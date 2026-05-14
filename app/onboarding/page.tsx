@@ -25,6 +25,7 @@ import {
 import { ChangeEvent, useMemo, useState } from "react";
 
 import { useInterviewStore } from "@/store/interviewStore";
+import { buildAndSaveInterviewSetup } from "@/lib/workzoCvClient";
 
 type Market = "Global" | "Germany" | "US" | "UK" | "India" | "Netherlands";
 type CompanyStyle = "Realistic" | "Startup" | "Corporate" | "Technical" | "Consulting";
@@ -44,6 +45,12 @@ type SetupState = {
   recruiterStyle?: string;
   recruiterPersonality?: string;
   language?: string;
+  recruiterMemoryProfile?: unknown;
+  jobMemoryProfile?: unknown;
+  setupVersion?: number;
+  setupId?: string;
+  updatedAt?: string;
+  source?: string;
 };
 
 type CardIcon = typeof FileText;
@@ -176,8 +183,13 @@ function saveSetupToStore(nextSetup: SetupState, store: unknown) {
   }
 
   try {
-    window.localStorage.setItem("workzo-interview-setup", JSON.stringify(nextSetup));
-    window.localStorage.setItem("workzo_setup", JSON.stringify(nextSetup));
+    window.localStorage.setItem("workzo-interview-setup-v4", JSON.stringify(nextSetup));
+    window.localStorage.removeItem("workzo-interview-setup-v3");
+    window.localStorage.removeItem("workzo-interview-setup-v2");
+    window.localStorage.removeItem("workzo-interview-setup");
+    window.localStorage.removeItem("workzo_setup");
+    window.localStorage.removeItem("workzo-onboarding");
+    window.localStorage.removeItem("workzo_onboarding");
   } catch {
     // localStorage may be blocked. The Zustand state update above is enough for the active session.
   }
@@ -219,23 +231,41 @@ export default function OnboardingPage() {
 
   const currentStepLabel = steps.find((item) => item.id === step)?.label || "Setup";
 
-  function buildSetup(): SetupState {
-    return {
-      ...setup,
-      cvText: manualCv || setup.cvText || "",
-      targetRole: role || "General Role",
-      jobDescription,
-      targetMarket: market,
-      country: market,
-      companyStyle,
-      recruiterStyle: companyStyle,
-      recruiterPersonality: recruiter,
-      language: setup.language || "English",
-    };
-  }
+  async function persist(nextStep?: number) {
+    const cvText = (manualCv || setup.cvText || "").trim();
+    const jdText = jobDescription.trim();
 
-  function persist(nextStep?: number) {
-    saveSetupToStore(buildSetup(), store);
+    let nextSetup: SetupState;
+
+    // Do NOT call /api/cv unless there is actual CV or JD text.
+    // This prevents "CV text or job description is required."
+    if (cvText.length > 0 || jdText.length > 0) {
+      nextSetup = (await buildAndSaveInterviewSetup({
+        cvText,
+        jobDescription: jdText,
+        targetRole: role || "General Role",
+        targetMarket: market,
+        companyStyle,
+        recruiterPersonality: recruiter,
+        language: setup.language || "English",
+      })) as SetupState;
+    } else {
+      nextSetup = {
+        ...setup,
+        cvText: "",
+        jobDescription: "",
+        targetRole: role || "General Role",
+        targetMarket: market,
+        country: market,
+        companyStyle,
+        recruiterStyle: companyStyle,
+        recruiterPersonality: recruiter,
+        language: setup.language || "English",
+      };
+    }
+
+    saveSetupToStore(nextSetup, store);
+
     if (nextStep) setStep(nextStep);
   }
 
@@ -267,14 +297,38 @@ export default function OnboardingPage() {
         throw new Error("PDF uploaded, but no readable CV text was found. Paste the CV text manually.");
       }
 
-      setManualCv(extracted);
-      saveSetupToStore(
-        {
-          ...buildSetup(),
-          cvText: extracted,
-        },
-        store
-      );
+      const cleanedExtracted = extracted.trim();
+      setManualCv(cleanedExtracted);
+
+      if (cleanedExtracted || jobDescription.trim()) {
+        const nextSetup = await buildAndSaveInterviewSetup({
+          cvText: cleanedExtracted,
+          jobDescription: jobDescription.trim(),
+          targetRole: role || "General Role",
+          targetMarket: market,
+          companyStyle,
+          recruiterPersonality: recruiter,
+          language: setup.language || "English",
+        });
+
+        saveSetupToStore(nextSetup as SetupState, store);
+      } else {
+        saveSetupToStore(
+          {
+            ...setup,
+            cvText: "",
+            jobDescription,
+            targetRole: role || "General Role",
+            targetMarket: market,
+            country: market,
+            companyStyle,
+            recruiterStyle: companyStyle,
+            recruiterPersonality: recruiter,
+            language: setup.language || "English",
+          },
+          store
+        );
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -287,21 +341,21 @@ export default function OnboardingPage() {
     }
   }
 
-  function next() {
-    persist(Math.min(5, step + 1));
+  async function next() {
+    await persist(Math.min(5, step + 1));
   }
 
   function back() {
     setStep(Math.max(1, step - 1));
   }
 
-  function startInterview() {
-    persist();
+  async function startInterview() {
+    await persist();
     router.push("/interview");
   }
 
   return (
-    <main className="h-screen overflow-hidden bg-[#020712] text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#020712] text-white">
       <style jsx global>{`
         @keyframes wzPulseBar {
           0%, 100% { transform: scaleY(0.72); opacity: 0.72; }
@@ -345,8 +399,8 @@ export default function OnboardingPage() {
         <div className="absolute bottom-[-260px] left-1/2 h-[560px] w-[560px] -translate-x-1/2 rounded-full bg-indigo-600/12 blur-[130px]" />
       </div>
 
-      <div className="relative z-10 mx-auto flex h-screen max-w-[1480px] flex-col px-5 py-3">
-        <header className="flex h-[60px] shrink-0 items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-5 shadow-[0_18px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1480px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3 sm:px-5">
+        <header className="flex min-h-[60px] shrink-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 sm:px-5 shadow-[0_18px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
           <Link href="/" className="flex items-center gap-3 text-slate-200 transition hover:text-white">
             <ArrowLeft className="h-5 w-5" />
             <span className="font-black">Onboarding</span>
@@ -360,7 +414,7 @@ export default function OnboardingPage() {
               return (
                 <div key={item.id} className="flex items-center gap-3">
                   <button
-                    onClick={() => persist(item.id)}
+                    onClick={() => void persist(item.id)}
                     className={cn(
                       "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black transition",
                       complete && "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
@@ -386,11 +440,11 @@ export default function OnboardingPage() {
           </Link>
         </header>
 
-        <section className="grid min-h-0 flex-1 gap-4 py-3 lg:grid-cols-[1fr_0.82fr]">
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-[26px] border border-white/10 bg-white/[0.045] shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
-            <div className="min-h-0 flex-1 overflow-hidden p-5">
+        <section className="grid flex-1 gap-4 py-3 lg:min-h-0 lg:grid-cols-[1fr_0.82fr]">
+          <div className="flex flex-col overflow-visible rounded-[26px] lg:min-h-0 lg:overflow-hidden border border-white/10 bg-white/[0.045] shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
+            <div className="flex-1 overflow-visible p-5 lg:min-h-0 lg:overflow-hidden">
               {step === 1 && (
-                <div className="flex h-full min-h-0 flex-col">
+                <div className="flex min-h-[460px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/18 text-blue-200">
                       <Upload className="h-6 w-6" />
@@ -448,7 +502,7 @@ export default function OnboardingPage() {
               )}
 
               {step === 2 && (
-                <div className="flex h-full min-h-0 flex-col">
+                <div className="flex min-h-[460px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/16 text-cyan-200">
                       <Briefcase className="h-6 w-6" />
@@ -578,7 +632,7 @@ export default function OnboardingPage() {
               )}
 
               {step === 4 && (
-                <div className="flex h-full min-h-0 flex-col">
+                <div className="flex min-h-[460px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/16 text-emerald-200">
                       <ShieldCheck className="h-6 w-6" />
@@ -642,7 +696,7 @@ export default function OnboardingPage() {
                     </p>
 
                     <button
-                      onClick={startInterview}
+                      onClick={() => void startInterview()}
                       className="mt-8 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-8 text-base font-black text-white shadow-[0_18px_45px_rgba(14,165,233,0.34)] transition hover:scale-[1.02]"
                     >
                       Enter Interview Room
@@ -664,7 +718,7 @@ export default function OnboardingPage() {
 
               {step < 5 ? (
                 <button
-                  onClick={next}
+                  onClick={() => void next()}
                   className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-6 py-2.5 text-sm font-black text-white shadow-[0_14px_34px_rgba(37,99,235,0.30)] transition hover:scale-[1.02]"
                 >
                   Continue
@@ -672,10 +726,12 @@ export default function OnboardingPage() {
                 </button>
               ) : (
                 <button
-                  onClick={startInterview}
-                  className="inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-6 py-2.5 text-sm font-black text-white shadow-[0_14px_34px_rgba(37,99,235,0.30)] transition hover:scale-[1.02]"
+                  type="button"
+                  onClick={() => router.push("/dashboard")}
+                  className="..."
                 >
-                  Start Interview
+
+                  Go to Dashboard
                   <ChevronRight className="h-4 w-4" />
                 </button>
               )}
