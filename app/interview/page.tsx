@@ -516,7 +516,7 @@ function TranscriptCard({ transcript, recruiterName, recruiterRole }: { transcri
                   ? "You"
                   : item.role === "system"
                     ? "System"
-                    : "AI Recruiter"}
+                    : `${recruiterName} · ${recruiterRole}`}
               </p>
               <p className="text-xs text-slate-500">{item.time}</p>
             </div>
@@ -750,45 +750,85 @@ export default function InterviewPage() {
 
       vapi.on("error", (error: unknown) => {
         const message =
-          error instanceof Error ? error.message : "Standard voice failed.";
-        setVoiceError(message);
+          error instanceof Error
+            ? error.message
+            : "Standard voice failed.";
+
+        console.warn("Vapi voice error:", message);
+
+        setVoiceError(
+          "Standard voice could not access microphone. Please allow mic access or try Live Video.",
+        );
+
         setVoiceStatus("Voice unavailable");
         setIsLive(false);
+
+        if (
+          message.includes("WASM_OR_WORKER_NOT_READY") ||
+          message.includes("Meeting has ended") ||
+          message.includes("AudioWorkletNode") ||
+          message.includes("enumerateDevices")
+        ) {
+          setMode("video");
+        }
       });
 
       const liveRecruiterProfile = getRecruiterVoiceProfile(setup.recruiterPersonality);
-      const startPayload = {
-        variableValues: {
-          recruiterName: liveRecruiterProfile.name,
-          recruiterRole: liveRecruiterProfile.role,
-          targetRole: getRole(setup),
-          targetMarket: setup.targetMarket || "Global",
-          candidateCv: buildCandidateContext(setup),
-          jobDescription: buildJobContext(setup),
-          recruiterInstructions: buildRecruiterSystemPrompt(
-            setup,
-            liveRecruiterProfile.name,
-            liveRecruiterProfile.role,
-          ),
-        },
-      };
+      const recruiterInstructions = buildRecruiterSystemPrompt(
+        setup,
+        liveRecruiterProfile.name,
+        liveRecruiterProfile.role,
+      );
 
       try {
-        await vapi.start(assistantId, startPayload);
+        window.localStorage.setItem(
+          "workzo-active-recruiter-prompt",
+          recruiterInstructions,
+        );
       } catch {
-        // Some Vapi assistant configurations reject runtime variable payloads.
-        // Fall back to assistant-only start so the voice call can still begin.
-        await vapi.start(assistantId);
+        // ignore prompt storage errors
       }
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Could not start standard voice. Check Vapi public key and assistant ID.";
-      setVoiceError(message || "Standard voice failed. Check Vapi public key and assistant ID.");
-      setVoiceStatus("Voice unavailable");
-      setIsLive(false);
-    }
+
+      try {
+
+        await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        });
+
+        await vapi.start(assistantId);
+      } catch (startError) {
+        console.warn("Vapi start failed:", startError);
+        throw new Error(
+          "Standard voice failed. Check Vapi public key, assistant ID, and assistant status in Vapi.",
+        );
+      }
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Could not start standard voice. Check Vapi public key and assistant ID.";
+
+          const micOrAudioError =
+            message.includes("Permission denied") ||
+            message.includes("NotAllowedError") ||
+            message.includes("AudioWorkletNode") ||
+            message.includes("enumerateDevices") ||
+            message.includes("WASM_OR_WORKER_NOT_READY") ||
+            message.includes("Meeting has ended");
+
+          setVoiceError(
+            micOrAudioError
+              ? "Standard voice could not access microphone. Please allow mic access or try Live Video."
+              : message,
+          );
+
+          setVoiceStatus("Voice unavailable");
+          setIsLive(false);
+
+          if (micOrAudioError) {
+            setMode("video");
+          }
+        }
   }, [persistResults]);
 
   const endInterview = useCallback(() => {
