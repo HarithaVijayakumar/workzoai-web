@@ -389,7 +389,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="wz-mobile-no-animation wz-mobile-bottom-safe h-screen overflow-hidden bg-[#020712] text-white">
+    <main className="wz-mobile-no-animation wz-mobile-bottom-safe min-h-screen overflow-x-hidden bg-[#020712] text-white">
       <style jsx global>{`
         @keyframes wzPulseBar {
           0%, 100% { transform: scaleY(0.72); opacity: 0.72; }
@@ -433,7 +433,7 @@ export default function OnboardingPage() {
         <div className="absolute bottom-[-260px] left-1/2 h-[560px] w-[560px] -translate-x-1/2 rounded-full bg-indigo-600/12 blur-[130px]" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1480px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3 sm:px-5">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1480px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-3 sm:px-5 lg:h-screen lg:overflow-hidden">
         <header className="flex min-h-[60px] shrink-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 sm:px-5 shadow-[0_18px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
           <Link href="/" className="flex items-center gap-3 text-slate-200 transition hover:text-white">
             <ArrowLeft className="h-5 w-5" />
@@ -476,9 +476,9 @@ export default function OnboardingPage() {
 
         <section className="grid flex-1 gap-4 overflow-visible py-3 lg:min-h-0 lg:overflow-hidden lg:grid-cols-[1fr_0.82fr]">
           <div className="flex flex-col overflow-visible rounded-[22px] border border-white/10 bg-white/[0.045] shadow-[0_22px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl lg:min-h-0 lg:overflow-hidden lg:rounded-[26px]">
-            <div className="flex-1 overflow-visible p-4 lg:min-h-0 lg:overflow-hidden lg:p-5">
+            <div className="flex-1 overflow-visible p-4 lg:min-h-0 lg:overflow-y-auto lg:p-5">
               {step === 1 && (
-                <div className="flex min-h-[240px] lg:min-h-[240px] lg:h-[360px] flex-col lg:h-full lg:min-h-0">
+                <div className="flex min-h-[520px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/18 text-blue-200">
                       <Upload className="h-6 w-6" />
@@ -530,7 +530,7 @@ export default function OnboardingPage() {
                     value={manualCv}
                     onChange={(event) => setManualCv(event.target.value)}
                     placeholder="Or paste your CV text here..."
-                    className="mt-3 h-[250px] shrink-0 resize-none rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.10),transparent_34%),#050b16] p-5 text-sm leading-6 text-white outline-none placeholder:text-slate-600 focus:border-blue-400/50"
+                    className="mt-3 h-[260px] min-h-[220px] shrink-0 resize-none overflow-y-auto rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.10),transparent_34%),#050b16] p-5 text-sm leading-6 text-white outline-none placeholder:text-slate-600 focus:border-blue-400/50 lg:h-[300px]"
                   />
                 </div>
               )}
@@ -730,10 +730,10 @@ export default function OnboardingPage() {
                     </p>
 
                     <button
-                      onClick={() => router.push("/dashboard")}
+                      onClick={() => void startInterview()}
                       className="mt-8 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-8 text-base font-black text-white shadow-[0_18px_45px_rgba(14,165,233,0.34)] transition hover:scale-[1.02]"
                     >
-                      Enter Interview Room
+                      Start Interview
                       <ArrowRight className="h-5 w-5" />
                     </button>
                   </div>
@@ -760,7 +760,7 @@ export default function OnboardingPage() {
                 </button>
               ) : (
                 <button
-                  onClick={() => void startInterview()}
+                  onClick={() => router.push("/dashboard")}
                   className="inline-flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-5 text-sm font-black text-white shadow-[0_10px_28px_rgba(37,99,235,0.26)] transition hover:scale-[1.02] lg:h-11 lg:px-6"
                 >
                   Go to Dashboard
