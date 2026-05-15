@@ -25,6 +25,7 @@ import {
 import { ChangeEvent, useMemo, useState } from "react";
 
 import { useInterviewStore } from "@/store/interviewStore";
+import { buildAndSaveInterviewSetup } from "@/lib/workzoCvClient";
 
 type Market = "Global" | "Germany" | "US" | "UK" | "India" | "Netherlands";
 type CompanyStyle = "Realistic" | "Startup" | "Corporate" | "Technical" | "Consulting";
@@ -32,7 +33,7 @@ type RecruiterKey =
   | "friendly_hr"
   | "analytical_hiring_manager"
   | "startup_recruiter"
-  | "corporate_recruiter";
+  | "german_corporate";
 
 type SetupState = {
   cvText?: string;
@@ -44,6 +45,12 @@ type SetupState = {
   recruiterStyle?: string;
   recruiterPersonality?: string;
   language?: string;
+  recruiterMemoryProfile?: unknown;
+  jobMemoryProfile?: unknown;
+  setupVersion?: number;
+  setupId?: string;
+  updatedAt?: string;
+  source?: string;
 };
 
 type CardIcon = typeof FileText;
@@ -106,7 +113,7 @@ const recruiters: {
     description: "Fast-paced, practical, and ownership-focused.",
   },
   {
-    key: "corporate_recruiter",
+    key: "german_corporate",
     name: "Markus",
     role: "Corporate Recruiter",
     avatar: "👨🏼‍💼",
@@ -140,8 +147,29 @@ function cn(...classes: Array<string | false | null | undefined>) {
 }
 
 function recruiterLabel(key?: string) {
-  const recruiter = recruiters.find((item) => item.key === key);
+  const normalized = normalizeRecruiterKey(key);
+  const recruiter = recruiters.find((item) => item.key === normalized);
   return recruiter ? `${recruiter.name} · ${recruiter.role}` : "Daniel · Hiring Manager";
+}
+
+function normalizeRecruiterKey(value?: unknown): RecruiterKey {
+  if (typeof value !== "string") return "analytical_hiring_manager";
+
+  const raw = value.trim().toLowerCase();
+  const key = raw.replace(/·/g, " ").replace(/-/g, "_").replace(/\s+/g, "_");
+
+  if (key === "friendly_hr" || raw.includes("sarah")) return "friendly_hr";
+  if (key === "analytical_hiring_manager" || raw.includes("daniel")) return "analytical_hiring_manager";
+  if (key === "startup_recruiter" || raw.includes("priya")) return "startup_recruiter";
+  if (
+    key === "german_corporate" ||
+    key === "corporate_recruiter" ||
+    raw.includes("markus")
+  ) {
+    return "german_corporate";
+  }
+
+  return "analytical_hiring_manager";
 }
 
 function compactText(value?: string, fallback = "Missing") {
@@ -156,6 +184,13 @@ function getStoreSetup(store: unknown): SetupState {
 }
 
 function saveSetupToStore(nextSetup: SetupState, store: unknown) {
+  const normalizedSetup: SetupState = {
+    ...nextSetup,
+    recruiterPersonality: normalizeRecruiterKey(nextSetup.recruiterPersonality),
+    targetMarket: nextSetup.targetMarket || nextSetup.country || "Global",
+    country: nextSetup.targetMarket || nextSetup.country || "Global",
+  };
+
   const storeAny = store as {
     setSetup?: (setup: SetupState) => void;
     updateSetup?: (setup: SetupState) => void;
@@ -164,20 +199,29 @@ function saveSetupToStore(nextSetup: SetupState, store: unknown) {
   };
 
   if (typeof storeAny.setSetup === "function") {
-    storeAny.setSetup(nextSetup);
+    storeAny.setSetup(normalizedSetup);
   } else if (typeof storeAny.updateSetup === "function") {
-    storeAny.updateSetup(nextSetup);
+    storeAny.updateSetup(normalizedSetup);
   } else if (typeof storeAny.saveSetup === "function") {
-    storeAny.saveSetup(nextSetup);
+    storeAny.saveSetup(normalizedSetup);
   } else if (typeof storeAny.setInterviewSetup === "function") {
-    storeAny.setInterviewSetup(nextSetup);
+    storeAny.setInterviewSetup(normalizedSetup);
   } else {
-    useInterviewStore.setState({ setup: nextSetup } as never);
+    useInterviewStore.setState({ setup: normalizedSetup } as never);
   }
 
   try {
-    window.localStorage.setItem("workzo-interview-setup", JSON.stringify(nextSetup));
-    window.localStorage.setItem("workzo_setup", JSON.stringify(nextSetup));
+    const cleanSetup = normalizedSetup;
+
+    window.localStorage.setItem("workzo-interview-setup-v4", JSON.stringify(cleanSetup));
+    window.localStorage.setItem("workzo-latest-interview-setup", JSON.stringify(cleanSetup));
+    window.localStorage.setItem("workzo-interview-setup-latest", JSON.stringify(cleanSetup));
+    window.localStorage.removeItem("workzo-interview-setup-v3");
+    window.localStorage.removeItem("workzo-interview-setup-v2");
+    window.localStorage.removeItem("workzo-interview-setup");
+    window.localStorage.removeItem("workzo_setup");
+    window.localStorage.removeItem("workzo-onboarding");
+    window.localStorage.removeItem("workzo_onboarding");
   } catch {
     // localStorage may be blocked. The Zustand state update above is enough for the active session.
   }
@@ -197,7 +241,9 @@ export default function OnboardingPage() {
   const [jobDescription, setJobDescription] = useState(setup.jobDescription || "");
   const [market, setMarket] = useState<Market>((setup.targetMarket as Market) || (setup.country as Market) || "Global");
   const [companyStyle, setCompanyStyle] = useState<CompanyStyle>((setup.companyStyle as CompanyStyle) || (setup.recruiterStyle as CompanyStyle) || "Realistic");
-  const [recruiter, setRecruiter] = useState<RecruiterKey>((setup.recruiterPersonality as RecruiterKey) || "analytical_hiring_manager");
+  const [recruiter, setRecruiter] = useState<RecruiterKey>(
+    normalizeRecruiterKey(setup.recruiterPersonality)
+  );
 
   const readiness = useMemo(() => {
     const cvReady = Boolean((manualCv || setup.cvText || "").trim());
@@ -219,23 +265,41 @@ export default function OnboardingPage() {
 
   const currentStepLabel = steps.find((item) => item.id === step)?.label || "Setup";
 
-  function buildSetup(): SetupState {
-    return {
-      ...setup,
-      cvText: manualCv || setup.cvText || "",
-      targetRole: role || "General Role",
-      jobDescription,
-      targetMarket: market,
-      country: market,
-      companyStyle,
-      recruiterStyle: companyStyle,
-      recruiterPersonality: recruiter,
-      language: setup.language || "English",
-    };
-  }
+  async function persist(nextStep?: number) {
+    const cvText = (manualCv || setup.cvText || "").trim();
+    const jdText = jobDescription.trim();
 
-  function persist(nextStep?: number) {
-    saveSetupToStore(buildSetup(), store);
+    let nextSetup: SetupState;
+
+    // Do NOT call /api/cv unless there is actual CV or JD text.
+    // This prevents "CV text or job description is required."
+    if (cvText.length > 0 || jdText.length > 0) {
+      nextSetup = (await buildAndSaveInterviewSetup({
+        cvText,
+        jobDescription: jdText,
+        targetRole: role || "General Role",
+        targetMarket: market,
+        companyStyle,
+        recruiterPersonality: normalizeRecruiterKey(recruiter),
+        language: setup.language || "English",
+      })) as SetupState;
+    } else {
+      nextSetup = {
+        ...setup,
+        cvText: "",
+        jobDescription: "",
+        targetRole: role || "General Role",
+        targetMarket: market,
+        country: market,
+        companyStyle,
+        recruiterStyle: companyStyle,
+        recruiterPersonality: normalizeRecruiterKey(recruiter),
+        language: setup.language || "English",
+      };
+    }
+
+    saveSetupToStore(nextSetup, store);
+
     if (nextStep) setStep(nextStep);
   }
 
@@ -267,14 +331,38 @@ export default function OnboardingPage() {
         throw new Error("PDF uploaded, but no readable CV text was found. Paste the CV text manually.");
       }
 
-      setManualCv(extracted);
-      saveSetupToStore(
-        {
-          ...buildSetup(),
-          cvText: extracted,
-        },
-        store
-      );
+      const cleanedExtracted = extracted.trim();
+      setManualCv(cleanedExtracted);
+
+      if (cleanedExtracted || jobDescription.trim()) {
+        const nextSetup = await buildAndSaveInterviewSetup({
+          cvText: cleanedExtracted,
+          jobDescription: jobDescription.trim(),
+          targetRole: role || "General Role",
+          targetMarket: market,
+          companyStyle,
+          recruiterPersonality: normalizeRecruiterKey(recruiter),
+          language: setup.language || "English",
+        });
+
+        saveSetupToStore(nextSetup as SetupState, store);
+      } else {
+        saveSetupToStore(
+          {
+            ...setup,
+            cvText: "",
+            jobDescription,
+            targetRole: role || "General Role",
+            targetMarket: market,
+            country: market,
+            companyStyle,
+            recruiterStyle: companyStyle,
+            recruiterPersonality: normalizeRecruiterKey(recruiter),
+            language: setup.language || "English",
+          },
+          store
+        );
+      }
     } catch (error) {
       const message =
         error instanceof Error
@@ -287,21 +375,21 @@ export default function OnboardingPage() {
     }
   }
 
-  function next() {
-    persist(Math.min(5, step + 1));
+  async function next() {
+    await persist(Math.min(5, step + 1));
   }
 
   function back() {
     setStep(Math.max(1, step - 1));
   }
 
-  function startInterview() {
-    persist();
+  async function startInterview() {
+    await persist();
     router.push("/interview");
   }
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-[#020712] text-white">
+    <main className="wz-mobile-no-animation wz-mobile-bottom-safe h-screen overflow-hidden bg-[#020712] text-white">
       <style jsx global>{`
         @keyframes wzPulseBar {
           0%, 100% { transform: scaleY(0.72); opacity: 0.72; }
@@ -360,7 +448,7 @@ export default function OnboardingPage() {
               return (
                 <div key={item.id} className="flex items-center gap-3">
                   <button
-                    onClick={() => persist(item.id)}
+                    onClick={() => void persist(item.id)}
                     className={cn(
                       "flex h-10 w-10 items-center justify-center rounded-full border text-sm font-black transition",
                       complete && "border-emerald-400/35 bg-emerald-400/12 text-emerald-200",
@@ -386,11 +474,11 @@ export default function OnboardingPage() {
           </Link>
         </header>
 
-        <section className="grid min-h-0 flex-1 gap-4 overflow-hidden py-3 pb-20 lg:grid-cols-[1fr_0.82fr]">
-          <div className="flex min-h-0 flex-col overflow-hidden rounded-[26px] border border-white/10 bg-white/[0.045] shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
-            <div className="min-h-0 flex-1 overflow-y-auto p-5 pb-28 lg:h-[calc(100vh-210px)]">
+        <section className="grid flex-1 gap-4 overflow-visible py-3 lg:min-h-0 lg:overflow-hidden lg:grid-cols-[1fr_0.82fr]">
+          <div className="flex flex-col overflow-visible rounded-[22px] border border-white/10 bg-white/[0.045] shadow-[0_22px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl lg:min-h-0 lg:overflow-hidden lg:rounded-[26px]">
+            <div className="flex-1 overflow-visible p-4 lg:min-h-0 lg:overflow-hidden lg:p-5">
               {step === 1 && (
-                <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
+                <div className="flex min-h-[240px] lg:min-h-[240px] lg:h-[360px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/18 text-blue-200">
                       <Upload className="h-6 w-6" />
@@ -442,13 +530,13 @@ export default function OnboardingPage() {
                     value={manualCv}
                     onChange={(event) => setManualCv(event.target.value)}
                     placeholder="Or paste your CV text here..."
-                    className="mt-3 h-[220px] shrink-0 resize-none rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.10),transparent_34%),#050b16] p-5 text-sm leading-6 text-white outline-none placeholder:text-slate-600 focus:border-blue-400/50"
+                    className="mt-3 h-[250px] shrink-0 resize-none rounded-3xl border border-white/10 bg-[radial-gradient(circle_at_20%_0%,rgba(59,130,246,0.10),transparent_34%),#050b16] p-5 text-sm leading-6 text-white outline-none placeholder:text-slate-600 focus:border-blue-400/50"
                   />
                 </div>
               )}
 
               {step === 2 && (
-                <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
+                <div className="flex min-h-[240px] lg:min-h-[240px] lg:h-[360px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-500/16 text-cyan-200">
                       <Briefcase className="h-6 w-6" />
@@ -501,7 +589,7 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5">
+                  <div className="mt-4">
                     <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-500">Target market</p>
                     <div className="mt-3 flex flex-wrap gap-2.5">
                       {markets.map((item) => (
@@ -522,7 +610,7 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5">
+                  <div className="mt-4">
                     <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-500">Company style</p>
                     <div className="mt-3 flex flex-wrap gap-2.5">
                       {companyStyles.map((item) => (
@@ -542,13 +630,13 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid min-h-0 gap-3 overflow-y-auto pr-1 sm:grid-cols-2">
+                  <div className="mt-3 grid min-h-0 gap-2.5 overflow-y-auto pr-1 sm:grid-cols-2">
                     {recruiters.map((item) => (
                       <button
                         key={item.key}
                         onClick={() => setRecruiter(item.key)}
                         className={cn(
-                          "relative min-h-[138px] rounded-[22px] border p-3 text-left transition",
+                          "relative min-h-[150px] rounded-[24px] border p-3 text-left transition",
                           recruiter === item.key
                             ? "border-cyan-300 bg-gradient-to-br from-blue-500/22 to-indigo-500/12 shadow-[0_0_34px_rgba(34,211,238,0.20)]"
                             : "border-white/10 bg-white/[0.04] hover:bg-white/[0.07]"
@@ -560,11 +648,11 @@ export default function OnboardingPage() {
                           </span>
                         )}
                         <div className="flex items-start justify-between gap-3">
-                          <div className="pr-16">
-                            <h3 className="font-black">{item.name} · {item.role}</h3>
-                            <p className="mt-1 text-[13px] leading-5 text-slate-400">{item.description}</p>
+                          <div className="pr-14">
+                            <h3 className="text-[15px] font-black leading-5">{item.name} · {item.role}</h3>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">{item.description}</p>
                           </div>
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-lg">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-white/10 text-base">
                             {item.avatar}
                           </div>
                         </div>
@@ -578,7 +666,7 @@ export default function OnboardingPage() {
               )}
 
               {step === 4 && (
-                <div className="flex min-h-0 flex-col lg:h-full lg:min-h-0">
+                <div className="flex min-h-[240px] lg:min-h-[240px] lg:h-[360px] flex-col lg:h-full lg:min-h-0">
                   <div className="flex items-center gap-4">
                     <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500/16 text-emerald-200">
                       <ShieldCheck className="h-6 w-6" />
@@ -642,7 +730,7 @@ export default function OnboardingPage() {
                     </p>
 
                     <button
-                      onClick={startInterview}
+                      onClick={() => router.push("/dashboard")}
                       className="mt-8 inline-flex h-14 items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-500 to-cyan-400 px-8 text-base font-black text-white shadow-[0_18px_45px_rgba(14,165,233,0.34)] transition hover:scale-[1.02]"
                     >
                       Enter Interview Room
@@ -653,36 +741,36 @@ export default function OnboardingPage() {
               )}
             </div>
 
-            <div className="fixed inset-x-4 bottom-4 z-[95] mx-auto flex h-[58px] max-w-[900px] items-center justify-between rounded-[24px] border border-white/10 bg-slate-950/88 px-4 shadow-[0_24px_90px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:px-5">
+            <div className="flex h-[54px] shrink-0 items-center justify-between border-t border-white/10 bg-gradient-to-r from-white/[0.02] via-blue-500/5 to-indigo-500/8 px-5 backdrop-blur-xl">
               <button
                 onClick={back}
                 disabled={step === 1}
-                className="h-11 rounded-2xl border border-white/10 bg-white/[0.06] px-5 text-sm font-bold text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+                className="h-10 rounded-2xl border border-white/10 bg-white/[0.04] px-4 text-sm font-bold text-slate-300 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 lg:h-11 lg:px-5"
               >
                 Back
               </button>
 
               {step < 5 ? (
                 <button
-                  onClick={next}
-                  className="inline-flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-6 text-sm font-black text-white shadow-[0_14px_34px_rgba(37,99,235,0.30)] transition hover:scale-[1.02]"
+                  onClick={() => void next()}
+                  className="inline-flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-5 text-sm font-black text-white shadow-[0_10px_28px_rgba(37,99,235,0.26)] transition hover:scale-[1.02] lg:h-11 lg:px-6"
                 >
                   Continue
                   <ChevronRight className="h-4 w-4" />
                 </button>
               ) : (
                 <button
-                  onClick={startInterview}
-                  className="inline-flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-6 text-sm font-black text-white shadow-[0_14px_34px_rgba(37,99,235,0.30)] transition hover:scale-[1.02]"
+                  onClick={() => void startInterview()}
+                  className="inline-flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-5 text-sm font-black text-white shadow-[0_10px_28px_rgba(37,99,235,0.26)] transition hover:scale-[1.02] lg:h-11 lg:px-6"
                 >
-                  Start Interview
+                  Go to Dashboard
                   <ChevronRight className="h-4 w-4" />
                 </button>
               )}
             </div>
           </div>
 
-          <aside className="min-h-0 overflow-hidden rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl">
+          <aside className="hidden min-h-0 rounded-[26px] border border-white/10 bg-white/[0.04] p-4 shadow-[0_30px_110px_rgba(0,0,0,0.38)] backdrop-blur-2xl lg:block">
             <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-[24px] border border-white/10 bg-[#050b16] p-4">
               <div className="pointer-events-none absolute inset-0">
                 <div className="absolute left-1/2 top-28 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-500/18 blur-[80px]" />
@@ -696,11 +784,11 @@ export default function OnboardingPage() {
                     <Wand2 className="h-3.5 w-3.5" />
                     AI setup engine
                   </div>
-                  <h2 className="mt-3 text-2xl font-black tracking-tight">
-                    Preparing recruiter intelligence
+                  <h2 className="mt-2 text-xl font-black tracking-tight">
+                    Recruiter setup is being prepared
                   </h2>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">
-                    WorkZo is assembling your CV, role, market, and recruiter style into one interview simulation.
+                  <p className="wz-mobile-compact-subtitle mt-1.5 max-w-md text-sm leading-6 text-slate-400">
+                    WorkZo turns your CV, role, market, and recruiter style into one realistic interview setup.
                   </p>
                 </div>
 
@@ -709,10 +797,10 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              <div className="relative z-10 mt-3 rounded-3xl border border-white/10 bg-slate-950/55 p-3.5 shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
+              <div className="relative z-10 mt-3 rounded-3xl border border-white/10 bg-slate-950/55 p-3 shadow-[0_20px_80px_rgba(0,0,0,0.28)]">
                 <div className="pointer-events-none absolute inset-x-4 top-0 h-16 rounded-full bg-cyan-300/10 blur-2xl" />
 
-                <div className="relative overflow-hidden rounded-2xl border border-cyan-300/15 bg-black/24 p-3.5">
+                <div className="relative overflow-hidden rounded-2xl border border-cyan-300/15 bg-black/24 p-3">
                   <div className="absolute inset-x-0 top-0 h-14 bg-gradient-to-b from-cyan-300/12 to-transparent [animation:wzScan_3.6s_ease-in-out_infinite]" />
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -747,7 +835,7 @@ export default function OnboardingPage() {
                     />
                   </div>
 
-                  <div className="mt-3 flex h-8 items-end gap-1 overflow-hidden">
+                  <div className="mt-2 flex h-7 items-end gap-1 overflow-hidden">
                     {waveform.map((height, index) => (
                       <span
                         key={index}
@@ -762,7 +850,7 @@ export default function OnboardingPage() {
                   </div>
                 </div>
 
-                <div className="mt-3 grid gap-2">
+                <div className="mt-2.5 grid gap-1.5">
                   {analysisSignals.map((signal, index) => {
                     const active =
                       index === 0 ||
@@ -797,28 +885,28 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              <div className="relative z-10 mt-2 grid gap-1.5 sm:grid-cols-2">
+              <div className="relative z-10 mt-2.5 grid gap-1.5 sm:grid-cols-2">
                 {(
                   [
                     { label: "Current step", value: currentStepLabel, Icon: Sparkles },
-                    { label: "Recruiter style", value: recruiterLabel(recruiter), Icon: UserRound },
-                    { label: "Privacy", value: "CV text stays in this setup", Icon: Lock },
+                    { label: "Recruiter", value: recruiterLabel(recruiter), Icon: UserRound },
+                    { label: "Privacy", value: "CV text stays in this setup.", Icon: Lock },
                   ] satisfies PreviewCard[]
                 ).map(({ label, value, Icon }) => (
                   <div
                     key={label}
                     className={cn(
-                      "flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-1.5",
+                      "flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-white/[0.045] px-3.5 py-2",
                       label === "Privacy" && "sm:col-span-2 bg-emerald-400/8"
                     )}
                   >
                     <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/14 text-blue-200">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/14 text-blue-200">
                         <Icon className="h-4 w-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
-                        <p className="mt-1 text-sm font-bold text-white">{value}</p>
+                        <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
+                        <p className="mt-0.5 text-sm font-bold text-white">{value}</p>
                       </div>
                     </div>
                     <Check className="h-4 w-4 text-emerald-300" />
