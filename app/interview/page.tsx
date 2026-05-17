@@ -97,6 +97,32 @@ type WindowWithSpeechRecognition = Window & {
   webkitSpeechRecognition?: SpeechRecognitionConstructor;
 };
 
+
+type ElevenLabsVoiceRequest = {
+  recruiterId: RecruiterId;
+  text: string;
+};
+
+async function fetchElevenLabsAudio({
+  recruiterId,
+  text,
+}: ElevenLabsVoiceRequest) {
+  const response = await fetch("/api/elevenlabs", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ recruiterId, text }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new Error(details || "ElevenLabs voice request failed");
+  }
+
+  return response.blob();
+}
+
 type AnswerAnalysis = {
   signal:
     | "strong_metrics"
@@ -435,61 +461,6 @@ function recruiterRuntimeVoice(recruiterId: RecruiterId): RecruiterRuntimeVoice 
       "Tom",
     ],
   };
-}
-
-function isLikelyFemaleVoice(voice: SpeechSynthesisVoice) {
-  return /shimmer|aria|jenny|samantha|victoria|zira|sonia|natasha|susan|hazel|karen|moira|tessa|veena|serena|ava|emma|female/i.test(
-    `${voice.name} ${voice.voiceURI}`,
-  );
-}
-
-function isLikelyMaleVoice(voice: SpeechSynthesisVoice) {
-  return /alloy|echo|daniel|david|mark|george|alex|fred|tom|arthur|guy|male/i.test(
-    `${voice.name} ${voice.voiceURI}`,
-  );
-}
-
-function findVoiceByPreferredName(
-  voices: SpeechSynthesisVoice[],
-  preferredNames: string[],
-) {
-  for (const preferredName of preferredNames) {
-    const exact = voices.find((voice) =>
-      `${voice.name} ${voice.voiceURI}`
-        .toLowerCase()
-        .includes(preferredName.toLowerCase()),
-    );
-    if (exact) return exact;
-  }
-
-  return null;
-}
-
-function selectBrowserVoice(recruiterId: RecruiterId) {
-  if (typeof window === "undefined" || !window.speechSynthesis) return null;
-
-  const voices = window.speechSynthesis.getVoices();
-  if (!voices.length) return null;
-
-  const runtimeVoice = recruiterRuntimeVoice(recruiterId);
-  const englishVoices = voices.filter((voice) =>
-    voice.lang?.toLowerCase().startsWith("en"),
-  );
-  const pool = englishVoices.length ? englishVoices : voices;
-
-  const preferred = findVoiceByPreferredName(pool, runtimeVoice.browserVoiceNames);
-  if (preferred) return preferred;
-
-  if (runtimeVoice.gender === "female") {
-    return (
-      pool.find(isLikelyFemaleVoice) ||
-      voices.find(isLikelyFemaleVoice) ||
-      pool.find((voice) => !isLikelyMaleVoice(voice)) ||
-      null
-    );
-  }
-
-  return pool.find(isLikelyMaleVoice) || voices.find(isLikelyMaleVoice) || null;
 }
 
 function openAiVoiceIdForRecruiter(recruiterId: RecruiterId) {
@@ -1490,6 +1461,8 @@ export default function InterviewPage() {
   const [recruiterTrust, setRecruiterTrust] = useState(58);
 
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const currentRecruiterAudioRef = useRef<HTMLAudioElement | null>(null);
+  const recruiterAudioUnlockedRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isLiveRef = useRef(false);
   const questionRef = useRef(question);
@@ -1504,25 +1477,8 @@ export default function InterviewPage() {
   );
   const handleCandidateAnswerRef = useRef<(answer: string) => void>(() => {});
 
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
-
-    // Warm browser voices before the first recruiter sentence.
-    // This prevents Chrome/Edge from using a random default voice on the first attempt.
-    const warmVoices = () => {
-      window.speechSynthesis.getVoices();
-    };
-
-    warmVoices();
-    window.speechSynthesis.addEventListener("voiceschanged", warmVoices);
-
-    const warmTimer = window.setTimeout(warmVoices, 900);
-
-    return () => {
-      window.clearTimeout(warmTimer);
-      window.speechSynthesis.removeEventListener("voiceschanged", warmVoices);
-    };
-  }, []);
+  // Standard Interview now uses ElevenLabs TTS for recruiter speech.
+  // Browser SpeechRecognition is still used only for candidate answers.
 
   const recruiterProfile = useMemo(
     () => getRecruiterVoiceProfile(activeSetup.recruiterPersonality),
@@ -1562,7 +1518,10 @@ export default function InterviewPage() {
       try {
         recognitionRef.current?.stop();
       } catch {}
-      window.speechSynthesis?.cancel();
+      try {
+        currentRecruiterAudioRef.current?.pause();
+        currentRecruiterAudioRef.current = null;
+      } catch {}
     };
   }, []);
 
@@ -1594,90 +1553,108 @@ export default function InterviewPage() {
     recruiterStateRef.current = recruiterState;
   }, [recruiterState]);
 
+  const unlockRecruiterAudio = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (recruiterAudioUnlockedRef.current) return;
+
+    try {
+      const audio = currentRecruiterAudioRef.current || new Audio();
+      audio.preload = "auto";
+      audio.volume = 0;
+      audio.muted = true;
+      audio.src =
+        "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
+      currentRecruiterAudioRef.current = audio;
+
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+          .then(() => {
+            recruiterAudioUnlockedRef.current = true;
+            audio.pause();
+            audio.currentTime = 0;
+            audio.muted = false;
+            audio.volume = 1;
+          })
+          .catch(() => {
+            audio.muted = false;
+            audio.volume = 1;
+          });
+      } else {
+        recruiterAudioUnlockedRef.current = true;
+        audio.muted = false;
+        audio.volume = 1;
+      }
+    } catch {
+      // Ignore unlock failures; the normal play path will still try.
+    }
+  }, []);
+
   const addTranscript = useCallback((item: TranscriptItem) => {
     setTranscript((items) => [...items, item].slice(-40));
   }, []);
 
   const speakRecruiter = useCallback(
-    (text: string, afterSpeak?: () => void) => {
-      if (
-        typeof window === "undefined" ||
-        !window.speechSynthesis ||
-        !speakerOn
-      ) {
+    async (text: string, afterSpeak?: () => void) => {
+      if (!speakerOn) {
         afterSpeak?.();
         return;
       }
 
-      window.speechSynthesis.cancel();
+      const cleanText = softenRecruiterSpeech(text);
 
-      const speakNow = () => {
-        const utterance = new SpeechSynthesisUtterance(text);
-        const runtimeVoice = recruiterRuntimeVoice(recruiterId);
-        const voice = selectBrowserVoice(recruiterId);
-        if (voice) utterance.voice = voice;
+      try {
+        currentRecruiterAudioRef.current?.pause();
+      } catch {}
 
-        utterance.pitch = runtimeVoice.pitch;
-        utterance.rate =
-          recruiterStateRef.current === "pressuring" ||
-          recruiterStateRef.current === "skeptical"
-            ? Math.min(0.96, runtimeVoice.rate + 0.04)
-            : runtimeVoice.rate;
-        utterance.volume = 1;
+      isSpeakingRef.current = true;
+      setIsSpeaking(true);
+      setIsListening(false);
+      setVoiceStatus("Recruiter speaking...");
 
-        try {
-          console.info("WorkZo browser voice selected", {
-            recruiterId,
-            expectedDashboardVoice: runtimeVoice.voiceId,
-            browserVoice: voice?.name || "browser-default",
-            note:
-              "Standard Interview uses browser speech. Vapi dashboard voice applies to Live Interview only.",
-          });
-        } catch {}
+      try {
+        const audioBlob = await fetchElevenLabsAudio({
+          recruiterId,
+          text: cleanText,
+        });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = currentRecruiterAudioRef.current || new Audio();
+        currentRecruiterAudioRef.current = audio;
 
-        isSpeakingRef.current = true;
-        setIsSpeaking(true);
-        setIsListening(false);
-        setVoiceStatus("Recruiter speaking...");
+        audio.pause();
+        audio.src = audioUrl;
+        audio.preload = "auto";
+        audio.muted = false;
+        audio.volume = 1;
 
-        utterance.onend = () => {
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl);
           isSpeakingRef.current = false;
           setIsSpeaking(false);
           setVoiceStatus("Listening...");
           afterSpeak?.();
         };
 
-        utterance.onerror = () => {
+        audio.onerror = () => {
+          URL.revokeObjectURL(audioUrl);
           isSpeakingRef.current = false;
           setIsSpeaking(false);
+          setVoiceStatus("Voice unavailable. Continue with the interview.");
           afterSpeak?.();
         };
 
-        window.speechSynthesis.speak(utterance);
-      };
+        try {
+          audio.load();
+        } catch {}
 
-      const waitForVoices = () => {
-        let didSpeak = false;
-        const speakOnce = () => {
-          if (didSpeak) return;
-          didSpeak = true;
-          window.speechSynthesis.removeEventListener("voiceschanged", speakOnce);
-          speakNow();
-        };
-
-        window.speechSynthesis.addEventListener("voiceschanged", speakOnce);
-        window.setTimeout(speakOnce, 1200);
-      };
-
-      const voices = window.speechSynthesis.getVoices();
-      const selectedVoice = selectBrowserVoice(recruiterId);
-
-      if (!voices.length || !selectedVoice) {
-        waitForVoices();
-        return;
+        await audio.play();
+      } catch (error) {
+        console.warn("WorkZo ElevenLabs voice failed:", error);
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        setVoiceStatus("Voice unavailable. Continue with the interview.");
+        afterSpeak?.();
       }
-
-      speakNow();
     },
     [recruiterId, speakerOn],
   );
@@ -1989,15 +1966,12 @@ export default function InterviewPage() {
     const recruiterVoiceId = openAiVoiceIdForRecruiter(
       setup.recruiterPersonality as RecruiterId,
     );
-    const browserVoice = selectBrowserVoice(setup.recruiterPersonality as RecruiterId);
     try {
       console.info("WorkZo recruiter voice mapping", {
         recruiter: profile.name,
-        expectedDashboardVoice: recruiterVoiceId,
-        browserVoice: browserVoice?.name || "browser-default",
+        standardVoiceEngine: "ElevenLabs",
+        mappedVoice: recruiterVoiceId,
         mode: "voice",
-        note:
-          "Standard Interview uses browser speech for stability. Vapi dashboard voice changes apply only to Live Interview.",
       });
     } catch {}
     const memory = createInitialRecruiterMemory();
@@ -2062,7 +2036,10 @@ export default function InterviewPage() {
     try {
       recognitionRef.current?.stop();
     } catch {}
-    window.speechSynthesis?.cancel();
+    try {
+      currentRecruiterAudioRef.current?.pause();
+      currentRecruiterAudioRef.current = null;
+    } catch {}
 
     try {
       window.localStorage.setItem(
@@ -2111,6 +2088,8 @@ export default function InterviewPage() {
   ]);
 
   const handleMicClick = useCallback(() => {
+    unlockRecruiterAudio();
+
     if (isLive) {
       if (!isSpeaking) {
         listenForAnswer();
@@ -2118,7 +2097,7 @@ export default function InterviewPage() {
       return;
     }
     void startStandardInterview();
-  }, [isLive, isSpeaking, listenForAnswer, startStandardInterview]);
+  }, [isLive, isSpeaking, listenForAnswer, startStandardInterview, unlockRecruiterAudio]);
 
   const handleModeChange = useCallback(
     (nextMode: InterviewMode) => {
@@ -2136,7 +2115,10 @@ export default function InterviewPage() {
   const handleToggleSpeaker = useCallback(() => {
     setSpeakerOn((value) => !value);
     if (speakerOn) {
-      window.speechSynthesis?.cancel();
+      try {
+        currentRecruiterAudioRef.current?.pause();
+        currentRecruiterAudioRef.current = null;
+      } catch {}
       isSpeakingRef.current = false;
       setIsSpeaking(false);
     }
