@@ -1,163 +1,249 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+type RawAnalyticsEvent = Record<string, unknown>;
 
-type AnalyticsEvent = {
-  event?: string;
-  sessionId?: string;
-  setupId?: string;
-  role?: string;
-  market?: string;
-  recruiter?: string;
-  mode?: string;
-  score?: number;
-  trust?: number;
-  pressure?: number;
-  path?: string;
-  host?: string;
-  origin?: string;
-  isLocal?: boolean;
-  userAgent?: string;
-  timestamp?: string;
-  metadata?: Record<string, unknown>;
+type NormalizedAnalyticsEvent = {
+  event: string;
+  sessionId: string;
+  role: string;
+  market: string;
+  recruiter: string;
+  mode: string;
+  score: number | null;
+  trust: number | null;
+  pressure: number | null;
+  path: string;
+  timestamp: string;
+  receivedAt: string;
+  source: string;
+  metadata: Record<string, unknown>;
 };
 
-const ANALYTICS_DIR = path.join(process.cwd(), ".workzo");
-const ANALYTICS_FILE = path.join(ANALYTICS_DIR, "analytics.jsonl");
+const DATA_DIR = path.join(process.cwd(), ".workzo-data");
+const DATA_FILE = path.join(DATA_DIR, "analytics-events.jsonl");
 
-function isLocalAnalyticsEvent(event: Partial<AnalyticsEvent>) {
-  const host = String(event.host || event.origin || "").toLowerCase();
-
-  return (
-    event.isLocal === true ||
-    host.includes("localhost") ||
-    host.includes("127.0.0.1") ||
-    host.includes("192.168.") ||
-    host.includes("10.0.") ||
-    host.includes(".local")
-  );
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
-async function ensureFile() {
-  await fs.mkdir(ANALYTICS_DIR, { recursive: true });
-  try {
-    await fs.access(ANALYTICS_FILE);
-  } catch {
-    await fs.writeFile(ANALYTICS_FILE, "", "utf-8");
+function asString(value: unknown, fallback = "") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
+    return Number(value);
   }
+  return null;
 }
 
-function cleanEvent(input: AnalyticsEvent) {
+function detectTrafficSource(event: RawAnalyticsEvent) {
+  const metadata = asRecord(event.metadata);
+  const explicit = asString(metadata.source || metadata.trafficSource || event.source);
+  if (explicit) return explicit;
+
+  const url = `${asString(event.path)} ${asString(event.referrer)} ${asString(event.utm_source)}`.toLowerCase();
+  if (url.includes("producthunt") || url.includes("product_hunt") || url.includes("ph")) return "Product Hunt";
+  if (url.includes("linkedin")) return "LinkedIn";
+  if (url.includes("instagram")) return "Instagram";
+  if (url.includes("reddit")) return "Reddit";
+  if (url.includes("twitter") || url.includes("x.com")) return "X/Twitter";
+  return "Direct / unknown";
+}
+
+function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
+  const metadata = asRecord(event.metadata);
+  const receivedAt = asString(event.receivedAt, new Date().toISOString());
+
   return {
-    event: String(input.event || "unknown").slice(0, 80),
-    sessionId: String(input.sessionId || "").slice(0, 120),
-    setupId: String(input.setupId || "").slice(0, 120),
-    role: String(input.role || "").slice(0, 160),
-    market: String(input.market || "").slice(0, 80),
-    recruiter: String(input.recruiter || "").slice(0, 80),
-    mode: String(input.mode || "").slice(0, 20),
-    score: typeof input.score === "number" ? input.score : null,
-    trust: typeof input.trust === "number" ? input.trust : null,
-    pressure: typeof input.pressure === "number" ? input.pressure : null,
-    path: String(input.path || "").slice(0, 200),
-    host: String(input.host || "").slice(0, 200),
-    origin: String(input.origin || "").slice(0, 250),
-    isLocal: Boolean(input.isLocal),
-    userAgent: String(input.userAgent || "").slice(0, 400),
-    metadata: input.metadata || {},
-    timestamp: input.timestamp || new Date().toISOString(),
-    receivedAt: new Date().toISOString(),
+    event: asString(event.event, "unknown_event"),
+    sessionId: asString(event.sessionId, "unknown_session"),
+    role: asString(event.role, "Unknown role"),
+    market: asString(event.market, "Global"),
+    recruiter: asString(event.recruiter, "Unknown recruiter"),
+    mode: asString(event.mode, "standard"),
+    score: asNumber(event.score ?? metadata.score),
+    trust: asNumber(event.trust ?? metadata.trust),
+    pressure: asNumber(event.pressure ?? metadata.pressure),
+    path: asString(event.path, "/"),
+    timestamp: asString(event.timestamp, receivedAt),
+    receivedAt,
+    source: detectTrafficSource(event),
+    metadata,
   };
 }
 
-async function readEvents() {
-  await ensureFile();
-  const content = await fs.readFile(ANALYTICS_FILE, "utf-8");
-
-  return content
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line) as ReturnType<typeof cleanEvent>;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean)
-    .filter((event) => {
-      if (!event) return false;
-
-      return !isLocalAnalyticsEvent({
-        host: event.host,
-        origin: event.origin,
-        isLocal: event.isLocal,
-      });
-    })
-    .slice(-1200) as Array<ReturnType<typeof cleanEvent>>;
+async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
+  try {
+    const raw = await readFile(DATA_FILE, "utf8");
+    return raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return normalizeEvent(JSON.parse(line) as RawAnalyticsEvent);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as NormalizedAnalyticsEvent[];
+  } catch {
+    return [];
+  }
 }
 
-function summarize(events: Array<ReturnType<typeof cleanEvent>>) {
+async function appendEvents(events: RawAnalyticsEvent[]) {
+  if (!events.length) return;
+  await mkdir(DATA_DIR, { recursive: true });
+  const lines = events
+    .map((event) => ({ ...event, receivedAt: new Date().toISOString() }))
+    .map((event) => JSON.stringify(event))
+    .join("\n");
+  await writeFile(DATA_FILE, `${lines}\n`, { flag: "a" });
+}
+
+function increment(map: Record<string, number>, key: string) {
+  map[key] = (map[key] || 0) + 1;
+}
+
+function pct(numerator: number, denominator: number) {
+  if (!denominator) return 0;
+  return Math.round((numerator / denominator) * 100);
+}
+
+function buildSummary(events: NormalizedAnalyticsEvent[]) {
   const counts: Record<string, number> = {};
-  const sessions = new Set<string>();
   const recruiters: Record<string, number> = {};
   const roles: Record<string, number> = {};
+  const modes: Record<string, number> = {};
+  const trafficSources: Record<string, number> = {};
+  const weakSignals: Record<string, number> = {};
+  const sessions = new Set<string>();
+
+  const modePerformance: Record<
+    string,
+    { starts: number; completions: number; voiceFailures: number; results: number; avgTrust: number | null }
+  > = {};
 
   for (const event of events) {
-    counts[event.event] = (counts[event.event] || 0) + 1;
-    if (event.sessionId) sessions.add(event.sessionId);
-    if (event.recruiter) recruiters[event.recruiter] = (recruiters[event.recruiter] || 0) + 1;
-    if (event.role) roles[event.role] = (roles[event.role] || 0) + 1;
+    sessions.add(event.sessionId);
+    increment(counts, event.event);
+    increment(recruiters, event.recruiter);
+    increment(roles, event.role);
+    increment(modes, event.mode);
+    increment(trafficSources, event.source);
+
+    const signal = asString(event.metadata.signal || event.metadata.tag || event.metadata.weakness || event.metadata.action);
+    if (signal) increment(weakSignals, signal);
+
+    const perf = (modePerformance[event.mode] ||= {
+      starts: 0,
+      completions: 0,
+      voiceFailures: 0,
+      results: 0,
+      avgTrust: null,
+    });
+
+    if (event.event === "interview_started" || event.event === "voice_started") perf.starts += 1;
+    if (event.event === "interview_completed") perf.completions += 1;
+    if (event.event === "voice_failed" || event.event === "video_failed") perf.voiceFailures += 1;
+    if (event.event === "results_viewed") perf.results += 1;
   }
 
-  const started = counts.interview_started || 0;
-  const answered = counts.answer_submitted || 0;
-  const results = counts.results_viewed || 0;
+  for (const mode of Object.keys(modePerformance)) {
+    const trustValues = events
+      .filter((event) => event.mode === mode && typeof event.trust === "number")
+      .map((event) => event.trust as number);
+    modePerformance[mode].avgTrust = trustValues.length
+      ? Math.round(trustValues.reduce((sum, value) => sum + value, 0) / trustValues.length)
+      : null;
+  }
+
+  const uploads = counts.cv_uploaded || 0;
+  const interviewsStarted = counts.interview_started || counts.voice_started || 0;
+  const voiceStarts = counts.voice_started || 0;
+  const answersSubmitted = counts.answer_submitted || counts.copilot_action_used || 0;
+  const completedInterviews = counts.interview_completed || 0;
+  const resultsViewed = counts.results_viewed || 0;
+  const voiceFailures = (counts.voice_failed || 0) + (counts.video_failed || 0);
+  const voicePaused = counts.voice_paused || 0;
+  const voiceRecovered = counts.voice_recovered || 0;
+
+  const dropoffFunnel = [
+    { stage: "CV uploaded", count: uploads },
+    { stage: "Interview started", count: interviewsStarted },
+    { stage: "First answer / interaction", count: answersSubmitted },
+    { stage: "Interview completed", count: completedInterviews },
+    { stage: "Results viewed", count: resultsViewed },
+  ];
+
+  const biggestDrop = dropoffFunnel.reduce(
+    (best, stage, index) => {
+      if (index === 0) return best;
+      const previous = dropoffFunnel[index - 1];
+      const drop = Math.max(0, previous.count - stage.count);
+      return drop > best.drop ? { from: previous.stage, to: stage.stage, drop } : best;
+    },
+    { from: "", to: "", drop: 0 },
+  );
+
+  const topWeakness = Object.entries(weakSignals).sort((a, b) => b[1] - a[1])[0]?.[0] || "Not enough answer data yet";
+  const insight = biggestDrop.drop
+    ? `Largest drop-off: ${biggestDrop.from} → ${biggestDrop.to}.`
+    : voiceFailures
+      ? "Voice stability needs attention before scaling traffic."
+      : "No major drop-off pattern yet. Keep collecting sessions.";
 
   return {
     totalEvents: events.length,
     uniqueSessions: sessions.size,
-    uploads: counts.cv_uploaded || 0,
-    interviewsStarted: started,
-    answersSubmitted: answered,
-    voiceStarts: counts.voice_started || 0,
-    resultsViewed: results,
-    answerRate: started ? Math.round((answered / started) * 100) : 0,
-    resultRate: started ? Math.round((results / started) * 100) : 0,
+    uploads,
+    interviewsStarted,
+    answersSubmitted,
+    voiceStarts,
+    voiceFailures,
+    voicePaused,
+    voiceRecovered,
+    completedInterviews,
+    resultsViewed,
+    answerRate: pct(answersSubmitted, interviewsStarted),
+    resultRate: pct(resultsViewed, interviewsStarted),
+    completionRate: pct(completedInterviews, interviewsStarted),
+    voiceFailureRate: pct(voiceFailures, Math.max(voiceStarts, interviewsStarted)),
     counts,
     recruiters,
     roles,
+    modes,
+    trafficSources,
+    weakSignals,
+    dropoffFunnel,
+    modePerformance,
+    topWeakness,
+    insight,
   };
+}
+
+export async function GET() {
+  const events = (await readStoredEvents()).slice(-1000).reverse();
+  return NextResponse.json({ summary: buildSummary(events), events });
 }
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as AnalyticsEvent;
+    const body = (await request.json()) as RawAnalyticsEvent | { events?: RawAnalyticsEvent[] };
+    const events = Array.isArray((body as { events?: RawAnalyticsEvent[] }).events)
+      ? ((body as { events: RawAnalyticsEvent[] }).events || [])
+      : [body as RawAnalyticsEvent];
 
-    if (isLocalAnalyticsEvent(body)) {
-      return NextResponse.json({ ok: true, ignored: "local-development-event" });
-    }
-
-    const event = cleanEvent(body);
-
-    await ensureFile();
-    await fs.appendFile(ANALYTICS_FILE, JSON.stringify(event) + "\n", "utf-8");
-
-    return NextResponse.json({ ok: true });
-  } catch {
-    return NextResponse.json({ ok: false }, { status: 200 });
+    await appendEvents(events.filter((event) => asString(event.event)));
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Analytics event write failed:", error);
+    return NextResponse.json({ success: false, error: "Analytics event write failed." }, { status: 500 });
   }
-}
-
-export async function GET() {
-  const events = await readEvents();
-
-  return NextResponse.json({
-    summary: summarize(events),
-    events: events.slice(-250).reverse(),
-  });
 }

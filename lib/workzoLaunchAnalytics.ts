@@ -1,39 +1,46 @@
 "use client";
 
 export type WorkZoEventName =
-  | "page_view"
+  | "landing_viewed"
+  | "onboarding_viewed"
   | "cv_uploaded"
-  | "cv_memory_ready"
-  | "interview_room_viewed"
+  | "jd_added"
   | "interview_started"
-  | "answer_submitted"
+  | "interview_completed"
   | "voice_started"
-  | "voice_stopped"
   | "voice_failed"
   | "voice_paused"
   | "voice_recovered"
-  | "voice_interruption"
+  | "video_failed"
+  | "video_fallback_used"
+  | "copilot_opened"
+  | "copilot_action_used"
   | "results_viewed"
-  | "setup_cleared"
-  | "product_hunt_asset_viewed";
+  | "weak_answer_retried"
+  | "feedback_submitted"
+  | "waitlist_joined";
 
 export type WorkZoAnalyticsPayload = {
   event: WorkZoEventName;
-  sessionId?: string;
   setupId?: string;
   role?: string;
   market?: string;
   recruiter?: string;
-  mode?: "text" | "voice";
+  mode?: "voice" | "video" | "standard" | "copilot";
   score?: number;
   trust?: number;
   pressure?: number;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, string | number | boolean | null | undefined>;
 };
+
+const STORAGE_KEY = "workzo-beta-analytics-events";
+
+function safeNow() {
+  return new Date().toISOString();
+}
 
 function isLocalHost() {
   if (typeof window === "undefined") return true;
-
   return (
     window.location.hostname === "localhost" ||
     window.location.hostname === "127.0.0.1" ||
@@ -57,45 +64,26 @@ function trafficSource() {
   return "Direct / unknown";
 }
 
-function getOrCreateSessionId() {
-  if (typeof window === "undefined") return "";
+function getSessionId() {
+  if (typeof window === "undefined") return "server";
 
-  const key = "workzo-analytics-session";
+  const key = "workzo-session-id";
   const existing = window.localStorage.getItem(key);
-
   if (existing) return existing;
 
-  const id =
+  const sessionId =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
-      : `session_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      : `session_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-  window.localStorage.setItem(key, id);
-  return id;
+  window.localStorage.setItem(key, sessionId);
+  return sessionId;
 }
 
-export function trackWorkZoEvent(payload: WorkZoAnalyticsPayload) {
-  if (typeof window === "undefined") return;
-
-  // Do not send local development/testing events to founder analytics.
-  if (isLocalHost()) return;
-
-  const body = {
-    ...payload,
-    sessionId: payload.sessionId || getOrCreateSessionId(),
-    path: window.location.pathname,
-    referrer: document.referrer,
-    source: trafficSource(),
-    host: window.location.host,
-    origin: window.location.origin,
-    isLocal: false,
-    userAgent: navigator.userAgent,
-    timestamp: new Date().toISOString(),
-  };
-
+function sendToFounderApi(item: Record<string, unknown>) {
+  if (typeof window === "undefined" || isLocalHost()) return;
   try {
-    const serialized = JSON.stringify(body);
-
+    const serialized = JSON.stringify(item);
     if (navigator.sendBeacon) {
       navigator.sendBeacon("/api/analytics", new Blob([serialized], { type: "application/json" }));
       return;
@@ -112,6 +100,40 @@ export function trackWorkZoEvent(payload: WorkZoAnalyticsPayload) {
   }
 }
 
-export function getWorkZoAnalyticsSessionId() {
-  return getOrCreateSessionId();
+export function trackWorkZoLaunchEvent(payload: WorkZoAnalyticsPayload) {
+  if (typeof window === "undefined") return;
+
+  const item = {
+    ...payload,
+    sessionId: getSessionId(),
+    timestamp: safeNow(),
+    path: window.location.pathname,
+    referrer: document.referrer,
+    source: trafficSource(),
+    userAgent: navigator.userAgent,
+  };
+
+  try {
+    const existing = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]") as unknown[];
+    existing.push(item);
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(existing.slice(-500)));
+  } catch {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify([item]));
+  }
+
+  sendToFounderApi(item);
+
+  if (process.env.NODE_ENV !== "production") {
+    console.info("[WorkZo launch analytics]", item);
+  }
+}
+
+export function readWorkZoLaunchEvents() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    return JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]") as unknown[];
+  } catch {
+    return [];
+  }
 }

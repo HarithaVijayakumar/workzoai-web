@@ -339,7 +339,7 @@ Return JSON only:
 `.trim();
 
     const completion = await openai.chat.completions.create({
-      model: process.env.OPENAI_INTERVIEW_MODEL || "gpt-4o-mini",
+      model: process.env.OPENAI_INTERVIEW_MODEL || "gpt-4o",
       temperature: arc.phase === "pressure" ? 0.32 : 0.45,
       max_tokens: 700,
       response_format: { type: "json_object" },

@@ -22,10 +22,13 @@ import {
   Wand2,
   Zap,
 } from "lucide-react";
-import { ChangeEvent, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 import { useInterviewStore } from "@/store/interviewStore";
 import { buildAndSaveInterviewSetup } from "@/lib/workzoCvClient";
+
+import BetaPrivacyNotice from "@/components/BetaPrivacyNotice";
+import { trackWorkZoLaunchEvent } from "@/lib/workzoLaunchAnalytics";
 
 type Market = "Global" | "Germany" | "US" | "UK" | "India" | "Netherlands";
 type CompanyStyle = "Realistic" | "Startup" | "Corporate" | "Technical" | "Consulting";
@@ -265,9 +268,36 @@ export default function OnboardingPage() {
 
   const currentStepLabel = steps.find((item) => item.id === step)?.label || "Setup";
 
+  useEffect(() => {
+    trackWorkZoLaunchEvent({
+      event: "onboarding_viewed",
+      role,
+      market,
+      recruiter: recruiterLabel(recruiter),
+    });
+  }, [market, recruiter, role]);
+
   async function persist(nextStep?: number) {
     const cvText = (manualCv || setup.cvText || "").trim();
     const jdText = jobDescription.trim();
+
+    if (cvText) {
+      trackWorkZoLaunchEvent({
+        event: "cv_uploaded",
+        role,
+        market,
+        recruiter: recruiterLabel(recruiter),
+      });
+    }
+
+    if (jdText) {
+      trackWorkZoLaunchEvent({
+        event: "jd_added",
+        role,
+        market,
+        recruiter: recruiterLabel(recruiter),
+      });
+    }
 
     let nextSetup: SetupState;
 
@@ -473,6 +503,8 @@ export default function OnboardingPage() {
             WorkZo AI
           </Link>
         </header>
+
+        <BetaPrivacyNotice compact className="mt-3 hidden lg:block" />
 
         <section className="grid flex-1 gap-4 overflow-visible py-3 lg:min-h-0 lg:overflow-hidden lg:grid-cols-[1fr_0.82fr]">
           <div className="flex flex-col overflow-visible rounded-[22px] border border-white/10 bg-white/[0.045] shadow-[0_22px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl lg:min-h-0 lg:overflow-hidden lg:rounded-[26px]">

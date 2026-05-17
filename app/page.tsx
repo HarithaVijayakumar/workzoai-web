@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Upload } from "lucide-react";
 import { useEffect, useState } from "react";
+import FeedbackCapture from "@/components/FeedbackCapture";
+import { trackWorkZoLaunchEvent } from "@/lib/workzoLaunchAnalytics";
 
 const trustChips = [
   "AI recruiter memory",
@@ -25,6 +27,7 @@ export default function LandingPage() {
   const [liveIndex, setLiveIndex] = useState(0);
 
   useEffect(() => {
+    trackWorkZoLaunchEvent({ event: "landing_viewed" });
     const timer = setInterval(() => {
       setLiveIndex((value) => (value + 1) % heroPrompts.length);
     }, 3200);
@@ -203,6 +206,9 @@ export default function LandingPage() {
           </div>
         </section>
       </div>
+      <section className="relative z-10 mx-auto mt-6 max-w-3xl px-4 pb-10">
+        <FeedbackCapture source="landing" />
+      </section>
     </main>
   );
 }

@@ -1,20 +1,42 @@
 @import "tailwindcss";
 
+/* WorkZo AI — global design tokens */
+
 :root {
-  --background: #020817;
-  --foreground: #ffffff;
+  --wz-bg: #050816;
+  --wz-bg-soft: #06111f;
+  --wz-card: rgba(255, 255, 255, 0.045);
+  --wz-card-strong: rgba(8, 14, 28, 0.78);
+  --wz-border: rgba(255, 255, 255, 0.10);
+  --wz-border-soft: rgba(255, 255, 255, 0.06);
+
+  --wz-blue: #3b82f6;
+  --wz-cyan: #22d3ee;
+  --wz-violet: #8b5cf6;
+  --wz-emerald: #34d399;
+  --wz-amber: #fbbf24;
+  --wz-red: #fb7185;
+
+  --wz-radius-sm: 14px;
+  --wz-radius-md: 18px;
+  --wz-radius-lg: 24px;
+  --wz-radius-xl: 30px;
+
+  --wz-shadow-card: 0 22px 80px rgba(0, 0, 0, 0.28);
+  --wz-shadow-soft: 0 14px 44px rgba(0, 0, 0, 0.20);
+
+  --wz-gradient-primary: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+  --wz-gradient-bg: linear-gradient(180deg, #06111f 0%, #050816 100%);
 }
 
 html {
-  scroll-behavior: smooth;
-  overflow-x: hidden;
+  background: #050816;
 }
 
 body {
-  min-height: 100vh;
-  background: var(--background);
-  color: var(--foreground);
-  overflow-x: hidden;
+  margin: 0;
+  background: #050816;
+  color: white;
 }
 
 * {
@@ -26,194 +48,129 @@ a {
   -webkit-tap-highlight-color: transparent;
 }
 
-textarea,
-input,
-select {
+.wz-page {
+  min-height: 100vh;
+  background: var(--wz-gradient-bg);
   color: white;
-  font-size: 16px;
 }
 
-::selection {
-  background: rgba(59, 130, 246, 0.35);
+.wz-card {
+  border: 1px solid var(--wz-border);
+  background: var(--wz-card);
+  border-radius: var(--wz-radius-lg);
+  box-shadow: var(--wz-shadow-card);
+  backdrop-filter: blur(24px);
 }
 
-/* =========================================
-   MOBILE PERFORMANCE + LAYOUT POLISH
-========================================= */
+.wz-card-compact {
+  border: 1px solid var(--wz-border-soft);
+  background: var(--wz-card);
+  border-radius: var(--wz-radius-md);
+  box-shadow: var(--wz-shadow-soft);
+  backdrop-filter: blur(20px);
+}
 
-@media (max-width: 767px) {
-  /* Disable heavy animations on phones */
-  .wz-mobile-no-animation,
-  .wz-mobile-no-animation *,
-  [class*="animate-"],
-  [style*="animation"] {
-    animation: none !important;
+.wz-primary-button {
+  min-height: 48px;
+  border-radius: 18px;
+  background: var(--wz-gradient-primary);
+  color: white;
+  font-weight: 900;
+  box-shadow: 0 16px 44px rgba(59, 130, 246, 0.28);
+}
+
+.wz-secondary-button {
+  min-height: 48px;
+  border-radius: 18px;
+  border: 1px solid var(--wz-border);
+  background: rgba(255, 255, 255, 0.045);
+  color: white;
+  font-weight: 800;
+}
+
+.wz-section-title {
+  font-size: clamp(24px, 2.6vw, 36px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+  font-weight: 900;
+}
+
+.wz-body-muted {
+  color: rgb(148 163 184);
+  line-height: 1.7;
+}
+
+.wz-fast-page {
+  content-visibility: auto;
+  contain-intrinsic-size: 800px;
+}
+
+.wz-gpu {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+.wz-no-layout-shift {
+  contain: layout paint;
+}
+
+@media (max-width: 768px) {
+  .wz-mobile-no-heavy-effects * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 120ms !important;
   }
 
-  /* Softer mobile shadows */
-  .wz-mobile-soft-card {
-    box-shadow: 0 14px 42px rgba(0, 0, 0, 0.24) !important;
-    backdrop-filter: blur(10px) !important;
+  .wz-mobile-hide-effects,
+  .wz-mobile-disable-glow {
+    display: none !important;
   }
 
-  /* Prevent bottom buttons covering content */
-  .wz-mobile-bottom-safe {
-    padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+  .wz-card,
+  .wz-card-compact {
+    border-radius: 22px;
+    box-shadow: none;
   }
 
-  /* Sticky mobile CTA */
+  .wz-mobile-stack {
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
   .wz-mobile-sticky-cta {
-    position: sticky !important;
-    bottom: env(safe-area-inset-bottom) !important;
-    z-index: 40 !important;
-    margin-inline: -0.25rem !important;
-    border-radius: 1.5rem !important;
+    position: sticky;
+    bottom: env(safe-area-inset-bottom);
+    z-index: 50;
+    background: rgba(5, 8, 22, 0.94);
+    backdrop-filter: blur(18px);
+    border-top: 1px solid var(--wz-border);
   }
 
-  /* Compact cards */
-  .wz-mobile-compact-card {
-    padding: 1.1rem !important;
-    border-radius: 1.45rem !important;
+  .wz-mobile-light {
+    box-shadow: none !important;
+    backdrop-filter: blur(12px) !important;
   }
 
-  /* Compact headings */
-  .wz-mobile-compact-title {
-    font-size: clamp(2rem, 9vw, 3.25rem) !important;
-    line-height: 0.98 !important;
-    letter-spacing: -0.05em !important;
+  .wz-mobile-reduce-motion,
+  .wz-mobile-reduce-motion * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 120ms !important;
   }
 
-  /* Compact subtitles */
-  .wz-mobile-compact-subtitle {
-    font-size: 1rem !important;
-    line-height: 1.65 !important;
-  }
-
-  /* Interview mobile layout */
-  .wz-interview-mobile-grid {
-    display: grid !important;
-    grid-template-columns: 1fr !important;
-    gap: 1rem !important;
-  }
-
-  .wz-interview-mobile-hero {
-    min-height: auto !important;
-    max-height: none !important;
-  }
-
-  .wz-interview-mobile-panel {
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  /* Prevent iOS zoom */
-  textarea,
-  input,
-  select,
-  button {
-    font-size: 16px !important;
+  .wz-mobile-scroll {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
   }
 }
 
-/* =========================================
-   LIGHTWEIGHT ANIMATIONS
-========================================= */
-
-@keyframes wzPulseBar {
-  0% {
-    transform: scaleY(0.6);
-    opacity: 0.6;
-  }
-
-  50% {
-    transform: scaleY(1);
-    opacity: 1;
-  }
-
-  100% {
-    transform: scaleY(0.6);
-    opacity: 0.6;
-  }
-}
-
-@keyframes wzDotPulse {
-  0% {
-    transform: scale(0.8);
-    opacity: 0.4;
-  }
-
-  50% {
-    transform: scale(1);
-    opacity: 1;
-  }
-
-  100% {
-    transform: scale(0.8);
-    opacity: 0.4;
-  }
-}
-
-@keyframes wzScan {
-  0% {
-    transform: translateY(-120%);
-  }
-
-  100% {
-    transform: translateY(300%);
-  }
-}
-
-/* WorkZo mobile performance patch */
-@media (max-width: 768px) {
-  .wz-mobile-no-animation * {
-    animation: none !important;
-    transition: none !important;
-  }
-
-  .wz-mobile-no-animation .blur-\[120px\],
-  .wz-mobile-no-animation .blur-\[130px\],
-  .wz-mobile-no-animation .blur-\[100px\],
-  .wz-mobile-no-animation .blur-\[90px\] {
-    filter: blur(40px) !important;
-  }
-
-  .wz-mobile-no-animation .backdrop-blur-2xl {
-    backdrop-filter: blur(8px) !important;
-  }
-
-  .wz-mobile-bottom-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-}
-/* WorkZo final mobile performance patch */
-@media (max-width: 768px) {
-  .wz-mobile-no-animation * {
-    animation: none !important;
-    transition: none !important;
-  }
-
-  .wz-mobile-no-animation .blur-\[120px\],
-  .wz-mobile-no-animation .blur-\[130px\],
-  .wz-mobile-no-animation .blur-\[100px\],
-  .wz-mobile-no-animation .blur-\[90px\] {
-    filter: blur(40px) !important;
-  }
-
-  .wz-mobile-no-animation .backdrop-blur-2xl {
-    backdrop-filter: blur(8px) !important;
-  }
-
-  .wz-mobile-bottom-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  .wz-mobile-compact-card {
-    padding: 1rem !important;
-    border-radius: 22px !important;
-  }
-
-  .wz-mobile-tight-section {
-    margin-top: 0.75rem !important;
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
   }
 }

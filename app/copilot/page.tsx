@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -29,6 +29,8 @@ import {
   runWorkobotAction,
   type WorkobotAction,
 } from "@/lib/launchIntelligenceEngine";
+import FeedbackCapture from "@/components/FeedbackCapture";
+import { trackWorkZoLaunchEvent } from "@/lib/workzoLaunchAnalytics";
 
 type SavedSetup = {
   cvText?: string;
@@ -266,6 +268,7 @@ export default function WorkOBotCopilotPage() {
   const [output, setOutput] = useState("");
   const [improvedAnswer, setImprovedAnswer] = useState("");
   const [comparison, setComparison] = useState<ReturnType<typeof compareAnswers> | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const targetRole = setup.targetRole || "your target role";
   const cvText = setup.cvText || "";
@@ -282,30 +285,90 @@ export default function WorkOBotCopilotPage() {
   const smartActions = useMemo(() => getSmartActions(answer), [answer]);
   const MoodIcon = mood.icon;
 
-  function runAction(action: SmartAction["id"]) {
-    if (action === "magic") {
-      const result = buildMagicAnswer({ question, answer, targetRole });
-      setOutput(result);
-      setImprovedAnswer(result);
-      setComparison(compareAnswers(answer, result));
-      return;
-    }
+  useEffect(() => {
+    trackWorkZoLaunchEvent({
+      event: "copilot_opened",
+      role: targetRole,
+      recruiter: recruiter.name,
+      mode: "copilot",
+    });
+  }, [targetRole, recruiter.name]);
 
-    const result = runWorkobotAction({
-      action,
-      question,
-      answer,
-      cvText,
-      targetRole,
+  async function runAction(action: SmartAction["id"]) {
+    trackWorkZoLaunchEvent({
+      event: "copilot_action_used",
+      role: targetRole,
+      recruiter: recruiter.name,
+      mode: "copilot",
+      metadata: { action },
     });
 
-    setOutput(result);
-    setImprovedAnswer(result);
-
-    if (action === "rewrite" || action === "star" || action === "concise") {
-      setComparison(compareAnswers(answer, result));
-    } else {
+    try {
+      setLoading(true);
       setComparison(null);
+
+      const response = await fetch("/api/copilot", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action,
+          question,
+          answer,
+          cvText,
+          jobDescription: setup.jobDescription || "",
+          targetRole,
+          targetMarket: setup.targetMarket || "Global",
+          recruiterName: recruiter.name,
+          recruiterRole: recruiter.role,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        output?: string;
+        error?: string;
+      };
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Copilot failed");
+      }
+
+      const aiOutput = data.output || "No recruiter analysis generated.";
+      setOutput(aiOutput);
+      setImprovedAnswer(aiOutput);
+
+      if (action === "magic" || action === "rewrite" || action === "star" || action === "concise") {
+        setComparison(compareAnswers(answer, aiOutput));
+      }
+    } catch (error) {
+      console.warn("AI copilot failed, using local fallback:", error);
+
+      if (action === "magic") {
+        const result = buildMagicAnswer({ question, answer, targetRole });
+        setOutput(result);
+        setImprovedAnswer(result);
+        setComparison(compareAnswers(answer, result));
+        return;
+      }
+
+      const result = runWorkobotAction({
+        action,
+        question,
+        answer,
+        cvText,
+        targetRole,
+      });
+
+      setOutput(result);
+      setImprovedAnswer(result);
+
+      if (action === "rewrite" || action === "star" || action === "concise") {
+        setComparison(compareAnswers(answer, result));
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -490,7 +553,18 @@ export default function WorkOBotCopilotPage() {
             </div>
 
             <div className="mt-4 min-h-[360px] max-h-[540px] overflow-y-auto whitespace-pre-line rounded-3xl border border-white/10 bg-slate-950/60 p-4 text-sm leading-7 text-slate-200">
-              {output || "Choose an action to get recruiter-aware coaching."}
+              {loading ? (
+                <div className="flex h-[260px] items-center justify-center">
+                  <div className="text-center">
+                    <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-cyan-300 border-t-transparent" />
+                    <p className="mt-4 text-sm text-slate-400">
+                      Work-O-Bot is analyzing recruiter intent...
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                output || "Choose an action to get recruiter-aware coaching."
+              )}
             </div>
 
             {comparison && (
@@ -535,6 +609,10 @@ export default function WorkOBotCopilotPage() {
                 Use improved answer
               </button>
             )}
+
+            <div className="mt-4">
+              <FeedbackCapture source="copilot" />
+            </div>
           </aside>
         </section>
       </div>
