@@ -290,13 +290,59 @@ function getAnswerSnippet(answer: string) {
 }
 
 function buildHumanPauseMs(analysis: AnswerAnalysis) {
-  if (analysis.state === "losing_confidence") return 1850;
-  if (analysis.state === "pressuring") return 1450;
-  if (analysis.state === "skeptical") return 1250;
-  if (analysis.state === "recovering_trust") return 950;
-  if (analysis.state === "engaged" || analysis.state === "interested")
-    return 650;
-  return 1050;
+  // Frozen voice rule: this only delays the next recruiter sentence.
+  // It does not touch speech synthesis, recognition, microphone order, or mobile audio.
+  if (analysis.state === "losing_confidence") return 1900;
+  if (analysis.state === "pressuring") return 1550;
+  if (analysis.state === "skeptical") return 1350;
+  if (analysis.state === "recovering_trust") return 1050;
+  if (analysis.signal === "strong_metrics") return 760;
+  if (analysis.state === "engaged" || analysis.state === "interested") return 820;
+  return 1100;
+}
+
+function tinyHash(text: string) {
+  let hash = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) % 9973;
+  }
+  return hash;
+}
+
+function pickByAnswer<T>(answer: string, items: T[]) {
+  if (!items.length) return undefined;
+  return items[tinyHash(answer) % items.length];
+}
+
+function humanBridge(answer: string, options: string[]) {
+  return pickByAnswer(answer, options) || options[0] || "Okay.";
+}
+
+function lastRememberedStrength(memory: RecruiterMemory) {
+  return memory.rememberedStrengths?.[0] || "";
+}
+
+function lastRememberedWeakness(memory: RecruiterMemory) {
+  return memory.rememberedWeaknesses?.[0] || "";
+}
+
+function shouldUseCallback(answer: string, memory: RecruiterMemory) {
+  const remembered =
+    (memory.rememberedStrengths?.length || 0) +
+    (memory.rememberedWeaknesses?.length || 0) +
+    (memory.strongRecoveries || 0);
+
+  // Keep callbacks as a wow-factor, but make them occasional and relevant.
+  return remembered >= 2 && tinyHash(`${answer}-${remembered}`) % 5 === 0;
+}
+
+function inferHumanReactionMode(answer: string, memory: RecruiterMemory) {
+  const hash = tinyHash(`${answer}-${memory.recruiterTrust || 60}`) % 100;
+  if (hash < 45) return "progress";
+  if (hash < 70) return "curious";
+  if (hash < 85) return "skeptical";
+  if (hash < 95) return "emotional";
+  return "challenge";
 }
 
 function softenRecruiterSpeech(text: string) {
@@ -636,26 +682,36 @@ function analyzeAnswer(
   const clean = answer.replace(/\s+/g, " ").trim();
   const words = clean.split(" ").filter(Boolean);
   const lower = clean.toLowerCase();
+  const reactionMode = inferHumanReactionMode(clean, memory);
 
   const hasNumber =
-    /\d|percent|percentage|hours?|days?|weeks?|months?|customers?|tickets?|users?|reduced|increased|saved|improved|faster|slower|revenue|cost/i.test(
+    /\d|percent|percentage|hours?|days?|weeks?|months?|customers?|tickets?|users?|reduced|increased|saved|improved|faster|slower|revenue|cost|volume|sla|csat|nps|baseline|before|after/i.test(
       clean,
     );
   const ownershipWords =
-    /\bi\b|\bmy\b|\bpersonally\b|\bled\b|\bbuilt\b|\bcreated\b|\bowned\b|\bhandled\b|\bresolved\b|\bimplemented\b|\banalyzed\b|\bdesigned\b|\bimproved\b/i.test(
+    /\bi\b|\bmy\b|\bpersonally\b|\bled\b|\bbuilt\b|\bcreated\b|\bowned\b|\bhandled\b|\bresolved\b|\bimplemented\b|\banalyzed\b|\bdesigned\b|\bimproved\b|\bdecided\b|\bintroduced\b|\bmanaged\b/i.test(
       clean,
     );
+  const teamOnlyOwnership =
+    /\bwe\b|\bour team\b|\bteam worked\b|\bpart of\b|\bsupported\b|\bhelped\b|\bcontributed\b/i.test(
+      lower,
+    ) && !ownershipWords;
   const vagueWords =
-    /\bthings\b|\bstuff\b|\bsomething\b|\bvarious\b|\bmany\b|\ba lot\b|\bgood\b|\bnice\b|\bhelped\b|\bworked on\b/i.test(
+    /\bthings\b|\bstuff\b|\bsomething\b|\bvarious\b|\bmany\b|\ba lot\b|\bhelped\b|\bworked on\b|\bresponsible for\b|\binvolved in\b/i.test(
+      lower,
+    );
+  const hasOutcome =
+    hasNumber ||
+    /\bresult\b|\boutcome\b|\bimpact\b|\bso that\b|\bwhich helped\b|\bafter that\b|\bas a result\b|\btherefore\b/i.test(
       lower,
     );
 
-  const repeatedMetricsIssue = memory.rememberedWeaknesses.some((item) =>
-    /metric|number|impact|measurable/i.test(item),
-  );
-  const repeatedOwnershipIssue = memory.rememberedWeaknesses.some((item) =>
-    /ownership|contribution|personally/i.test(item),
-  );
+  const repeatedMetricsIssue = (memory.weakMetrics || 0) >= 1;
+  const repeatedOwnershipIssue = (memory.ownershipIssues || 0) >= 1;
+  const repeatedVagueIssue = (memory.vagueAnswers || 0) >= 1;
+  const callbackStrength = lastRememberedStrength(memory);
+  const callbackWeakness = lastRememberedWeakness(memory);
+  const useCallback = shouldUseCallback(clean, memory);
 
   if (words.length < 8 && !isLikelyInterviewAnswer(clean)) {
     return {
@@ -663,113 +719,177 @@ function analyzeAnswer(
       state: "interested",
       trustDelta: 0,
       caption: "Recruiter is keeping the conversation natural",
-      bridge: "Okay.",
+      bridge: humanBridge(clean, ["Okay.", "Right.", "Got it."]),
       followUp:
-        "Can you give me a bit more context so I can evaluate the answer properly?",
+        "Give me a little more context so I can understand what actually happened.",
     };
   }
 
   if (words.length < 18 && isLikelyInterviewAnswer(clean)) {
     return {
       signal: "too_short",
-      state: "interested",
-      trustDelta: 0,
-      caption: "Recruiter is inviting more context",
-      bridge: "Okay, I’m following you.",
+      state: previousTrust < 48 ? "skeptical" : "interested",
+      trustDelta: previousTrust < 48 ? -2 : 0,
+      caption: "Recruiter is waiting for a fuller example",
+      bridge: humanBridge(clean, ["Okay, I’m with you.", "Alright, keep going.", "I understand the start of it."]),
       followUp:
-        "Can you continue that example and give me a little more context about the situation and your role?",
+        "Walk me through one real situation — what was happening, what did you do, and what changed after that?",
+      weakness: "Needs fuller context and evidence.",
     };
   }
 
-  if (words.length > 160) {
+  if (words.length > 170) {
+    const sharper = reactionMode === "challenge" || previousTrust < 48;
     return {
       signal: "rambling",
-      state: "interested",
-      trustDelta: -3,
-      caption: "Recruiter is guiding the answer gently",
-      bridge: "Thanks, that gives me a lot of context.",
+      state: sharper ? "pressuring" : "interested",
+      trustDelta: sharper ? -5 : -3,
+      caption: "Recruiter is narrowing the conversation",
+      bridge: humanBridge(clean, [
+        "Let me pause the story there.",
+        "Okay, there’s a lot in that.",
+        "I’m going to narrow this down.",
+      ]),
       followUp:
-        "What would you say was the most important part of your contribution in that story?",
-      weakness: "Answer could be more focused.",
+        "What was the single most important decision you personally made in that situation?",
+      weakness: "Answer needs a clearer center of gravity.",
     };
   }
 
-  if (!ownershipWords) {
+  if (teamOnlyOwnership || !ownershipWords) {
+    const skeptical = repeatedOwnershipIssue || reactionMode === "skeptical" || previousTrust < 50;
     return {
       signal: "unclear_ownership",
-      state: "interested",
-      trustDelta: repeatedOwnershipIssue ? -4 : -2,
-      caption: "Recruiter is exploring ownership",
-      bridge: "That helps me understand the situation.",
-      followUp: "What part of that work was directly handled by you?",
+      state: skeptical ? "skeptical" : "interested",
+      trustDelta: skeptical ? -4 : -2,
+      caption: "Recruiter is checking ownership",
+      bridge: humanBridge(clean, [
+        "That explains the situation.",
+        "I understand the team context.",
+        "Okay, but I need to separate the team from you.",
+      ]),
+      followUp: useCallback && callbackWeakness
+        ? `Earlier I also needed clearer ownership from you. In this case, what did you personally carry from start to finish?`
+        : "What part of that was directly yours — not the team’s, but yours?",
       weakness: "Ownership needs clearer detail.",
     };
   }
 
-  if (!hasNumber) {
-    return {
-      signal: "missing_metrics",
-      state: "interested",
-      trustDelta: repeatedMetricsIssue ? -4 : -2,
-      caption: "Recruiter is exploring impact",
-      bridge: "Got it — that gives me the story.",
-      followUp:
-        "What changed after your work? It can be time saved, fewer issues, better quality, or even a rough estimate.",
-      weakness: "Impact could be more measurable.",
-    };
-  }
-
-  if (vagueWords && words.length < 70) {
+  if (vagueWords && !hasOutcome && words.length < 85) {
     return {
       signal: "too_generic",
-      state: "interested",
-      trustDelta: -2,
-      caption: "Recruiter is asking for a concrete example",
-      bridge: "Okay, I see the direction.",
+      state: repeatedVagueIssue || previousTrust < 50 ? "skeptical" : "interested",
+      trustDelta: repeatedVagueIssue ? -4 : -2,
+      caption: "Recruiter is looking for a sharper example",
+      bridge: humanBridge(clean, [
+        "I see the direction.",
+        "Okay, I get the general point.",
+        "That’s still a bit broad for me.",
+      ]),
       followUp:
-        "Can you make it more concrete with one specific situation you remember?",
-      weakness: "Answer could use a more concrete example.",
+        "Can you narrow it to one specific moment where you had to make a decision or solve a problem?",
+      weakness: "Answer needs a more concrete example.",
     };
   }
 
-  if (previousTrust < 50) {
+  if (!hasNumber && hasOutcome) {
+    const skeptical = repeatedMetricsIssue || reactionMode === "skeptical" || recruiterId === "analytical_hiring_manager";
+    return {
+      signal: "missing_metrics",
+      state: skeptical ? "skeptical" : "interested",
+      trustDelta: skeptical ? -3 : -1,
+      caption: "Recruiter is testing the scale of impact",
+      bridge: humanBridge(clean, [
+        "The story is clear enough.",
+        "Okay, I can follow the impact direction.",
+        "I’m trying to understand the scale now.",
+      ]),
+      followUp: useCallback && callbackStrength
+        ? `You had a stronger evidence moment earlier. Can you give me the scale here too — even a rough before-and-after?`
+        : "How big was the change — even roughly? What was different before and after your work?",
+      weakness: "Impact needs clearer scale or evidence.",
+    };
+  }
+
+  if (!hasNumber && reactionMode === "curious") {
+    return {
+      signal: "good_ownership",
+      state: "interested",
+      trustDelta: 2,
+      caption: "Recruiter is curious about the story",
+      bridge: humanBridge(clean, ["Interesting.", "Okay, that’s useful context.", "That gives me something to work with."]),
+      followUp:
+        "What made that situation difficult in practice?",
+      strength: "Answer showed a usable real example.",
+    };
+  }
+
+  if (previousTrust < 48 && ownershipWords && (hasNumber || hasOutcome)) {
     return {
       signal: "recovery",
       state: "recovering_trust",
-      trustDelta: 12,
+      trustDelta: 10,
       caption: "Recruiter sees recovery",
-      bridge: "That was stronger — now I can actually see more evidence.",
+      bridge: humanBridge(clean, [
+        "That’s better.",
+        "Okay, now I can see the evidence more clearly.",
+        "That answer lands better.",
+      ]),
       followUp:
-        "Now give me another example where you showed the same level of ownership.",
-      strength: "Recovered with clearer evidence.",
+        "Stay with that level of detail — give me another example where you had to earn trust quickly.",
+      strength: "Recovered with clearer ownership and evidence.",
     };
   }
 
-  if (hasNumber && ownershipWords) {
+  if (hasNumber && ownershipWords && hasOutcome) {
     const questionContext = currentQuestion.toLowerCase().includes("project")
       ? "project"
       : "example";
+    const emotional = reactionMode === "emotional" || previousTrust >= 70;
     return {
-      signal: hasNumber ? "strong_metrics" : "good_ownership",
-      state: "engaged",
-      trustDelta: 9,
-      caption: "Strong ownership signal detected",
-      bridge:
-        "That is more convincing because you gave me ownership and impact.",
-      followUp: `Let’s go one level deeper: what was the hardest decision you made in that ${questionContext}?`,
+      signal: "strong_metrics",
+      state: emotional ? "engaged" : "interested",
+      trustDelta: previousTrust >= 76 ? 5 : 8,
+      caption: emotional ? "Recruiter is visibly more engaged" : "Recruiter is listening closely",
+      bridge: humanBridge(clean, [
+        "That’s a stronger answer.",
+        "Okay, that is more convincing.",
+        "Good — now I can see ownership and impact.",
+      ]),
+      followUp:
+        reactionMode === "progress"
+          ? "Alright. Let’s switch gears a bit — tell me about a time something did not go as planned."
+          : `What was the hardest judgment call you had to make in that ${questionContext}?`,
       strength: "Clear ownership with measurable impact.",
+    };
+  }
+
+  if (ownershipWords && hasOutcome) {
+    return {
+      signal: "good_ownership",
+      state: previousTrust > 68 ? "engaged" : "interested",
+      trustDelta: 4,
+      caption: "Recruiter is building on the answer",
+      bridge: humanBridge(clean, ["Fair enough.", "Okay, that makes sense.", "That gives me a clearer picture."]),
+      followUp:
+        recruiterId === "startup_recruiter"
+          ? "What did you do when you had to move fast without having perfect information?"
+          : recruiterId === "german_corporate"
+            ? "How did you make sure the process stayed reliable and clear for others?"
+            : "What would your manager say was the most valuable part of your contribution there?",
+      strength: "Answer showed practical ownership.",
     };
   }
 
   return {
     signal: "good_ownership",
     state: "interested",
-    trustDelta: 5,
-    caption: "Recruiter engaged by specifics",
-    bridge: "Good, that is clearer.",
+    trustDelta: 2,
+    caption: "Recruiter is continuing naturally",
+    bridge: humanBridge(clean, ["Okay.", "I see.", "Got it."]),
     followUp:
-      "What would your manager or stakeholder say was the strongest part of your contribution?",
-    strength: "Answer showed useful specificity.",
+      "Let’s take one specific example from that and go a level deeper — what happened next?",
+    strength: "Answer gave enough context to continue.",
   };
 }
 
