@@ -616,40 +616,6 @@ function buildConversationalRecruiterSpeech({
     .trim();
 }
 
-
-function isMobileBrowser() {
-  if (typeof navigator === "undefined") return false;
-  return /iphone|ipad|ipod|android|mobile/i.test(navigator.userAgent);
-}
-
-function unlockMobileSpeechSynthesis() {
-  if (typeof window === "undefined" || !window.speechSynthesis) return;
-
-  try {
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.resume();
-
-    if (!isMobileBrowser()) return;
-
-    // Mobile browsers require the audio session to be opened inside the tap event.
-    // This tiny inaudible utterance unlocks speechSynthesis before async mic permission starts.
-    const unlockUtterance = new SpeechSynthesisUtterance(" ");
-    unlockUtterance.volume = 0.01;
-    unlockUtterance.rate = 1;
-    unlockUtterance.pitch = 1;
-    unlockUtterance.lang = "en-US";
-
-    window.speechSynthesis.speak(unlockUtterance);
-    window.setTimeout(() => {
-      try {
-        window.speechSynthesis.resume();
-      } catch {}
-    }, 80);
-  } catch (error) {
-    console.warn("WorkZo mobile speech unlock skipped:", error);
-  }
-}
-
 function getRecognitionConstructor() {
   if (typeof window === "undefined") return null;
   const speechWindow = window as WindowWithSpeechRecognition;
@@ -1532,6 +1498,8 @@ export default function InterviewPage() {
   const trustRef = useRef(recruiterTrust);
   const recruiterStateRef = useRef<RecruiterState>(recruiterState);
   const silenceTimerRef = useRef<number | null>(null);
+  const finalizationTimerRef = useRef<number | null>(null);
+  const pendingAnswerRef = useRef("");
   const hasGreetedRef = useRef(false);
   const interviewStepRef = useRef<"greeting" | "intro" | "deep_dive">(
     "greeting",
@@ -1593,7 +1561,9 @@ export default function InterviewPage() {
     return () => {
       isLiveRef.current = false;
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+      if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
       try {
+        recognitionRef.current?.abort?.();
         recognitionRef.current?.stop();
       } catch {}
       window.speechSynthesis?.cancel();
@@ -1643,17 +1613,46 @@ export default function InterviewPage() {
         return;
       }
 
-      window.speechSynthesis.cancel();
+      // IMPORTANT: never let the microphone listen while the recruiter is speaking.
+      // Mobile browsers often mute/duck speech output if recognition is already active.
+      try {
+        recognitionRef.current?.abort?.();
+        recognitionRef.current?.stop();
+      } catch {}
 
-      const speakNow = () => {
+      if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+      if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+      pendingAnswerRef.current = "";
+
+      window.speechSynthesis.cancel();
+      setIsListening(false);
+
+      const isMobileBrowser = /iphone|ipad|ipod|android/i.test(
+        navigator.userAgent || "",
+      );
+
+      let didFinish = false;
+      let finishTimer: number | null = null;
+
+      const finishSpeech = () => {
+        if (didFinish) return;
+        didFinish = true;
+        if (finishTimer) window.clearTimeout(finishTimer);
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        setVoiceStatus("Listening to your answer");
+        afterSpeak?.();
+      };
+
+      const speakNow = (allowVoiceWait = false) => {
         const utterance = new SpeechSynthesisUtterance(text);
         const runtimeVoice = recruiterRuntimeVoice(recruiterId);
         const voice = selectBrowserVoice(recruiterId);
-        if (voice) utterance.voice = voice;
 
-        utterance.lang = activeSetup.language?.toLowerCase().startsWith("de")
-          ? "de-DE"
-          : "en-US";
+        // On mobile, do not wait for a preferred voice. Waiting can break the
+        // user-gesture audio chain and make speech silent. Use the best available
+        // voice immediately, or the browser default.
+        if (voice) utterance.voice = voice;
 
         utterance.pitch = runtimeVoice.pitch;
         utterance.rate =
@@ -1664,12 +1663,11 @@ export default function InterviewPage() {
         utterance.volume = 1;
 
         try {
-          console.info("WorkZo browser voice selected", {
+          console.info("WorkZo recruiter speech", {
             recruiterId,
-            expectedDashboardVoice: runtimeVoice.voiceId,
+            expectedVoice: runtimeVoice.voiceId,
             browserVoice: voice?.name || "browser-default",
-            note:
-              "Standard Interview uses browser speech. Vapi dashboard voice applies to Live Interview only.",
+            mobile: isMobileBrowser,
           });
         } catch {}
 
@@ -1678,73 +1676,63 @@ export default function InterviewPage() {
         setIsListening(false);
         setVoiceStatus("Recruiter speaking...");
 
-        let finished = false;
-        const finishSpeaking = () => {
-          if (finished) return;
-          finished = true;
-          isSpeakingRef.current = false;
-          setIsSpeaking(false);
-          setVoiceStatus("Listening...");
-          afterSpeak?.();
+        const estimatedMs = Math.min(
+          22000,
+          Math.max(3600, text.split(/\s+/).length * 360),
+        );
+        finishTimer = window.setTimeout(finishSpeech, estimatedMs + 1500);
+
+        utterance.onstart = () => {
+          isSpeakingRef.current = true;
+          setIsSpeaking(true);
+          setIsListening(false);
+          setVoiceStatus("Recruiter speaking...");
         };
 
-        utterance.onend = finishSpeaking;
+        utterance.onend = finishSpeech;
 
-        utterance.onerror = (event) => {
-          console.warn("WorkZo speech synthesis error:", event);
-          finishSpeaking();
-        };
-
-        try {
-          window.speechSynthesis.resume();
-          window.speechSynthesis.speak(utterance);
-
-          // iOS/Chrome mobile sometimes pauses speechSynthesis immediately after speak().
-          // Resuming shortly after start makes the same desktop voice path audible on mobile.
-          if (isMobileBrowser()) {
-            window.setTimeout(() => {
-              try {
-                window.speechSynthesis.resume();
-              } catch {}
-            }, 220);
+        utterance.onerror = () => {
+          // If a selected voice fails, retry once with the browser default.
+          // Do not immediately start listening, otherwise mobile appears silent.
+          if (voice && allowVoiceWait) {
+            try {
+              const fallback = new SpeechSynthesisUtterance(text);
+              fallback.pitch = runtimeVoice.pitch;
+              fallback.rate = runtimeVoice.rate;
+              fallback.volume = 1;
+              fallback.onend = finishSpeech;
+              fallback.onerror = finishSpeech;
+              window.speechSynthesis.cancel();
+              window.speechSynthesis.speak(fallback);
+              return;
+            } catch {}
           }
-
-          const estimatedMs = Math.min(18000, Math.max(3500, text.length * 72));
-          window.setTimeout(() => {
-            if (isSpeakingRef.current && !window.speechSynthesis.speaking) {
-              finishSpeaking();
-            }
-          }, estimatedMs);
-        } catch (error) {
-          console.warn("WorkZo recruiter speech failed:", error);
-          finishSpeaking();
-        }
-      };
-
-      const waitForVoices = () => {
-        let didSpeak = false;
-        const speakOnce = () => {
-          if (didSpeak) return;
-          didSpeak = true;
-          window.speechSynthesis.removeEventListener("voiceschanged", speakOnce);
-          speakNow();
+          finishSpeech();
         };
 
-        window.speechSynthesis.addEventListener("voiceschanged", speakOnce);
-        window.setTimeout(speakOnce, 1200);
+        window.speechSynthesis.speak(utterance);
       };
 
       const voices = window.speechSynthesis.getVoices();
       const selectedVoice = selectBrowserVoice(recruiterId);
 
-      if (!voices.length || !selectedVoice) {
-        waitForVoices();
+      if (!isMobileBrowser && (!voices.length || !selectedVoice)) {
+        let didSpeak = false;
+        const speakOnce = () => {
+          if (didSpeak) return;
+          didSpeak = true;
+          window.speechSynthesis.removeEventListener("voiceschanged", speakOnce);
+          speakNow(true);
+        };
+
+        window.speechSynthesis.addEventListener("voiceschanged", speakOnce);
+        window.setTimeout(speakOnce, 700);
         return;
       }
 
-      speakNow();
+      speakNow(true);
     },
-    [activeSetup.language, recruiterId, speakerOn],
+    [recruiterId, speakerOn],
   );
 
   const listenForAnswer = useCallback(() => {
@@ -1759,24 +1747,36 @@ export default function InterviewPage() {
     }
 
     try {
+      recognitionRef.current?.abort?.();
       recognitionRef.current?.stop();
     } catch {}
 
+    if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+    if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+    pendingAnswerRef.current = "";
+
     const recognition = new Recognition();
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = activeSetup.language?.toLowerCase().startsWith("de")
       ? "de-DE"
       : "en-US";
 
     recognition.onstart = () => {
+      if (isSpeakingRef.current) {
+        try {
+          recognition.abort?.();
+          recognition.stop();
+        } catch {}
+        return;
+      }
       setIsListening(true);
-      setVoiceStatus("Listening...");
+      setVoiceStatus("Listening to your answer");
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = window.setTimeout(() => {
         if (!isLiveRef.current || isSpeakingRef.current) return;
-        setVoiceStatus("Waiting for your answer...");
-      }, 7000);
+        setVoiceStatus("Take your time — answer naturally");
+      }, 9000);
     };
 
     recognition.onerror = (event) => {
@@ -1784,7 +1784,7 @@ export default function InterviewPage() {
       const error = event.error || "";
       if (error === "no-speech") {
         setVoiceStatus("I’m still listening. Try answering again.");
-        window.setTimeout(() => listenForAnswer(), 700);
+        window.setTimeout(() => listenForAnswer(), 900);
         return;
       }
       if (error === "not-allowed") {
@@ -1796,36 +1796,63 @@ export default function InterviewPage() {
 
     recognition.onend = () => {
       setIsListening(false);
-      if (isLiveRef.current && !isSpeakingRef.current) {
+      if (isLiveRef.current && !isSpeakingRef.current && !pendingAnswerRef.current) {
         setVoiceStatus("Waiting for your answer...");
       }
     };
 
     recognition.onresult = (event: BrowserSpeechRecognitionEvent) => {
-      let finalText = "";
+      if (isSpeakingRef.current) return;
 
+      let transcriptText = "";
       for (
         let index = event.resultIndex;
         index < event.results.length;
         index += 1
       ) {
-        const result = event.results[index];
-        if (result.isFinal) finalText += result[0].transcript;
+        transcriptText += event.results[index][0].transcript;
       }
 
-      const answer = finalText.replace(/\s+/g, " ").trim();
-      if (!answer || answer.length < 3) return;
+      const clean = transcriptText.replace(/\s+/g, " ").trim();
+      if (!clean) return;
 
-      try {
-        recognition.stop();
-      } catch {}
+      pendingAnswerRef.current = clean;
+      setVoiceStatus("Listening — finish your answer naturally");
 
-      setIsListening(false);
-      handleCandidateAnswerRef.current(answer);
+      if (finalizationTimerRef.current) {
+        window.clearTimeout(finalizationTimerRef.current);
+      }
+
+      finalizationTimerRef.current = window.setTimeout(() => {
+        const finalAnswer = pendingAnswerRef.current.trim();
+        const wordCount = finalAnswer.split(/\s+/).filter(Boolean).length;
+
+        if (!finalAnswer || wordCount < 5) {
+          setVoiceStatus("Continue your answer naturally");
+          return;
+        }
+
+        pendingAnswerRef.current = "";
+        try {
+          recognition.stop();
+        } catch {}
+
+        setIsListening(false);
+        handleCandidateAnswerRef.current(finalAnswer);
+      }, 2800);
     };
 
     recognitionRef.current = recognition;
-    recognition.start();
+
+    // Start recognition only after recruiter speech has fully ended.
+    window.setTimeout(() => {
+      if (!isLiveRef.current || isSpeakingRef.current) return;
+      try {
+        recognition.start();
+      } catch {
+        setVoiceStatus("Listening paused. Tap mic to continue.");
+      }
+    }, 250);
   }, [activeSetup.language]);
 
   const handleCandidateAnswer = useCallback(
@@ -2031,26 +2058,13 @@ export default function InterviewPage() {
   }, [handleCandidateAnswer]);
 
   const startStandardInterview = useCallback(async () => {
-    unlockMobileSpeechSynthesis();
-
     const setup = saveLatestInterviewSetup(
       normalizeSetup(readLatestInterviewSetup()),
     );
     setActiveSetup(setup);
 
-    try {
-      await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
-    } catch {
-      setVoiceStatus("Microphone permission is needed to start.");
-      return;
-    }
+    // Do not start microphone before the recruiter speaks.
+    // On mobile, active mic/recognition can suppress browser speech output.
 
     const profile = getRecruiterVoiceProfile(setup.recruiterPersonality);
     const recruiterVoiceId = openAiVoiceIdForRecruiter(
@@ -2126,7 +2140,10 @@ export default function InterviewPage() {
     setIsSpeaking(false);
     setVoiceStatus("Alright. That gives me enough context for now.");
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
+    if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+    pendingAnswerRef.current = "";
     try {
+      recognitionRef.current?.abort?.();
       recognitionRef.current?.stop();
     } catch {}
     window.speechSynthesis?.cancel();
@@ -2178,18 +2195,16 @@ export default function InterviewPage() {
   ]);
 
   const handleMicClick = useCallback(() => {
-    // Must run directly inside the tap/click event. This unlocks mobile audio
-    // before any async microphone permission or interview setup work starts.
-    unlockMobileSpeechSynthesis();
-
     if (isLive) {
-      if (!isSpeaking) {
+      // During a live session the mic button is only a manual resume.
+      // It must never start listening while the recruiter is speaking.
+      if (!isSpeaking && !isListening) {
         listenForAnswer();
       }
       return;
     }
     void startStandardInterview();
-  }, [isLive, isSpeaking, listenForAnswer, startStandardInterview]);
+  }, [isLive, isListening, isSpeaking, listenForAnswer, startStandardInterview]);
 
   const handleModeChange = useCallback(
     (nextMode: InterviewMode) => {
