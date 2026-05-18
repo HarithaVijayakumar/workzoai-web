@@ -412,7 +412,11 @@ function buildHumanPauseMs(analysis: AnswerAnalysis) {
   // Keep the live interview moving like a real conversation.
   // Deeper critique is saved for the results page, not spoken mid-call.
   if (analysis.signal === "rambling") return 900;
-  if (analysis.signal === "strong_metrics" || analysis.signal === "good_ownership") return 520;
+  if (
+    analysis.signal === "strong_metrics" ||
+    analysis.signal === "good_ownership"
+  )
+    return 520;
   if (analysis.signal === "recovery") return 620;
   return 680;
 }
@@ -561,6 +565,38 @@ function openAiVoiceIdForRecruiter(recruiterId: RecruiterId) {
   return recruiterRuntimeVoice(recruiterId).voiceId;
 }
 
+function isMobileBrowser() {
+  if (typeof navigator === "undefined") return false;
+  return /iphone|ipad|ipod|android|mobile/i.test(navigator.userAgent || "");
+}
+
+function speakWithSystemVoiceFallback({
+  recruiterId,
+  text,
+  onDone,
+}: {
+  recruiterId: RecruiterId;
+  text: string;
+  onDone: () => void;
+}) {
+  if (typeof window === "undefined" || !window.speechSynthesis) return false;
+
+  try {
+    const utterance = new SpeechSynthesisUtterance(text);
+    const runtimeVoice = recruiterRuntimeVoice(recruiterId);
+    utterance.pitch = runtimeVoice.pitch;
+    utterance.rate = Math.min(0.94, runtimeVoice.rate);
+    utterance.volume = 1;
+    utterance.onend = onDone;
+    utterance.onerror = onDone;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function recruiterQuestionLead(
   recruiterId: RecruiterId,
   state: RecruiterState,
@@ -578,7 +614,10 @@ function cleanLiveRecruiterSpeech(text: string) {
     .replace(/answer was too short[^.?!]*[.?!]?/gi, "")
     .replace(/missing measurable impact[^.?!]*[.?!]?/gi, "")
     .replace(/i'?m going to be direct here\.?/gi, "")
-    .replace(/recruiter is (exploring|inviting|guiding|asking|keeping)[^.?!]*[.?!]?/gi, "")
+    .replace(
+      /recruiter is (exploring|inviting|guiding|asking|keeping)[^.?!]*[.?!]?/gi,
+      "",
+    )
     .replace(/\s+/g, " ")
     .replace(/\s+([.?!,])/g, "$1")
     .trim();
@@ -659,7 +698,9 @@ function buildConversationalRecruiterSpeech({
         ? "That helps."
         : "Understood.";
 
-  return cleanLiveRecruiterSpeech(`${prefix} ${spokenBridge} ${spokenQuestion}`);
+  return cleanLiveRecruiterSpeech(
+    `${prefix} ${spokenBridge} ${spokenQuestion}`,
+  );
 }
 
 function getRecognitionConstructor() {
@@ -1592,7 +1633,8 @@ export default function InterviewPage() {
     return () => {
       isLiveRef.current = false;
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-      if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+      if (finalizationTimerRef.current)
+        window.clearTimeout(finalizationTimerRef.current);
       pendingAnswerRef.current = "";
       try {
         recognitionRef.current?.stop();
@@ -1662,7 +1704,8 @@ export default function InterviewPage() {
       audio.preload = "auto";
       audio.volume = 0;
       audio.muted = true;
-      (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+      (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline =
+        true;
       audio.src =
         "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
       currentRecruiterAudioRef.current = audio;
@@ -1708,66 +1751,35 @@ export default function InterviewPage() {
         currentAudioSourceRef.current?.stop();
         currentAudioSourceRef.current = null;
       } catch {}
+
       try {
         currentRecruiterAudioRef.current?.pause();
       } catch {}
 
-      isSpeakingRef.current = true;
-      setIsSpeaking(true);
-      setIsListening(false);
-      setVoiceStatus("Recruiter speaking...");
+      let didFinish = false;
+      let safetyTimeout: number | null = null;
 
-      try {
-        const audioBlob = await fetchElevenLabsAudio({
-          recruiterId,
-          text: cleanText,
-        });
+      const finishSpeech = () => {
+        if (didFinish) return;
+        didFinish = true;
 
-        let didFinishAudio = false;
-        const finishAudio = () => {
-          if (didFinishAudio) return;
-          didFinishAudio = true;
-          try {
-            currentAudioSourceRef.current?.disconnect();
-          } catch {}
-          currentAudioSourceRef.current = null;
-          isSpeakingRef.current = false;
-          setIsSpeaking(false);
-          setVoiceStatus("Listening...");
-          afterSpeak?.();
-        };
-
-        const safetyTimeout = window.setTimeout(
-          finishAudio,
-          Math.min(26000, Math.max(6500, cleanText.length * 110)),
-        );
-
-        const AudioContextConstructor =
-          typeof window !== "undefined"
-            ? window.AudioContext ||
-              (window as Window & { webkitAudioContext?: typeof AudioContext })
-                .webkitAudioContext
-            : null;
-
-        if (AudioContextConstructor) {
-          const context = audioContextRef.current || new AudioContextConstructor();
-          audioContextRef.current = context;
-          await context.resume();
-
-          const arrayBuffer = await audioBlob.arrayBuffer();
-          const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
-          const source = context.createBufferSource();
-          source.buffer = audioBuffer;
-          source.connect(context.destination);
-          source.onended = () => {
-            window.clearTimeout(safetyTimeout);
-            finishAudio();
-          };
-          currentAudioSourceRef.current = source;
-          source.start(0);
-          return;
+        if (safetyTimeout) {
+          window.clearTimeout(safetyTimeout);
+          safetyTimeout = null;
         }
 
+        try {
+          currentAudioSourceRef.current?.disconnect();
+        } catch {}
+
+        currentAudioSourceRef.current = null;
+        isSpeakingRef.current = false;
+        setIsSpeaking(false);
+        setVoiceStatus("Listening...");
+        afterSpeak?.();
+      };
+
+      const playWithHtmlAudio = async (audioBlob: Blob) => {
         const audioUrl = URL.createObjectURL(audioBlob);
         const audio = currentRecruiterAudioRef.current || new Audio();
         currentRecruiterAudioRef.current = audio;
@@ -1777,28 +1789,97 @@ export default function InterviewPage() {
         audio.preload = "auto";
         audio.muted = false;
         audio.volume = 1;
-        (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+        (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline =
+          true;
 
-        const finishHtmlAudio = () => {
-          window.clearTimeout(safetyTimeout);
-          URL.revokeObjectURL(audioUrl);
-          finishAudio();
+        const cleanup = () => {
+          try {
+            URL.revokeObjectURL(audioUrl);
+          } catch {}
+          finishSpeech();
         };
 
-        audio.onended = finishHtmlAudio;
-        audio.onerror = finishHtmlAudio;
+        audio.onended = cleanup;
+        audio.onerror = cleanup;
 
         try {
           audio.load();
         } catch {}
 
         await audio.play();
+      };
+
+      const playWithAudioContext = async (audioBlob: Blob) => {
+        const AudioContextConstructor =
+          typeof window !== "undefined"
+            ? window.AudioContext ||
+              (window as Window & { webkitAudioContext?: typeof AudioContext })
+                .webkitAudioContext
+            : null;
+
+        if (!AudioContextConstructor) {
+          await playWithHtmlAudio(audioBlob);
+          return;
+        }
+
+        const context =
+          audioContextRef.current || new AudioContextConstructor();
+        audioContextRef.current = context;
+        await context.resume();
+
+        const arrayBuffer = await audioBlob.arrayBuffer();
+        const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
+        const source = context.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(context.destination);
+        source.onended = finishSpeech;
+        currentAudioSourceRef.current = source;
+        source.start(0);
+      };
+
+      isSpeakingRef.current = true;
+      setIsSpeaking(true);
+      setIsListening(false);
+      setVoiceStatus("Recruiter speaking...");
+
+      safetyTimeout = window.setTimeout(
+        finishSpeech,
+        Math.min(30000, Math.max(7000, cleanText.length * 120)),
+      );
+
+      try {
+        const audioBlob = await fetchElevenLabsAudio({
+          recruiterId,
+          text: cleanText,
+        });
+
+        // Mobile browsers are stricter about WebAudio autoplay. Use the
+        // already-unlocked HTMLAudioElement first on mobile, and use
+        // AudioContext only on desktop for lower latency.
+        if (isMobileBrowser()) {
+          await playWithHtmlAudio(audioBlob);
+        } else {
+          try {
+            await playWithAudioContext(audioBlob);
+          } catch {
+            await playWithHtmlAudio(audioBlob);
+          }
+        }
       } catch (error) {
         console.warn("WorkZo ElevenLabs voice failed:", error);
-        isSpeakingRef.current = false;
-        setIsSpeaking(false);
-        setVoiceStatus("Voice unavailable. Continue with the interview.");
-        afterSpeak?.();
+
+        // Never show a scary error during the interview. If ElevenLabs or
+        // mobile playback fails, use system speech as an audible fallback and
+        // keep the interview moving naturally.
+        const fallbackStarted = speakWithSystemVoiceFallback({
+          recruiterId,
+          text: cleanText,
+          onDone: finishSpeech,
+        });
+
+        if (!fallbackStarted) {
+          finishSpeech();
+        }
       }
     },
     [recruiterId, speakerOn],
@@ -1881,7 +1962,9 @@ export default function InterviewPage() {
       }
 
       finalizationTimerRef.current = window.setTimeout(() => {
-        const finalAnswer = pendingAnswerRef.current.replace(/\s+/g, " ").trim();
+        const finalAnswer = pendingAnswerRef.current
+          .replace(/\s+/g, " ")
+          .trim();
         const wordCount = finalAnswer.split(" ").filter(Boolean).length;
 
         if (!finalAnswer || wordCount < 6) {
@@ -2053,7 +2136,10 @@ export default function InterviewPage() {
         nextQuestion,
       });
 
-      const thinkingDelay = Math.min(900, Math.max(450, buildHumanPauseMs(analysis)));
+      const thinkingDelay = Math.min(
+        900,
+        Math.max(450, buildHumanPauseMs(analysis)),
+      );
 
       setVoiceStatus("Recruiter is thinking...");
 
@@ -2197,7 +2283,8 @@ export default function InterviewPage() {
     setIsSpeaking(false);
     setVoiceStatus("Alright. That gives me enough context for now.");
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-    if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+    if (finalizationTimerRef.current)
+      window.clearTimeout(finalizationTimerRef.current);
     pendingAnswerRef.current = "";
     try {
       recognitionRef.current?.stop();
@@ -2351,27 +2438,27 @@ export default function InterviewPage() {
             />
           </div>
           <div className="hidden h-full lg:block">
-          <InterviewRoom
-            recruiterName={recruiterName}
-            recruiterRole={recruiterRole}
-            recruiterId={recruiterId}
-            question="Live Interview is ready. Use Standard Interview for the stable Product Hunt demo."
-            status={voiceStatus}
-            isLive={false}
-            isSpeaking={false}
-            isListening={false}
-            isMuted={false}
-            recruiterState={recruiterState}
-            recruiterTrust={recruiterTrust}
-            selectedMode={mode}
-            onSelectMode={handleModeChange}
-            elapsed={elapsed}
-            transcript={transcript}
-            onMicClick={() => handleModeChange("standard")}
-            onEndInterview={stopInterview}
-            speakerOn={speakerOn}
-            onToggleSpeaker={handleToggleSpeaker}
-          />
+            <InterviewRoom
+              recruiterName={recruiterName}
+              recruiterRole={recruiterRole}
+              recruiterId={recruiterId}
+              question="Live Interview is ready. Use Standard Interview for the stable Product Hunt demo."
+              status={voiceStatus}
+              isLive={false}
+              isSpeaking={false}
+              isListening={false}
+              isMuted={false}
+              recruiterState={recruiterState}
+              recruiterTrust={recruiterTrust}
+              selectedMode={mode}
+              onSelectMode={handleModeChange}
+              elapsed={elapsed}
+              transcript={transcript}
+              onMicClick={() => handleModeChange("standard")}
+              onEndInterview={stopInterview}
+              speakerOn={speakerOn}
+              onToggleSpeaker={handleToggleSpeaker}
+            />
           </div>
           <div className="absolute inset-x-0 bottom-28 z-50 mx-auto hidden max-w-xl rounded-[26px] border border-violet-300/15 bg-violet-500/10 p-5 text-center backdrop-blur-2xl lg:block">
             <Video className="mx-auto h-7 w-7 text-violet-200" />
