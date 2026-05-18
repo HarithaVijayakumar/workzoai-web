@@ -562,6 +562,24 @@ function recruiterRuntimeVoice(
   };
 }
 
+
+function findVoiceByPreferredName(
+  voices: SpeechSynthesisVoice[],
+  preferredNames: string[],
+): SpeechSynthesisVoice | null {
+  for (const preferredName of preferredNames) {
+    const match = voices.find((voice) =>
+      `${voice.name} ${voice.voiceURI}`
+        .toLowerCase()
+        .includes(preferredName.toLowerCase()),
+    );
+
+    if (match) return match;
+  }
+
+  return null;
+}
+
 function openAiVoiceIdForRecruiter(recruiterId: RecruiterId) {
   return recruiterRuntimeVoice(recruiterId).voiceId;
 }
@@ -586,14 +604,10 @@ function speakWithSystemVoiceFallback({
     const utterance = new SpeechSynthesisUtterance(text);
     const runtimeVoice = recruiterRuntimeVoice(recruiterId);
     const voices = window.speechSynthesis.getVoices();
-    const preferred =
-      voices.find((voice) =>
-        runtimeVoice.browserVoiceNames.some((preferredName) =>
-          `${voice.name} ${voice.voiceURI}`
-            .toLowerCase()
-            .includes(preferredName.toLowerCase()),
-        ),
-      ) || null;
+    const preferred = findVoiceByPreferredName(
+      voices,
+      runtimeVoice.browserVoiceNames,
+    );
     if (preferred) utterance.voice = preferred;
     utterance.pitch = runtimeVoice.pitch;
     utterance.rate = Math.min(0.94, runtimeVoice.rate);
