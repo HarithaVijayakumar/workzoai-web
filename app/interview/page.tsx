@@ -202,28 +202,147 @@ function resolveRecruiterPersonality(
   return "startup_recruiter";
 }
 
+function readStoredSetupCandidate(): Record<string, unknown> {
+  if (typeof window === "undefined") return {};
+
+  const keys = [
+    "workzo-interview-setup-v4",
+    "workzo-latest-interview-setup",
+    "workzo-interview-setup-latest",
+    "workzo-interview-setup-v3",
+    "workzo-interview-setup-v2",
+    "workzo-interview-setup",
+    "workzo_setup",
+    "workzo-onboarding",
+    "workzo_onboarding",
+  ];
+
+  for (const key of keys) {
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      const setup = (parsed.setup || parsed.interviewSetup || parsed) as Record<
+        string,
+        unknown
+      >;
+      if (
+        setup?.cvText ||
+        setup?.jobDescription ||
+        setup?.targetRole ||
+        setup?.recruiterMemoryProfile ||
+        setup?.jobMemoryProfile ||
+        setup?.cvProfile ||
+        setup?.jobProfile
+      ) {
+        return setup;
+      }
+    } catch {
+      // Ignore malformed/localStorage data and try the next known key.
+    }
+  }
+
+  return {};
+}
+
+function asCleanString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    const clean = asCleanString(value);
+    if (clean) return clean;
+  }
+  return "";
+}
+
+function firstObject(...values: unknown[]) {
+  for (const value of values) {
+    if (value && typeof value === "object") return value;
+  }
+  return null;
+}
+
 function normalizeSetup(
   input?: Partial<WorkZoInterviewSetup> | null,
 ): WorkZoInterviewSetup {
   const stored = input || readLatestInterviewSetup();
-  const source = stored as Partial<WorkZoInterviewSetup> &
+  const fallback = readStoredSetupCandidate();
+  const storedSource = stored as Partial<WorkZoInterviewSetup> &
     Record<string, unknown>;
+  const source = {
+    ...fallback,
+    ...storedSource,
+  } as Partial<WorkZoInterviewSetup> & Record<string, unknown>;
   const recruiterPersonality = resolveRecruiterPersonality(source);
 
+  const recruiterMemoryProfile = firstObject(
+    storedSource.recruiterMemoryProfile,
+    fallback.recruiterMemoryProfile,
+    source.cvProfile,
+    source.structuredCv,
+    source.candidateProfile,
+  );
+  const jobMemoryProfile = firstObject(
+    storedSource.jobMemoryProfile,
+    fallback.jobMemoryProfile,
+    source.jobProfile,
+    source.structuredJob,
+    source.roleProfile,
+  );
+
   return {
-    cvText: source.cvText || "",
-    jobDescription: source.jobDescription || "",
-    targetRole: source.targetRole || "General Role",
-    targetMarket: source.targetMarket || "Global",
-    companyStyle: source.companyStyle || "Realistic",
+    cvText: firstString(
+      storedSource.cvText,
+      fallback.cvText,
+      source.resumeText,
+      source.cv,
+      source.resume,
+      source.extractedCvText,
+    ),
+    jobDescription: firstString(
+      storedSource.jobDescription,
+      fallback.jobDescription,
+      source.jdText,
+      source.jobDescriptionText,
+      source.jd,
+      source.jobPost,
+    ),
+    targetRole:
+      firstString(
+        storedSource.targetRole,
+        fallback.targetRole,
+        source.role,
+        source.position,
+        (jobMemoryProfile as { roleTitle?: unknown } | null)?.roleTitle,
+      ) || "General Role",
+    targetMarket:
+      firstString(
+        storedSource.targetMarket,
+        fallback.targetMarket,
+        source.country,
+        source.market,
+        source.location,
+      ) || "Global",
+    companyStyle:
+      firstString(
+        storedSource.companyStyle,
+        fallback.companyStyle,
+        source.recruiterStyle,
+      ) || "Realistic",
     recruiterPersonality,
-    language: source.language || "English",
-    recruiterMemoryProfile: source.recruiterMemoryProfile || null,
-    jobMemoryProfile: source.jobMemoryProfile || null,
-    source: source.source || "latest-upload",
+    language:
+      firstString(storedSource.language, fallback.language) || "English",
+    recruiterMemoryProfile:
+      recruiterMemoryProfile as WorkZoInterviewSetup["recruiterMemoryProfile"],
+    jobMemoryProfile:
+      jobMemoryProfile as WorkZoInterviewSetup["jobMemoryProfile"],
+    source:
+      (source.source as WorkZoInterviewSetup["source"]) || "latest-upload",
     setupVersion: 4,
-    setupId: source.setupId || "",
-    updatedAt: source.updatedAt || "",
+    setupId: firstString(storedSource.setupId, fallback.setupId),
+    updatedAt: firstString(storedSource.updatedAt, fallback.updatedAt),
   };
 }
 
@@ -290,59 +409,13 @@ function getAnswerSnippet(answer: string) {
 }
 
 function buildHumanPauseMs(analysis: AnswerAnalysis) {
-  // Frozen voice rule: this only delays the next recruiter sentence.
-  // It does not touch speech synthesis, recognition, microphone order, or mobile audio.
-  if (analysis.state === "losing_confidence") return 1900;
-  if (analysis.state === "pressuring") return 1550;
-  if (analysis.state === "skeptical") return 1350;
-  if (analysis.state === "recovering_trust") return 1050;
-  if (analysis.signal === "strong_metrics") return 760;
-  if (analysis.state === "engaged" || analysis.state === "interested") return 820;
-  return 1100;
-}
-
-function tinyHash(text: string) {
-  let hash = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    hash = (hash * 31 + text.charCodeAt(index)) % 9973;
-  }
-  return hash;
-}
-
-function pickByAnswer<T>(answer: string, items: T[]) {
-  if (!items.length) return undefined;
-  return items[tinyHash(answer) % items.length];
-}
-
-function humanBridge(answer: string, options: string[]) {
-  return pickByAnswer(answer, options) || options[0] || "Okay.";
-}
-
-function lastRememberedStrength(memory: RecruiterMemory) {
-  return memory.rememberedStrengths?.[0] || "";
-}
-
-function lastRememberedWeakness(memory: RecruiterMemory) {
-  return memory.rememberedWeaknesses?.[0] || "";
-}
-
-function shouldUseCallback(answer: string, memory: RecruiterMemory) {
-  const remembered =
-    (memory.rememberedStrengths?.length || 0) +
-    (memory.rememberedWeaknesses?.length || 0) +
-    (memory.strongRecoveries || 0);
-
-  // Keep callbacks as a wow-factor, but make them occasional and relevant.
-  return remembered >= 2 && tinyHash(`${answer}-${remembered}`) % 5 === 0;
-}
-
-function inferHumanReactionMode(answer: string, memory: RecruiterMemory) {
-  const hash = tinyHash(`${answer}-${memory.recruiterTrust || 60}`) % 100;
-  if (hash < 45) return "progress";
-  if (hash < 70) return "curious";
-  if (hash < 85) return "skeptical";
-  if (hash < 95) return "emotional";
-  return "challenge";
+  if (analysis.state === "losing_confidence") return 1850;
+  if (analysis.state === "pressuring") return 1450;
+  if (analysis.state === "skeptical") return 1250;
+  if (analysis.state === "recovering_trust") return 950;
+  if (analysis.state === "engaged" || analysis.state === "interested")
+    return 650;
+  return 1050;
 }
 
 function softenRecruiterSpeech(text: string) {
@@ -353,6 +426,186 @@ function softenRecruiterSpeech(text: string) {
     .replace(/\bSpeak confidently\b/gi, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function stableTextHash(text: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash >>> 0);
+}
+
+function memoryTurnIndex(memory: RecruiterMemory) {
+  return (
+    (memory.weakMetrics || 0) +
+    (memory.ownershipIssues || 0) +
+    (memory.vagueAnswers || 0) +
+    (memory.strongRecoveries || 0) +
+    (memory.rememberedWeaknesses?.length || 0) +
+    (memory.rememberedStrengths?.length || 0)
+  );
+}
+
+function pickHumanLine(
+  lines: string[],
+  seedSource: string,
+  memory?: RecruiterMemory,
+) {
+  const offset = memory ? memoryTurnIndex(memory) : 0;
+  return lines[(stableTextHash(seedSource) + offset) % lines.length];
+}
+
+function trimQuestionLead(text: string) {
+  return text
+    .replace(/^(Okay,? thanks\.?\s*)+/i, "")
+    .replace(/^(Good to hear\.?\s*)+/i, "")
+    .replace(/^(Good\s*[—-]\s*)+/i, "")
+    .replace(/^(Alright\.?\s*)+/i, "")
+    .replace(/^(That is more convincing[^.]*\.\s*)+/i, "")
+    .replace(/^(Now I can see ownership and impact\.\s*)+/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildHumanBridge({
+  recruiterId,
+  state,
+  signal,
+  seed,
+  memory,
+}: {
+  recruiterId: RecruiterId;
+  state: RecruiterState;
+  signal?: AnswerAnalysis["signal"];
+  seed: string;
+  memory: RecruiterMemory;
+}) {
+  if (state === "recovering_trust") {
+    return pickHumanLine(
+      [
+        "That lands better.",
+        "Okay, that gives me more confidence.",
+        "That version is clearer.",
+        "I can follow your role more easily now.",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (
+    state === "skeptical" ||
+    state === "pressuring" ||
+    state === "losing_confidence"
+  ) {
+    return pickHumanLine(
+      [
+        "Let me push on that for a moment.",
+        "I want to test that a little.",
+        "I’m not fully there yet.",
+        "Hold on — I need to separate your role from the team’s work.",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (signal === "strong_metrics") {
+    return pickHumanLine(
+      [
+        "That gives me something concrete to work with.",
+        "Okay, that sounds more grounded.",
+        "That is useful context.",
+        "Now I’m getting a clearer picture.",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (recruiterId === "startup_recruiter") {
+    return pickHumanLine(
+      ["Got it.", "Okay.", "Right.", "Makes sense."],
+      seed,
+      memory,
+    );
+  }
+
+  if (recruiterId === "german_corporate") {
+    return pickHumanLine(
+      ["Understood.", "Thank you.", "Okay.", "That helps."],
+      seed,
+      memory,
+    );
+  }
+
+  return pickHumanLine(
+    ["Okay.", "I see.", "That helps.", "Fair enough.", "Right."],
+    seed,
+    memory,
+  );
+}
+
+function buildNaturalIntroQuestion(
+  recruiterId: RecruiterId,
+  answer: string,
+  setup?: WorkZoInterviewSetup,
+) {
+  const snippet = getAnswerSnippet(answer);
+  const seed = `${recruiterId}:${answer}`;
+  const role = setup ? getRole(setup) : "this role";
+  const jobFocus =
+    setup?.jobMemoryProfile?.interviewFocus?.[0] ||
+    setup?.jobMemoryProfile?.responsibilities?.[0] ||
+    "the role requirements";
+
+  if (recruiterId === "startup_recruiter") {
+    return pickHumanLine(
+      [
+        `Let’s make this practical. Give me one recent example where you had to solve a messy problem${snippet ? ` related to ${snippet}` : ""}.`,
+        `For ${role}, I care about ${jobFocus}. Give me one example that proves you can handle that in practice.`,
+        "I want to move from background to evidence. Tell me about one situation where you had real responsibility.",
+        "Let’s use a real example now. What is one piece of work where you clearly owned the outcome?",
+      ],
+      seed,
+    );
+  }
+
+  if (recruiterId === "friendly_hr") {
+    return pickHumanLine(
+      [
+        "Thanks, that gives me a starting point. Could you walk me through one real example from your recent experience?",
+        `For ${role}, I want to connect your background to ${jobFocus}. What example should I look at first?`,
+        "I’d like to understand how you work in practice. Tell me about one situation you handled well.",
+        `Let’s stay with that background for a moment${snippet ? ` — especially ${snippet}` : ""}. What is one example that shows how you work?`,
+      ],
+      seed,
+    );
+  }
+
+  if (recruiterId === "german_corporate") {
+    return pickHumanLine(
+      [
+        "Thank you. Let’s move from overview to evidence. Please describe one concrete situation, your responsibility, and the result.",
+        `For ${role}, one area I will test is ${jobFocus}. Please give me a concrete example that shows this.`,
+        "Understood. Now give me one structured example: situation, what you personally did, and what changed afterwards.",
+        "Let’s make it specific. Choose one recent example where your contribution can be clearly evaluated.",
+      ],
+      seed,
+    );
+  }
+
+  return pickHumanLine(
+    [
+      "Thanks. Now I want to understand how you work, not just what you’ve done. Give me one real example.",
+      `For ${role}, I’m going to test ${jobFocus}. Give me one situation where your experience connects to that.`,
+      "Okay. Let’s go into one situation where you had to make a decision or take ownership.",
+      "That gives me the overview. Pick one example from your experience and walk me through what happened.",
+    ],
+    seed,
+  );
 }
 
 function recruiterStateLabel(state: RecruiterState, trust: number) {
@@ -387,6 +640,374 @@ function recruiterPressureLine(
   return "Answer like this is a real final-round conversation.";
 }
 
+
+type WowMomentKind =
+  | "quiet_progression"
+  | "curiosity_spike"
+  | "skeptical_pause"
+  | "trust_drop"
+  | "trust_recovery"
+  | "panel_whisper"
+  | "memory_callback"
+  | "topic_switch";
+
+type RecruiterMoodSnapshot = {
+  kind: WowMomentKind;
+  trust: number;
+  interest: number;
+  skepticism: number;
+  patience: number;
+  energy: number;
+  caption: string;
+  bridge: string;
+  followUp?: string;
+};
+
+function clampScore(value: number, min = 8, max = 94) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function buildRecruiterMoodSnapshot({
+  analysis,
+  previousTrust,
+  nextTrust,
+  answer,
+  memory,
+  recruiterId,
+  question,
+  setup,
+}: {
+  analysis: AnswerAnalysis;
+  previousTrust: number;
+  nextTrust: number;
+  answer: string;
+  memory: RecruiterMemory;
+  recruiterId: RecruiterId;
+  question: string;
+  setup: WorkZoInterviewSetup;
+}): RecruiterMoodSnapshot {
+  const clean = answer.replace(/\s+/g, " ").trim();
+  const lower = clean.toLowerCase();
+  const turn = memoryTurnIndex(memory) + 1;
+  const seed = `${recruiterId}:${turn}:${previousTrust}:${nextTrust}:${question}:${clean}`;
+  const delta = nextTrust - previousTrust;
+  const hasSpecificWork = /customer|client|ticket|stakeholder|dashboard|analysis|support|project|process|data|report|automation|migration|incident|escalation|sales|revenue|conversion|retention|sla|api|sql|python|excel|power bi|tableau/i.test(clean);
+  const hasLeadershipSignal = /led|owned|decided|coordinated|managed|prioriti[sz]ed|handled|resolved|designed|implemented|launched|improved|reduced|increased/i.test(clean);
+  const hasMetricSignal = /\d|percent|%|hours?|days?|weeks?|months?|saved|reduced|increased|improved|faster|tickets?|customers?|users?|revenue|cost|sla|accuracy/i.test(clean);
+  const hasAvoidance = /not sure|maybe|kind of|sort of|basically|i think|we usually|we did|helped with|involved in/i.test(lower);
+  const context = `${summarizeCandidateExperience(setup)} ${summarizeJobContext(setup)}`.toLowerCase();
+  const canCallback = turn >= 3 && stableTextHash(seed) % 6 === 0 && context.length > 40;
+  const canPanelWhisper = turn >= 4 && stableTextHash(seed) % 9 === 0;
+  const canTopicSwitch = turn >= 5 && stableTextHash(seed) % 7 === 0;
+
+  let kind: WowMomentKind = "quiet_progression";
+  if (delta <= -7 || analysis.state === "losing_confidence") kind = "trust_drop";
+  else if (analysis.state === "recovering_trust" || delta >= 7) kind = "trust_recovery";
+  else if (analysis.state === "skeptical" || analysis.state === "pressuring" || hasAvoidance)
+    kind = "skeptical_pause";
+  else if (canPanelWhisper && (hasSpecificWork || hasLeadershipSignal)) kind = "panel_whisper";
+  else if (canCallback) kind = "memory_callback";
+  else if (canTopicSwitch) kind = "topic_switch";
+  else if (hasSpecificWork || hasLeadershipSignal || hasMetricSignal) kind = "curiosity_spike";
+
+  const skepticism = clampScore(
+    45 + (previousTrust - nextTrust) * 1.5 + (hasAvoidance ? 16 : 0) +
+      (analysis.state === "skeptical" || analysis.state === "pressuring" ? 12 : 0),
+  );
+  const interest = clampScore(
+    42 + (hasSpecificWork ? 15 : 0) + (hasLeadershipSignal ? 12 : 0) +
+      (hasMetricSignal ? 10 : 0) + Math.max(0, delta) * 1.2 -
+      (analysis.signal === "rambling" ? 12 : 0),
+  );
+  const patience = clampScore(
+    70 - (analysis.signal === "rambling" ? 18 : 0) -
+      (analysis.signal === "too_short" ? 9 : 0) -
+      (kind === "trust_drop" ? 14 : 0) +
+      (kind === "trust_recovery" ? 8 : 0),
+  );
+  const energy = clampScore(48 + interest * 0.35 - skepticism * 0.18);
+
+  const callbacks = extractSafeCvSignals(setup);
+  const callbackLine = callbacks.length
+    ? pickHumanLine(
+        callbacks.map((item) => `I’m connecting this back to your ${item.toLowerCase()} experience.`),
+        seed,
+        memory,
+      )
+    : "I’m connecting this back to what you told me earlier.";
+
+  const panelWhisper = pickHumanLine(
+    [
+      "A hiring manager would probably pause on that point.",
+      "Someone on the panel might ask you to prove that more tightly.",
+      "That is the kind of detail a second interviewer would likely pick up.",
+      "In a real panel, that answer would probably trigger one more follow-up.",
+    ],
+    seed,
+    memory,
+  );
+
+  const bridgeByKind: Record<WowMomentKind, string[]> = {
+    quiet_progression: [
+      "Alright.",
+      "Okay, I’m following.",
+      "Right, let’s keep going.",
+      "That gives me enough to move forward.",
+    ],
+    curiosity_spike: [
+      "That part is interesting.",
+      "There’s something useful in that example.",
+      "I want to stay with that point for a second.",
+      "That gives me a better signal than the overview.",
+    ],
+    skeptical_pause: [
+      "Hmm. I’m not fully there yet.",
+      "Let me slow you down there.",
+      "I need to separate the story from the proof.",
+      "I can see the situation, but not the weight of your contribution yet.",
+    ],
+    trust_drop: [
+      "I’m going to be honest — that answer made me less certain.",
+      "I’m losing the thread a little here.",
+      "That sounded less convincing than your earlier answer.",
+      "I need a cleaner answer before I can judge the strength of that example.",
+    ],
+    trust_recovery: [
+      "That was a stronger recovery.",
+      "Okay, now your role is clearer.",
+      "That answer brought the conversation back on track.",
+      "That landed much better than the first version.",
+    ],
+    panel_whisper: [panelWhisper],
+    memory_callback: [callbackLine],
+    topic_switch: [
+      "I have enough on that for now.",
+      "Let’s park that and test a different angle.",
+      "I’m going to change direction for a moment.",
+      "Let’s move away from that example and look at judgment.",
+    ],
+  };
+
+  const captionByKind: Record<WowMomentKind, string> = {
+    quiet_progression: "Recruiter is moving the conversation forward",
+    curiosity_spike: "Recruiter attention increased",
+    skeptical_pause: "Recruiter is testing believability",
+    trust_drop: "Recruiter confidence dropped",
+    trust_recovery: "Recruiter confidence is recovering",
+    panel_whisper: "Panel-pressure moment triggered",
+    memory_callback: "Recruiter connected earlier context",
+    topic_switch: "Recruiter is changing direction",
+  };
+
+  const bridge = pickHumanLine(bridgeByKind[kind], seed, memory);
+  return {
+    kind,
+    trust: nextTrust,
+    interest,
+    skepticism,
+    patience,
+    energy,
+    caption: captionByKind[kind],
+    bridge,
+  };
+}
+
+function buildWowFollowUp({
+  mood,
+  baseFollowUp,
+  answer,
+  recruiterId,
+  setup,
+  memory,
+  question,
+}: {
+  mood: RecruiterMoodSnapshot;
+  baseFollowUp: string;
+  answer: string;
+  recruiterId: RecruiterId;
+  setup: WorkZoInterviewSetup;
+  memory: RecruiterMemory;
+  question: string;
+}) {
+  const clean = answer.replace(/\s+/g, " ").trim();
+  const seed = `${mood.kind}:${recruiterId}:${question}:${clean}:${memoryTurnIndex(memory)}`;
+  const role = getRole(setup);
+  const jobFocus =
+    setup.jobMemoryProfile?.interviewFocus?.[0] ||
+    setup.jobMemoryProfile?.responsibilities?.[0] ||
+    setup.jobMemoryProfile?.requiredSkills?.[0] ||
+    "the role";
+
+  if (mood.kind === "trust_drop") {
+    return pickHumanLine(
+      [
+        "Give me one specific moment from that situation where your decision changed the outcome.",
+        "Let’s reset that answer. What exactly did you own, and what changed because of it?",
+        "Narrow it to one real example. What happened, what did you do, and what was the result?",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (mood.kind === "skeptical_pause") {
+    return pickHumanLine(
+      [
+        "What would your manager say was your personal contribution there?",
+        "What part of that was actually difficult, not just routine?",
+        "How do I know that was your impact and not just the team’s normal process?",
+        "What evidence would prove that this worked?",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (mood.kind === "trust_recovery") {
+    return pickHumanLine(
+      [
+        `Now connect that same clarity to ${role}. Where would this help you in the first 90 days?`,
+        "Good. Let’s raise the difficulty: tell me about a time the answer was not obvious.",
+        "That was clearer. Now give me one example where you had to handle pressure without a perfect solution.",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (mood.kind === "panel_whisper") {
+    return pickHumanLine(
+      [
+        "If I brought in the hiring manager now, what detail would you want them to remember from that answer?",
+        "Let’s imagine the hiring manager challenges that. What would you say in one sentence?",
+        "What is the business reason that example matters?",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (mood.kind === "memory_callback") {
+    return pickHumanLine(
+      [
+        `Earlier context matters here. How does that experience make you stronger for ${jobFocus}?`,
+        "Connect the dots for me: what did that earlier experience teach you that applies here?",
+        "Was that a one-time example, or is that how you normally handle similar situations?",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (mood.kind === "topic_switch") {
+    return pickHumanLine(
+      [
+        "Tell me about a judgment call where there was no perfect answer.",
+        "Let’s switch to pressure. Describe a moment where something went wrong and you had to recover.",
+        `For ${role}, I need to understand how you think. Walk me through a decision you made with incomplete information.`,
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  if (mood.kind === "curiosity_spike") {
+    return pickHumanLine(
+      [
+        "What made that example harder than it sounds?",
+        "What did you personally notice before others did?",
+        "What changed after you handled it?",
+        "Why was that the right approach at the time?",
+      ],
+      seed,
+      memory,
+    );
+  }
+
+  return baseFollowUp;
+}
+
+function upgradeAnalysisWithWowLayer({
+  analysis,
+  previousTrust,
+  nextTrust,
+  answer,
+  memory,
+  recruiterId,
+  question,
+  setup,
+}: {
+  analysis: AnswerAnalysis;
+  previousTrust: number;
+  nextTrust: number;
+  answer: string;
+  memory: RecruiterMemory;
+  recruiterId: RecruiterId;
+  question: string;
+  setup: WorkZoInterviewSetup;
+}): AnswerAnalysis {
+  const mood = buildRecruiterMoodSnapshot({
+    analysis,
+    previousTrust,
+    nextTrust,
+    answer,
+    memory,
+    recruiterId,
+    question,
+    setup,
+  });
+
+  return {
+    ...analysis,
+    caption: mood.caption,
+    bridge: mood.bridge,
+    followUp: buildWowFollowUp({
+      mood,
+      baseFollowUp: analysis.followUp,
+      answer,
+      recruiterId,
+      setup,
+      memory,
+      question,
+    }),
+  };
+}
+
+function buildOpeningContextAwareQuestion(
+  recruiterId: RecruiterId,
+  setup: WorkZoInterviewSetup,
+) {
+  const role = getRole(setup);
+  const company = getCompany(setup);
+  const experience = summarizeCandidateExperience(setup);
+  const job = summarizeJobContext(setup);
+  const seed = `${recruiterId}:${role}:${company}:${experience}:${job}`;
+
+  if (experience && job) {
+    return pickHumanLine(
+      [
+        `I have your background and the ${role} context in front of me. Start with the part of your experience that best explains why this role makes sense now.`,
+        `Before we go into examples, connect your recent experience to ${role}. What should I pay attention to?`,
+        `I can see some useful signals in your profile. Give me the short version of your background, but keep it close to ${role}.`,
+      ],
+      seed,
+    );
+  }
+
+  if (experience) {
+    return pickHumanLine(
+      [
+        "I have your background in front of me. Start with the part of your experience you think matters most for this interview.",
+        "Walk me through your recent work, but focus on the parts you would want a recruiter to remember.",
+        "Give me the short version of your background and the kind of work you want to be evaluated for.",
+      ],
+      seed,
+    );
+  }
+
+  return "Tell me a little about yourself and what you have been working on recently.";
+}
+
 type RecruiterRuntimeVoice = {
   voiceId: "shimmer" | "alloy" | "echo";
   gender: "female" | "male";
@@ -395,7 +1016,9 @@ type RecruiterRuntimeVoice = {
   browserVoiceNames: string[];
 };
 
-function recruiterRuntimeVoice(recruiterId: RecruiterId): RecruiterRuntimeVoice {
+function recruiterRuntimeVoice(
+  recruiterId: RecruiterId,
+): RecruiterRuntimeVoice {
   if (recruiterId === "friendly_hr") {
     return {
       voiceId: "shimmer",
@@ -523,8 +1146,18 @@ function selectBrowserVoice(recruiterId: RecruiterId) {
   );
   const pool = englishVoices.length ? englishVoices : voices;
 
-  const preferred = findVoiceByPreferredName(pool, runtimeVoice.browserVoiceNames);
-  if (preferred) return preferred;
+  const preferred = findVoiceByPreferredName(
+    pool,
+    runtimeVoice.browserVoiceNames,
+  );
+  if (preferred) {
+    if (runtimeVoice.gender === "female" && isLikelyMaleVoice(preferred)) {
+      // Some browsers expose ambiguous English defaults that can be male.
+      // Do not let a female recruiter map to a clearly male browser voice.
+    } else {
+      return preferred;
+    }
+  }
 
   if (runtimeVoice.gender === "female") {
     return (
@@ -593,75 +1226,92 @@ function buildConversationalRecruiterSpeech({
   trust: number;
   isOpening?: boolean;
 }) {
-  const question = screenQuestion.replace(/\s+/g, " ").trim();
-  const weakness = memory.rememberedWeaknesses?.[0];
-  const strength = memory.rememberedStrengths?.[0];
-  const lead = recruiterQuestionLead(recruiterId, state);
+  const question = trimQuestionLead(screenQuestion.replace(/\s+/g, " ").trim());
+  const seed = `${recruiterId}:${state}:${trust}:${question}`;
 
   if (isOpening) {
     const firstName = getFirstName(candidateName);
 
-    // Natural recruiter opening: no onboarding narration, no repeated full name, no reading UI labels.
     if (/how are you/i.test(question)) {
-      if (recruiterId === "startup_recruiter") {
+      if (recruiterId === "startup_recruiter")
         return firstName
           ? `Hi ${firstName}. Can you hear me clearly?`
           : "Hi. Can you hear me clearly?";
-      }
-      if (recruiterId === "friendly_hr") {
+      if (recruiterId === "friendly_hr")
         return firstName
           ? `Hi ${firstName}, nice to meet you. How are you today?`
           : "Hi, nice to meet you. How are you today?";
-      }
-      if (recruiterId === "german_corporate") {
+      if (recruiterId === "german_corporate")
         return firstName
           ? `Hello ${firstName}. Before we begin, how are you today?`
           : "Hello. Before we begin, how are you today?";
-      }
       return firstName
         ? `Hi ${firstName}. How are you today?`
         : "Hi. How are you today?";
     }
 
     if (/tell me a little about yourself/i.test(question)) {
-      if (recruiterId === "startup_recruiter") {
-        return "Good. Before we get into examples, give me the short version of your background and what you have been working on recently.";
-      }
-      if (recruiterId === "friendly_hr") {
-        return "Good to hear. Let’s start naturally: tell me a little about yourself and how your experience connects to this role.";
-      }
-      if (recruiterId === "german_corporate") {
-        return "Good. Let’s start with your background. Please keep it structured: your recent work, your main strengths, and why this role fits.";
-      }
-      return "Good. Let’s start with your background. Walk me through your recent experience and the kind of work you want to do next.";
+      if (recruiterId === "startup_recruiter")
+        return pickHumanLine(
+          [
+            "Great. Give me the short version of your background — recent work, what you handled, and why this role makes sense now.",
+            "Okay. Start with your recent work and the kind of problems you usually handle.",
+            "Good. Walk me through your background briefly, but keep it close to this role.",
+          ],
+          seed,
+          memory,
+        );
+      if (recruiterId === "friendly_hr")
+        return pickHumanLine(
+          [
+            "Good to hear. Let’s start with your background — what have you been working on recently?",
+            "Nice. Tell me a little about yourself, especially the experience that connects to this role.",
+            "Alright. I’d like to understand your story first — how did your recent experience lead you here?",
+          ],
+          seed,
+          memory,
+        );
+      if (recruiterId === "german_corporate")
+        return pickHumanLine(
+          [
+            "Thank you. Let’s begin with your background. Please keep it structured: recent work, key strengths, and relevance to this role.",
+            "Good. Start with your recent professional experience and the main reason this position fits your profile.",
+            "Alright. Give me a concise overview of your background and the parts most relevant for this role.",
+          ],
+          seed,
+          memory,
+        );
+      return pickHumanLine(
+        [
+          "Good. Walk me through your recent experience and what brings you to this role.",
+          "Okay. Start with your background, but focus on the work that matters most for this position.",
+          "Let’s begin with you. What have you been doing recently, and why does this role fit?",
+        ],
+        seed,
+        memory,
+      );
     }
 
     return softenRecruiterSpeech(question);
   }
 
-  // Keep live interview speech natural. Do not speak diagnostic coaching such as
-  // "missing measurable impact" or "answer too short" during the call; save that
-  // for the result page. Live speech should sound curious, not corrective.
-  const gentleStatePrefix =
-    state === "recovering_trust"
-      ? "That gives me a better sense of your experience. "
-      : state === "engaged" || state === "interested"
-        ? "Okay, thanks. "
-        : state === "skeptical" ||
-            state === "pressuring" ||
-            state === "losing_confidence"
-          ? "I understand. Let’s look at it a little more closely. "
-          : "";
-
   const spokenQuestion = softenRecruiterSpeech(question);
-  const spokenBridge = bridge ? softenRecruiterSpeech(bridge) : lead;
+  const spokenBridge = bridge
+    ? softenRecruiterSpeech(trimQuestionLead(bridge))
+    : buildHumanBridge({ recruiterId, state, seed, memory });
+  const shouldOnlyAsk =
+    state === "engaged" && trust > 72 && stableTextHash(seed) % 5 === 0;
+  if (shouldOnlyAsk) return spokenQuestion;
 
-  return `${gentleStatePrefix}${spokenBridge} ${spokenQuestion}`
+  const naturalBridge =
+    spokenBridge || buildHumanBridge({ recruiterId, state, seed, memory });
+  return `${naturalBridge} ${spokenQuestion}`
+    .replace(/\bOkay, thanks\.\s*/gi, "")
+    .replace(/\bGood to hear\.\s*/gi, "")
     .replace(/\s+/g, " ")
     .replace(/\s+\./g, ".")
     .trim();
 }
-
 function getRecognitionConstructor() {
   if (typeof window === "undefined") return null;
   const speechWindow = window as WindowWithSpeechRecognition;
@@ -682,36 +1332,30 @@ function analyzeAnswer(
   const clean = answer.replace(/\s+/g, " ").trim();
   const words = clean.split(" ").filter(Boolean);
   const lower = clean.toLowerCase();
-  const reactionMode = inferHumanReactionMode(clean, memory);
+  const seed = `${recruiterId}:${currentQuestion}:${clean}:${memoryTurnIndex(memory)}`;
 
   const hasNumber =
-    /\d|percent|percentage|hours?|days?|weeks?|months?|customers?|tickets?|users?|reduced|increased|saved|improved|faster|slower|revenue|cost|volume|sla|csat|nps|baseline|before|after/i.test(
+    /\d|percent|percentage|hours?|days?|weeks?|months?|customers?|tickets?|users?|reduced|increased|saved|improved|faster|slower|revenue|cost|accuracy|quality|volume|sla|kpi/i.test(
       clean,
     );
   const ownershipWords =
-    /\bi\b|\bmy\b|\bpersonally\b|\bled\b|\bbuilt\b|\bcreated\b|\bowned\b|\bhandled\b|\bresolved\b|\bimplemented\b|\banalyzed\b|\bdesigned\b|\bimproved\b|\bdecided\b|\bintroduced\b|\bmanaged\b/i.test(
+    /\bi\b|\bmy\b|\bpersonally\b|\bled\b|\bbuilt\b|\bcreated\b|\bowned\b|\bhandled\b|\bresolved\b|\bimplemented\b|\banalyzed\b|\bdesigned\b|\bimproved\b|\bdecided\b|\bcoordinated\b/i.test(
       clean,
     );
-  const teamOnlyOwnership =
-    /\bwe\b|\bour team\b|\bteam worked\b|\bpart of\b|\bsupported\b|\bhelped\b|\bcontributed\b/i.test(
-      lower,
-    ) && !ownershipWords;
   const vagueWords =
-    /\bthings\b|\bstuff\b|\bsomething\b|\bvarious\b|\bmany\b|\ba lot\b|\bhelped\b|\bworked on\b|\bresponsible for\b|\binvolved in\b/i.test(
+    /\bthings\b|\bstuff\b|\bsomething\b|\bvarious\b|\bmany\b|\ba lot\b|\bgood\b|\bnice\b|\bhelped\b|\bworked on\b/i.test(
       lower,
     );
-  const hasOutcome =
-    hasNumber ||
-    /\bresult\b|\boutcome\b|\bimpact\b|\bso that\b|\bwhich helped\b|\bafter that\b|\bas a result\b|\btherefore\b/i.test(
-      lower,
-    );
-
-  const repeatedMetricsIssue = (memory.weakMetrics || 0) >= 1;
-  const repeatedOwnershipIssue = (memory.ownershipIssues || 0) >= 1;
-  const repeatedVagueIssue = (memory.vagueAnswers || 0) >= 1;
-  const callbackStrength = lastRememberedStrength(memory);
-  const callbackWeakness = lastRememberedWeakness(memory);
-  const useCallback = shouldUseCallback(clean, memory);
+  const repeatedMetricsIssue = memory.rememberedWeaknesses.some((item) =>
+    /metric|number|impact|measurable/i.test(item),
+  );
+  const repeatedOwnershipIssue = memory.rememberedWeaknesses.some((item) =>
+    /ownership|contribution|personally/i.test(item),
+  );
+  const bridgeFor = (
+    signal?: AnswerAnalysis["signal"],
+    state: RecruiterState = "interested",
+  ) => buildHumanBridge({ recruiterId, state, signal, seed, memory });
 
   if (words.length < 8 && !isLikelyInterviewAnswer(clean)) {
     return {
@@ -719,180 +1363,200 @@ function analyzeAnswer(
       state: "interested",
       trustDelta: 0,
       caption: "Recruiter is keeping the conversation natural",
-      bridge: humanBridge(clean, ["Okay.", "Right.", "Got it."]),
-      followUp:
-        "Give me a little more context so I can understand what actually happened.",
+      bridge: bridgeFor("good_ownership"),
+      followUp: pickHumanLine(
+        [
+          "Could you give me a little more context so I can understand your answer properly?",
+          "Say a bit more about that — what was the situation?",
+          "Help me understand the background first.",
+        ],
+        seed,
+        memory,
+      ),
     };
   }
 
   if (words.length < 18 && isLikelyInterviewAnswer(clean)) {
     return {
       signal: "too_short",
-      state: previousTrust < 48 ? "skeptical" : "interested",
-      trustDelta: previousTrust < 48 ? -2 : 0,
-      caption: "Recruiter is waiting for a fuller example",
-      bridge: humanBridge(clean, ["Okay, I’m with you.", "Alright, keep going.", "I understand the start of it."]),
-      followUp:
-        "Walk me through one real situation — what was happening, what did you do, and what changed after that?",
-      weakness: "Needs fuller context and evidence.",
+      state: "interested",
+      trustDelta: 0,
+      caption: "Recruiter is inviting more context",
+      bridge: bridgeFor("too_short"),
+      followUp: pickHumanLine(
+        [
+          "Stay with that example for a moment — what was happening around it?",
+          "What was the situation, and what were you expected to handle?",
+          "Can you walk me through it from the beginning?",
+        ],
+        seed,
+        memory,
+      ),
     };
   }
 
-  if (words.length > 170) {
-    const sharper = reactionMode === "challenge" || previousTrust < 48;
+  if (words.length > 160) {
     return {
       signal: "rambling",
-      state: sharper ? "pressuring" : "interested",
-      trustDelta: sharper ? -5 : -3,
-      caption: "Recruiter is narrowing the conversation",
-      bridge: humanBridge(clean, [
-        "Let me pause the story there.",
-        "Okay, there’s a lot in that.",
-        "I’m going to narrow this down.",
-      ]),
-      followUp:
-        "What was the single most important decision you personally made in that situation?",
-      weakness: "Answer needs a clearer center of gravity.",
+      state: "interested",
+      trustDelta: -3,
+      caption: "Recruiter is guiding the answer gently",
+      bridge: pickHumanLine(
+        [
+          "There’s a lot in that answer.",
+          "Let me narrow this down a little.",
+          "I’m going to pull one thread from that.",
+        ],
+        seed,
+        memory,
+      ),
+      followUp: pickHumanLine(
+        [
+          "What was the most important decision you personally made there?",
+          "Which part of that outcome depended most on you?",
+          "What should I remember from that example?",
+        ],
+        seed,
+        memory,
+      ),
+      weakness: "Answer could be more focused.",
     };
   }
 
-  if (teamOnlyOwnership || !ownershipWords) {
-    const skeptical = repeatedOwnershipIssue || reactionMode === "skeptical" || previousTrust < 50;
+  if (!ownershipWords) {
+    const nextState: RecruiterState = repeatedOwnershipIssue
+      ? "skeptical"
+      : "interested";
     return {
       signal: "unclear_ownership",
-      state: skeptical ? "skeptical" : "interested",
-      trustDelta: skeptical ? -4 : -2,
-      caption: "Recruiter is checking ownership",
-      bridge: humanBridge(clean, [
-        "That explains the situation.",
-        "I understand the team context.",
-        "Okay, but I need to separate the team from you.",
-      ]),
-      followUp: useCallback && callbackWeakness
-        ? `Earlier I also needed clearer ownership from you. In this case, what did you personally carry from start to finish?`
-        : "What part of that was directly yours — not the team’s, but yours?",
+      state: nextState,
+      trustDelta: repeatedOwnershipIssue ? -4 : -2,
+      caption: "Recruiter is exploring ownership",
+      bridge: bridgeFor("unclear_ownership", nextState),
+      followUp: pickHumanLine(
+        [
+          "Where exactly did your responsibility begin and end?",
+          "What part of that was actually handled by you?",
+          "If I asked your manager, what would they say you personally owned?",
+          "Were you leading that, supporting it, or executing a specific part?",
+        ],
+        seed,
+        memory,
+      ),
       weakness: "Ownership needs clearer detail.",
     };
   }
 
-  if (vagueWords && !hasOutcome && words.length < 85) {
-    return {
-      signal: "too_generic",
-      state: repeatedVagueIssue || previousTrust < 50 ? "skeptical" : "interested",
-      trustDelta: repeatedVagueIssue ? -4 : -2,
-      caption: "Recruiter is looking for a sharper example",
-      bridge: humanBridge(clean, [
-        "I see the direction.",
-        "Okay, I get the general point.",
-        "That’s still a bit broad for me.",
-      ]),
-      followUp:
-        "Can you narrow it to one specific moment where you had to make a decision or solve a problem?",
-      weakness: "Answer needs a more concrete example.",
-    };
-  }
-
-  if (!hasNumber && hasOutcome) {
-    const skeptical = repeatedMetricsIssue || reactionMode === "skeptical" || recruiterId === "analytical_hiring_manager";
+  if (!hasNumber) {
+    const nextState: RecruiterState = repeatedMetricsIssue
+      ? "skeptical"
+      : "interested";
     return {
       signal: "missing_metrics",
-      state: skeptical ? "skeptical" : "interested",
-      trustDelta: skeptical ? -3 : -1,
-      caption: "Recruiter is testing the scale of impact",
-      bridge: humanBridge(clean, [
-        "The story is clear enough.",
-        "Okay, I can follow the impact direction.",
-        "I’m trying to understand the scale now.",
-      ]),
-      followUp: useCallback && callbackStrength
-        ? `You had a stronger evidence moment earlier. Can you give me the scale here too — even a rough before-and-after?`
-        : "How big was the change — even roughly? What was different before and after your work?",
-      weakness: "Impact needs clearer scale or evidence.",
+      state: nextState,
+      trustDelta: repeatedMetricsIssue ? -4 : -2,
+      caption: "Recruiter is exploring impact",
+      bridge: bridgeFor("missing_metrics", nextState),
+      followUp: pickHumanLine(
+        [
+          "How did you know it worked?",
+          "What changed after your work — even roughly?",
+          "What was the visible result for the team, customer, or business?",
+          "Was there any sign that the situation improved because of what you did?",
+        ],
+        seed,
+        memory,
+      ),
+      weakness: "Impact could be more measurable.",
     };
   }
 
-  if (!hasNumber && reactionMode === "curious") {
+  if (vagueWords && words.length < 70) {
     return {
-      signal: "good_ownership",
+      signal: "too_generic",
       state: "interested",
-      trustDelta: 2,
-      caption: "Recruiter is curious about the story",
-      bridge: humanBridge(clean, ["Interesting.", "Okay, that’s useful context.", "That gives me something to work with."]),
-      followUp:
-        "What made that situation difficult in practice?",
-      strength: "Answer showed a usable real example.",
+      trustDelta: -2,
+      caption: "Recruiter is asking for a concrete example",
+      bridge: bridgeFor("too_generic"),
+      followUp: pickHumanLine(
+        [
+          "Can you anchor that in one specific moment?",
+          "Give me the actual situation, not the general idea.",
+          "What is one example you remember clearly?",
+        ],
+        seed,
+        memory,
+      ),
+      weakness: "Answer could use a more concrete example.",
     };
   }
 
-  if (previousTrust < 48 && ownershipWords && (hasNumber || hasOutcome)) {
+  if (previousTrust < 50) {
     return {
       signal: "recovery",
       state: "recovering_trust",
       trustDelta: 10,
       caption: "Recruiter sees recovery",
-      bridge: humanBridge(clean, [
-        "That’s better.",
-        "Okay, now I can see the evidence more clearly.",
-        "That answer lands better.",
-      ]),
-      followUp:
-        "Stay with that level of detail — give me another example where you had to earn trust quickly.",
-      strength: "Recovered with clearer ownership and evidence.",
+      bridge: bridgeFor("recovery", "recovering_trust"),
+      followUp: pickHumanLine(
+        [
+          "Let’s see if that holds in another situation. Tell me about a time you had to handle pressure.",
+          "That helps. Now give me an example where things did not go smoothly.",
+          "Okay. Take another example where you had to convince someone or make a difficult choice.",
+        ],
+        seed,
+        memory,
+      ),
+      strength: "Recovered with clearer evidence.",
     };
   }
 
-  if (hasNumber && ownershipWords && hasOutcome) {
-    const questionContext = currentQuestion.toLowerCase().includes("project")
-      ? "project"
-      : "example";
-    const emotional = reactionMode === "emotional" || previousTrust >= 70;
+  if (hasNumber && ownershipWords) {
+    const topic = currentQuestion.toLowerCase().includes("conflict")
+      ? "that situation"
+      : currentQuestion.toLowerCase().includes("project")
+        ? "that project"
+        : "that example";
     return {
       signal: "strong_metrics",
-      state: emotional ? "engaged" : "interested",
-      trustDelta: previousTrust >= 76 ? 5 : 8,
-      caption: emotional ? "Recruiter is visibly more engaged" : "Recruiter is listening closely",
-      bridge: humanBridge(clean, [
-        "That’s a stronger answer.",
-        "Okay, that is more convincing.",
-        "Good — now I can see ownership and impact.",
-      ]),
-      followUp:
-        reactionMode === "progress"
-          ? "Alright. Let’s switch gears a bit — tell me about a time something did not go as planned."
-          : `What was the hardest judgment call you had to make in that ${questionContext}?`,
+      state: "engaged",
+      trustDelta: 7,
+      caption: "Recruiter is engaged by concrete evidence",
+      bridge: bridgeFor("strong_metrics", "engaged"),
+      followUp: pickHumanLine(
+        [
+          `What was the part of ${topic} that could have gone wrong?`,
+          `What did you have to decide for yourself in ${topic}?`,
+          `Who else was involved, and how did you influence them?`,
+          `If you had to do ${topic} again, what would you change?`,
+          "Let’s switch angle for a second — tell me about a time you disagreed with someone at work.",
+        ],
+        seed,
+        memory,
+      ),
       strength: "Clear ownership with measurable impact.",
-    };
-  }
-
-  if (ownershipWords && hasOutcome) {
-    return {
-      signal: "good_ownership",
-      state: previousTrust > 68 ? "engaged" : "interested",
-      trustDelta: 4,
-      caption: "Recruiter is building on the answer",
-      bridge: humanBridge(clean, ["Fair enough.", "Okay, that makes sense.", "That gives me a clearer picture."]),
-      followUp:
-        recruiterId === "startup_recruiter"
-          ? "What did you do when you had to move fast without having perfect information?"
-          : recruiterId === "german_corporate"
-            ? "How did you make sure the process stayed reliable and clear for others?"
-            : "What would your manager say was the most valuable part of your contribution there?",
-      strength: "Answer showed practical ownership.",
     };
   }
 
   return {
     signal: "good_ownership",
     state: "interested",
-    trustDelta: 2,
-    caption: "Recruiter is continuing naturally",
-    bridge: humanBridge(clean, ["Okay.", "I see.", "Got it."]),
-    followUp:
-      "Let’s take one specific example from that and go a level deeper — what happened next?",
-    strength: "Answer gave enough context to continue.",
+    trustDelta: 5,
+    caption: "Recruiter engaged by specifics",
+    bridge: bridgeFor("good_ownership"),
+    followUp: pickHumanLine(
+      [
+        "What was the hardest part of that for you?",
+        "How did other people respond to your approach?",
+        "What did you learn from that situation?",
+        "What would have happened if you had not stepped in?",
+      ],
+      seed,
+      memory,
+    ),
+    strength: "Answer showed useful specificity.",
   };
 }
-
 function isClarificationOrMetaQuestion(answer: string) {
   const lower = answer.replace(/\s+/g, " ").trim().toLowerCase();
   if (!lower) return false;
@@ -976,9 +1640,7 @@ function buildCandidateContext(setup: WorkZoInterviewSetup) {
 
 function buildJobContext(setup: WorkZoInterviewSetup) {
   const jdText =
-    typeof setup.jobDescription === "string"
-      ? setup.jobDescription.trim()
-      : "";
+    typeof setup.jobDescription === "string" ? setup.jobDescription.trim() : "";
 
   const memoryText = setup.jobMemoryProfile
     ? JSON.stringify(setup.jobMemoryProfile)
@@ -993,12 +1655,260 @@ function hasUsableCv(setup: WorkZoInterviewSetup) {
   return buildCandidateContext(setup).length > 180;
 }
 
+function joinHumanList(items: string[], limit = 4) {
+  const clean = items
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, limit);
+  if (!clean.length) return "";
+  if (clean.length === 1) return clean[0];
+  return `${clean.slice(0, -1).join(", ")} and ${clean[clean.length - 1]}`;
+}
+
+function summarizeCandidateExperience(setup: WorkZoInterviewSetup) {
+  const profile = setup.recruiterMemoryProfile;
+  const parts: string[] = [];
+
+  if (profile?.experience?.length) {
+    const experience = profile.experience
+      .slice(0, 2)
+      .map((item) => {
+        const role = item.role || "experience";
+        const company = item.company ? ` at ${item.company}` : "";
+        const highlight = item.highlights?.[0]
+          ? ` — ${item.highlights[0]}`
+          : "";
+        return `${role}${company}${highlight}`;
+      })
+      .filter(Boolean);
+    if (experience.length) parts.push(`experience: ${experience.join("; ")}`);
+  }
+
+  const technical = joinHumanList(profile?.skills?.technical || [], 5);
+  const business = joinHumanList(profile?.skills?.business || [], 4);
+  const tools = joinHumanList(profile?.skills?.tools || [], 4);
+  if (technical) parts.push(`technical skills: ${technical}`);
+  if (business) parts.push(`business/support skills: ${business}`);
+  if (tools) parts.push(`tools: ${tools}`);
+
+  if (profile?.projects?.length) {
+    const projects = profile.projects
+      .slice(0, 2)
+      .map((project) => project.name || project.summary)
+      .filter(Boolean);
+    if (projects.length) parts.push(`projects: ${projects.join(", ")}`);
+  }
+
+  if (parts.length) return parts.join(". ");
+
+  const cv = buildCandidateContext(setup);
+  if (!cv) return "";
+  return cv.slice(0, 650).replace(/\s+/g, " ");
+}
+
+function summarizeJobContext(setup: WorkZoInterviewSetup) {
+  const job = setup.jobMemoryProfile;
+  const parts: string[] = [];
+
+  const role = job?.roleTitle || getRole(setup);
+  if (role && role !== "General Role" && role !== "Target Role") {
+    parts.push(`role: ${role}`);
+  }
+
+  const responsibilities = joinHumanList(job?.responsibilities || [], 4);
+  const requiredSkills = joinHumanList(job?.requiredSkills || [], 5);
+  const softSkills = joinHumanList(job?.softSkills || [], 4);
+  const focus = joinHumanList(job?.interviewFocus || [], 3);
+  if (job?.businessContext)
+    parts.push(`business context: ${job.businessContext}`);
+  if (responsibilities) parts.push(`responsibilities: ${responsibilities}`);
+  if (requiredSkills) parts.push(`required skills: ${requiredSkills}`);
+  if (softSkills) parts.push(`soft skills: ${softSkills}`);
+  if (focus) parts.push(`interview focus: ${focus}`);
+
+  if (parts.length) return parts.join(". ");
+
+  const jd = buildJobContext(setup);
+  if (!jd) return "";
+  return jd.slice(0, 650).replace(/\s+/g, " ");
+}
+
+function asksForExactAvailableContext(answer: string) {
+  const lower = answer.replace(/\s+/g, " ").toLowerCase();
+  return (
+    /\bwhat\b.*\b(experience|cv|resume|background|jd|job description|role details|details)\b.*\b(see|read|have|know|available|loaded)\b/.test(
+      lower,
+    ) ||
+    /\b(what|which)\b.*\b(experience|jd|job description|resume|cv)\b/.test(
+      lower,
+    ) ||
+    /\bshow\b.*\b(cv|resume|jd|job description|experience|details)\b/.test(
+      lower,
+    )
+  );
+}
+
+function buildAvailableContextReply(setup: WorkZoInterviewSetup) {
+  const experience = summarizeCandidateExperience(setup);
+  const job = summarizeJobContext(setup);
+  const role = getRole(setup);
+
+  if (experience && job) {
+    return `Yes — I can see both sides. From your profile, I’m seeing ${experience}. From the job description, I’m seeing ${job}. So I’ll interview you for ${role}, and I’ll check whether your examples prove the role requirements rather than just repeating your CV.`;
+  }
+
+  if (experience) {
+    return `I can see your candidate background. The main signals I have are: ${experience}. I don’t have a strong job-description text loaded, so I’ll ask role-fit questions more broadly for ${role}.`;
+  }
+
+  if (job) {
+    return `I can see the job context. The main role signals are: ${job}. I don’t have enough CV detail loaded, so I’ll ask you to explain your experience directly and I’ll compare it against this role.`;
+  }
+
+  return "I can see the interview setup, but I don’t have enough readable CV or job-description detail loaded. That means I should not pretend I know your background. Tell me the role and one or two key experiences, and I’ll interview from there.";
+}
+
+
+
+type RecruiterKnowledgeHit = {
+  name: string;
+  short: string;
+  interviewAngle: string;
+};
+
+const recruiterKnowledgeBase: RecruiterKnowledgeHit[] = [
+  {
+    name: "Tesla",
+    short:
+      "Tesla is best known for electric vehicles, battery technology, energy storage, charging infrastructure, software-heavy vehicles, and automation-heavy manufacturing.",
+    interviewAngle:
+      "For Tesla-style roles, I would listen for speed, ownership, technical curiosity, operational problem-solving, ambiguity tolerance, and whether you can explain impact under pressure.",
+  },
+  {
+    name: "Microsoft",
+    short:
+      "Microsoft is a global technology company known for cloud platforms, enterprise software, Windows, Microsoft 365, Azure, developer tools, security, gaming, and AI products.",
+    interviewAngle:
+      "For Microsoft-style roles, I would listen for structured thinking, collaboration, customer empathy, learning mindset, technical depth where relevant, and examples that show business impact.",
+  },
+  {
+    name: "Amazon",
+    short:
+      "Amazon is known for e-commerce, AWS cloud services, logistics, marketplace operations, devices, advertising, and a strong culture around customer obsession and operational excellence.",
+    interviewAngle:
+      "For Amazon-style interviews, I would expect strong behavioral examples, clear ownership, metrics, trade-offs, customer impact, and concise stories that show decisions under pressure.",
+  },
+  {
+    name: "Google",
+    short:
+      "Google is known for search, advertising, Android, YouTube, cloud services, AI research, developer platforms, and large-scale consumer and enterprise products.",
+    interviewAngle:
+      "For Google-style roles, I would listen for problem-solving clarity, collaboration, technical reasoning where needed, user impact, and the ability to explain complex ideas simply.",
+  },
+  {
+    name: "Apple",
+    short:
+      "Apple is known for consumer hardware, software, services, design quality, privacy positioning, ecosystem thinking, and tightly integrated product experiences.",
+    interviewAngle:
+      "For Apple-style roles, I would listen for product judgment, attention to detail, ownership, cross-functional collaboration, customer experience, and high-quality execution.",
+  },
+  {
+    name: "Meta",
+    short:
+      "Meta is known for Facebook, Instagram, WhatsApp, advertising systems, social products, AI, virtual reality, and large-scale consumer platforms.",
+    interviewAngle:
+      "For Meta-style roles, I would listen for speed, experimentation, measurable impact, product sense, technical or analytical depth, and comfort with fast-changing priorities.",
+  },
+];
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function detectRecruiterKnowledgeHits(answer: string) {
+  const lower = answer.toLowerCase();
+  return recruiterKnowledgeBase.filter((item) => {
+    const escapedName = escapeRegExp(item.name.toLowerCase());
+    return new RegExp(`\\b${escapedName}\\b`).test(lower);
+  });
+}
+
+function asksIfRecruiterKnowsCompany(answer: string) {
+  const lower = answer.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!detectRecruiterKnowledgeHits(lower).length) return false;
+  return (
+    /\b(do you know|have you heard|know about|what is|what are|tell me about|can you explain|do u know)\b/.test(lower) ||
+    /\b(tesla|microsoft|amazon|google|apple|meta)\b/.test(lower)
+  );
+}
+
+function buildCompanyKnowledgeReply(answer: string) {
+  const hits = detectRecruiterKnowledgeHits(answer);
+  if (!hits.length) {
+    return "Yes — I can discuss companies and industries at a recruiter level. I’ll connect them back to the role instead of giving a random definition.";
+  }
+
+  if (hits.length === 1) {
+    const company = hits[0];
+    return `Yes — I know ${company.name}. ${company.short} ${company.interviewAngle} If this is one of your target companies, I would not prepare generic answers; I would prepare examples with ownership, scale, trade-offs, and measurable impact.`;
+  }
+
+  const names = hits.map((item) => item.name).join(", ");
+  const shortLines = hits
+    .map((item) => `${item.name}: ${item.short}`)
+    .join(" ");
+  return `Yes — I know ${names}. ${shortLines} Interview-wise, I would adapt your answers differently for each: Amazon needs strong ownership and metrics, Microsoft needs structured collaboration and customer impact, and Tesla needs speed, problem-solving, and comfort with pressure. Now I’d bring it back to you: which type of environment are you trying to prove you can handle?`;
+}
+
+function buildConceptReply(answer: string) {
+  const lower = answer.toLowerCase();
+
+  if (asksIfRecruiterKnowsCompany(answer)) {
+    return buildCompanyKnowledgeReply(answer);
+  }
+
+  if (/\bb2b\b/.test(lower) || /\bb2c\b/.test(lower)) {
+    return "Yes. B2B means business-to-business — the customer is another company, so the work often involves accounts, admins, contracts, SLAs, integrations, and stakeholder communication. B2C means business-to-consumer — the customer is an individual user, so the focus is usually volume, speed, empathy, usability, and direct customer satisfaction. In an interview, if you mention both, I would expect you to explain how your communication changed between a company client and an individual user.";
+  }
+
+  if (/\bsla\b/.test(lower)) {
+    return "Yes. SLA means service-level agreement — the expected response or resolution standard. In support roles, I would listen for how you handled priority, escalation, ownership, and customer communication when an SLA was at risk.";
+  }
+
+  if (/\bats\b/.test(lower)) {
+    return "Yes. ATS means applicant tracking system. For this interview, I care less about the term itself and more about whether your CV examples match the role requirements clearly enough for both software screening and a human recruiter.";
+  }
+
+  return "Yes, I can answer that briefly. But I’ll keep it interview-focused: I’m checking whether you understand the concept well enough to apply it in a real work situation, not just define it.";
+}
+
+function isConceptOrKnowledgeQuestion(answer: string) {
+  const lower = answer.replace(/\s+/g, " ").trim().toLowerCase();
+  if (asksIfRecruiterKnowsCompany(lower)) return true;
+
+  if (
+    !lower.includes("?") &&
+    !/\b(what is|what are|do you know|does it know|meaning of|means|define|difference between|tell me about|know about)\b/.test(
+      lower,
+    )
+  )
+    return false;
+  return (
+    /\b(b2b|b2c|sla|ats|crm|kpi|api|saas)\b/.test(lower) ||
+    asksIfRecruiterKnowsCompany(lower)
+  );
+}
+
 function buildClarificationReply(
   answer: string,
   setup: WorkZoInterviewSetup,
   recruiterId: RecruiterId,
 ) {
   const lower = answer.toLowerCase();
+
+  if (asksForExactAvailableContext(answer)) {
+    return buildAvailableContextReply(setup);
+  }
   const role = getRole(setup);
   const company = getCompany(setup);
   const cvSignals = extractSafeCvSignals(setup);
@@ -1025,22 +1935,14 @@ function buildClarificationReply(
     lower.includes("job description") ||
     lower.includes("jd")
   ) {
-    if (hasCv && hasJob) {
+    if (hasCv || hasJob) {
       const signalLine = cvSignals.length
         ? ` I can clearly see signals like ${cvSignals.join(", ")}.`
         : "";
-      return `Yes — I have your resume context and the job description available.${signalLine} I’ll only refer to details I can clearly verify, and I’ll use the role requirements to guide the interview.`;
+      return `${buildAvailableContextReply(setup)}${signalLine ? ` ${signalLine.trim()}` : ""}`;
     }
 
-    if (hasCv) {
-      return "I have your resume context available. I don’t have enough clear job-description detail, so I’ll ask you to clarify role-specific points when needed.";
-    }
-
-    if (hasJob) {
-      return "I have the job-description context available. I don’t have enough clear resume detail, so I’ll ask you to explain your background directly.";
-    }
-
-    return "I don’t have enough clear resume or job-description detail available, so I’ll ask you to clarify your background and the role as we go.";
+    return "I don’t have enough clear resume or job-description detail available, so I won’t pretend I’ve read details that are not loaded. Tell me the role and the experience you want me to evaluate, and I’ll continue from there.";
   }
 
   return "Good question. I’ll answer briefly, then we’ll continue the interview. Yes, I’m using the available role and background context to guide this conversation.";
@@ -1620,6 +2522,13 @@ export default function InterviewPage() {
   const silenceTimerRef = useRef<number | null>(null);
   const finalizationTimerRef = useRef<number | null>(null);
   const pendingAnswerRef = useRef("");
+  const lockedBrowserVoiceRef = useRef<{
+    recruiterId: RecruiterId;
+    gender: "female" | "male";
+    name: string;
+    voiceURI: string;
+    lang: string;
+  } | null>(null);
   const hasGreetedRef = useRef(false);
   const interviewStepRef = useRef<"greeting" | "intro" | "deep_dive">(
     "greeting",
@@ -1652,6 +2561,15 @@ export default function InterviewPage() {
   );
 
   const recruiterId = activeSetup.recruiterPersonality as RecruiterId;
+
+  useEffect(() => {
+    // Freeze means: one recruiter = one browser voice for the whole session.
+    // If the user changes recruiter personality, clear the lock and choose again.
+    if (lockedBrowserVoiceRef.current?.recruiterId !== recruiterId) {
+      lockedBrowserVoiceRef.current = null;
+    }
+  }, [recruiterId]);
+
   const role = getRole(activeSetup);
   const company = getCompany(activeSetup);
   const market = activeSetup.targetMarket || "Global";
@@ -1681,7 +2599,8 @@ export default function InterviewPage() {
     return () => {
       isLiveRef.current = false;
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-      if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+      if (finalizationTimerRef.current)
+        window.clearTimeout(finalizationTimerRef.current);
       try {
         recognitionRef.current?.abort?.();
         recognitionRef.current?.stop();
@@ -1741,7 +2660,8 @@ export default function InterviewPage() {
       } catch {}
 
       if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-      if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+      if (finalizationTimerRef.current)
+        window.clearTimeout(finalizationTimerRef.current);
       pendingAnswerRef.current = "";
 
       window.speechSynthesis.cancel();
@@ -1767,11 +2687,37 @@ export default function InterviewPage() {
       const speakNow = (allowVoiceWait = false) => {
         const utterance = new SpeechSynthesisUtterance(text);
         const runtimeVoice = recruiterRuntimeVoice(recruiterId);
-        const voice = selectBrowserVoice(recruiterId);
+        const availableVoices = window.speechSynthesis.getVoices();
+
+        const lockedVoice = lockedBrowserVoiceRef.current;
+        let voice =
+          lockedVoice?.recruiterId === recruiterId
+            ? availableVoices.find(
+                (candidate) =>
+                  candidate.voiceURI === lockedVoice.voiceURI ||
+                  candidate.name === lockedVoice.name,
+              ) || null
+            : null;
+
+        if (!voice) {
+          voice = selectBrowserVoice(recruiterId);
+
+          if (voice) {
+            lockedBrowserVoiceRef.current = {
+              recruiterId,
+              gender: runtimeVoice.gender,
+              name: voice.name,
+              voiceURI: voice.voiceURI,
+              lang: voice.lang || "",
+            };
+          }
+        }
 
         // On mobile, do not wait for a preferred voice. Waiting can break the
         // user-gesture audio chain and make speech silent. Use the best available
         // voice immediately, or the browser default.
+        // Important: once a voice is selected, keep the same voice for the session
+        // so Sarah/Priya cannot suddenly switch to a male browser voice mid-interview.
         if (voice) utterance.voice = voice;
 
         utterance.pitch = runtimeVoice.pitch;
@@ -1814,7 +2760,7 @@ export default function InterviewPage() {
         utterance.onerror = () => {
           // If a selected voice fails, retry once with the browser default.
           // Do not immediately start listening, otherwise mobile appears silent.
-          if (voice && allowVoiceWait) {
+          if (voice && allowVoiceWait && runtimeVoice.gender !== "female") {
             try {
               const fallback = new SpeechSynthesisUtterance(text);
               fallback.pitch = runtimeVoice.pitch;
@@ -1841,7 +2787,10 @@ export default function InterviewPage() {
         const speakOnce = () => {
           if (didSpeak) return;
           didSpeak = true;
-          window.speechSynthesis.removeEventListener("voiceschanged", speakOnce);
+          window.speechSynthesis.removeEventListener(
+            "voiceschanged",
+            speakOnce,
+          );
           speakNow(true);
         };
 
@@ -1872,7 +2821,8 @@ export default function InterviewPage() {
     } catch {}
 
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-    if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+    if (finalizationTimerRef.current)
+      window.clearTimeout(finalizationTimerRef.current);
     pendingAnswerRef.current = "";
 
     const recognition = new Recognition();
@@ -1916,7 +2866,11 @@ export default function InterviewPage() {
 
     recognition.onend = () => {
       setIsListening(false);
-      if (isLiveRef.current && !isSpeakingRef.current && !pendingAnswerRef.current) {
+      if (
+        isLiveRef.current &&
+        !isSpeakingRef.current &&
+        !pendingAnswerRef.current
+      ) {
         setVoiceStatus("Waiting for your answer...");
       }
     };
@@ -1988,7 +2942,31 @@ export default function InterviewPage() {
       addTranscript(candidateItem);
 
       const currentStep = interviewStepRef.current;
-      const isMetaQuestion = isClarificationOrMetaQuestion(answer);
+      const isMetaQuestion =
+        isClarificationOrMetaQuestion(answer) ||
+        asksForExactAvailableContext(answer);
+      const isConceptQuestion = isConceptOrKnowledgeQuestion(answer);
+
+      if (isConceptQuestion) {
+        const conceptReply = buildConceptReply(answer);
+
+        setRecruiterState("engaged");
+        setVoiceStatus("Recruiter is answering briefly...");
+
+        window.setTimeout(() => {
+          if (!isLiveRef.current) return;
+          const recruiterReply: TranscriptItem = {
+            role: "recruiter",
+            text: conceptReply,
+            time: timeLabel(),
+          };
+          addTranscript(recruiterReply);
+          speakRecruiter(conceptReply, () => {
+            window.setTimeout(() => listenForAnswer(), 420);
+          });
+        }, 550);
+        return;
+      }
 
       if (isMetaQuestion) {
         const clarificationReply = buildClarificationReply(
@@ -2017,8 +2995,10 @@ export default function InterviewPage() {
 
       if (currentStep === "greeting") {
         interviewStepRef.current = "intro";
-        const introQuestion =
-          "Tell me a little about yourself and what you have been working on recently.";
+        const introQuestion = buildOpeningContextAwareQuestion(
+          recruiterId,
+          activeSetup,
+        );
         const spokenIntro = buildConversationalRecruiterSpeech({
           recruiterId,
           candidateName,
@@ -2050,16 +3030,12 @@ export default function InterviewPage() {
 
       if (currentStep === "intro") {
         interviewStepRef.current = "deep_dive";
-        const transitionQuestion = fallbackQuestions[0];
-        const introSnippet = getAnswerSnippet(answer);
-        const transitionSpeech =
-          recruiterId === "startup_recruiter"
-            ? `Okay, that gives me a starting point. You mentioned ${introSnippet || "your recent work"}. Now I want one real example, not a broad overview. ${transitionQuestion}`
-            : recruiterId === "friendly_hr"
-              ? `Thanks, that helps. I want to understand one real example from your background now. ${transitionQuestion}`
-              : recruiterId === "german_corporate"
-                ? `Thank you. Now let’s move from background to evidence. ${transitionQuestion}`
-                : `Thanks. Now I want to understand ownership, not just responsibilities. ${transitionQuestion}`;
+        const transitionQuestion = buildNaturalIntroQuestion(
+          recruiterId,
+          answer,
+          activeSetup,
+        );
+        const transitionSpeech = transitionQuestion;
 
         setRecruiterState("engaged");
         setVoiceStatus("Recruiter is moving deeper...");
@@ -2091,7 +3067,7 @@ export default function InterviewPage() {
         baseMemory = currentMemory;
       }
 
-      const analysis = analyzeAnswer(
+      const rawAnalysis = analyzeAnswer(
         answer,
         baseMemory,
         previousTrust,
@@ -2101,8 +3077,18 @@ export default function InterviewPage() {
 
       const nextTrust = Math.max(
         12,
-        Math.min(92, previousTrust + analysis.trustDelta),
+        Math.min(92, previousTrust + rawAnalysis.trustDelta),
       );
+      const analysis = upgradeAnalysisWithWowLayer({
+        analysis: rawAnalysis,
+        previousTrust,
+        nextTrust,
+        answer,
+        memory: baseMemory,
+        recruiterId,
+        question: questionRef.current,
+        setup: activeSetup,
+      });
       const nextMemory = updateMemoryWithAnalysis(
         baseMemory,
         analysis,
@@ -2161,6 +3147,7 @@ export default function InterviewPage() {
       });
     },
     [
+      activeSetup,
       activeSetup.setupId,
       addTranscript,
       candidateName,
@@ -2190,15 +3177,16 @@ export default function InterviewPage() {
     const recruiterVoiceId = openAiVoiceIdForRecruiter(
       setup.recruiterPersonality as RecruiterId,
     );
-    const browserVoice = selectBrowserVoice(setup.recruiterPersonality as RecruiterId);
+    const browserVoice = selectBrowserVoice(
+      setup.recruiterPersonality as RecruiterId,
+    );
     try {
       console.info("WorkZo recruiter voice mapping", {
         recruiter: profile.name,
         expectedDashboardVoice: recruiterVoiceId,
         browserVoice: browserVoice?.name || "browser-default",
         mode: "voice",
-        note:
-          "Standard Interview uses browser speech for stability. Vapi dashboard voice changes apply only to Live Interview.",
+        note: "Standard Interview uses browser speech for stability. Vapi dashboard voice changes apply only to Live Interview.",
       });
     } catch {}
     const memory = createInitialRecruiterMemory();
@@ -2260,7 +3248,8 @@ export default function InterviewPage() {
     setIsSpeaking(false);
     setVoiceStatus("Alright. That gives me enough context for now.");
     if (silenceTimerRef.current) window.clearTimeout(silenceTimerRef.current);
-    if (finalizationTimerRef.current) window.clearTimeout(finalizationTimerRef.current);
+    if (finalizationTimerRef.current)
+      window.clearTimeout(finalizationTimerRef.current);
     pendingAnswerRef.current = "";
     try {
       recognitionRef.current?.abort?.();
@@ -2324,7 +3313,13 @@ export default function InterviewPage() {
       return;
     }
     void startStandardInterview();
-  }, [isLive, isListening, isSpeaking, listenForAnswer, startStandardInterview]);
+  }, [
+    isLive,
+    isListening,
+    isSpeaking,
+    listenForAnswer,
+    startStandardInterview,
+  ]);
 
   const handleModeChange = useCallback(
     (nextMode: InterviewMode) => {
