@@ -103,37 +103,24 @@ type ElevenLabsVoiceRequest = {
   text: string;
 };
 
-const ELEVENLABS_CLIENT_TIMEOUT_MS = 8000;
-
 async function fetchElevenLabsAudio({
   recruiterId,
   text,
 }: ElevenLabsVoiceRequest) {
-  const controller = new AbortController();
-  const timeout = window.setTimeout(() => {
-    controller.abort();
-  }, ELEVENLABS_CLIENT_TIMEOUT_MS);
+  const response = await fetch("/api/elevenlabs", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ recruiterId, text }),
+  });
 
-  try {
-    const response = await fetch("/api/elevenlabs", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ recruiterId, text }),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const details = await response.text().catch(() => "");
-      throw new Error(details || "ElevenLabs voice request failed");
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    return new Blob([arrayBuffer], { type: "audio/mpeg" });
-  } finally {
-    window.clearTimeout(timeout);
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    throw new Error(details || "ElevenLabs voice request failed");
   }
+
+  return response.blob();
 }
 
 type AnswerAnalysis = {
@@ -574,24 +561,6 @@ function recruiterRuntimeVoice(
   };
 }
 
-
-function findVoiceByPreferredName(
-  voices: SpeechSynthesisVoice[],
-  preferredNames: string[],
-): SpeechSynthesisVoice | null {
-  for (const preferredName of preferredNames) {
-    const match = voices.find((voice) =>
-      `${voice.name} ${voice.voiceURI}`
-        .toLowerCase()
-        .includes(preferredName.toLowerCase()),
-    );
-
-    if (match) return match;
-  }
-
-  return null;
-}
-
 function openAiVoiceIdForRecruiter(recruiterId: RecruiterId) {
   return recruiterRuntimeVoice(recruiterId).voiceId;
 }
@@ -615,12 +584,6 @@ function speakWithSystemVoiceFallback({
   try {
     const utterance = new SpeechSynthesisUtterance(text);
     const runtimeVoice = recruiterRuntimeVoice(recruiterId);
-    const voices = window.speechSynthesis.getVoices();
-    const preferred = findVoiceByPreferredName(
-      voices,
-      runtimeVoice.browserVoiceNames,
-    );
-    if (preferred) utterance.voice = preferred;
     utterance.pitch = runtimeVoice.pitch;
     utterance.rate = Math.min(0.94, runtimeVoice.rate);
     utterance.volume = 1;
@@ -1779,7 +1742,6 @@ export default function InterviewPage() {
   const currentRecruiterAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const currentAudioSourceRef = useRef<AudioBufferSourceNode | null>(null);
-  const silentAudioSourceRef = useRef<OscillatorNode | null>(null);
   const recruiterAudioUnlockedRef = useRef(false);
   const isSpeakingRef = useRef(false);
   const isLiveRef = useRef(false);
@@ -1842,17 +1804,11 @@ export default function InterviewPage() {
         recognitionRef.current?.stop();
       } catch {}
       try {
-        recognitionRef.current?.stop();
-      } catch {}
-
-      try {
         currentAudioSourceRef.current?.stop();
         currentAudioSourceRef.current = null;
       } catch {}
       try {
-        const audio = currentRecruiterAudioRef.current;
-        audio?.pause();
-        if (audio?.parentNode) audio.parentNode.removeChild(audio);
+        currentRecruiterAudioRef.current?.pause();
         currentRecruiterAudioRef.current = null;
       } catch {}
     };
@@ -1886,86 +1842,60 @@ export default function InterviewPage() {
     recruiterStateRef.current = recruiterState;
   }, [recruiterState]);
 
-  const unlockRecruiterAudio = useCallback(async () => {
-    if (typeof window === "undefined") return false;
-    if (recruiterAudioUnlockedRef.current) return true;
-
-    let unlocked = false;
-
-    const AudioContextConstructor =
-      window.AudioContext ||
-      (window as Window & { webkitAudioContext?: typeof AudioContext })
-        .webkitAudioContext;
+  const unlockRecruiterAudio = useCallback(() => {
+    if (typeof window === "undefined") return;
+    if (recruiterAudioUnlockedRef.current) return;
 
     try {
+      const AudioContextConstructor =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+
       if (AudioContextConstructor && !audioContextRef.current) {
         audioContextRef.current = new AudioContextConstructor();
       }
 
-      const context = audioContextRef.current;
-      if (context) {
-        await context.resume();
-
-        // Mobile browsers need an audio graph started directly from the
-        // user's tap. Keep a near-silent oscillator alive for the session so
-        // later ElevenLabs playback is not blocked after the async fetch.
-        if (!silentAudioSourceRef.current) {
-          const oscillator = context.createOscillator();
-          const gain = context.createGain();
-          gain.gain.value = 0.00001;
-          oscillator.connect(gain);
-          gain.connect(context.destination);
-          oscillator.start();
-          silentAudioSourceRef.current = oscillator;
-        }
-        unlocked = true;
-      }
-    } catch (error) {
-      console.warn("WorkZo AudioContext unlock failed:", error);
+      void audioContextRef.current?.resume().then(() => {
+        recruiterAudioUnlockedRef.current = true;
+      });
+    } catch {
+      // Continue to the HTMLAudio fallback below.
     }
 
     try {
       const audio = currentRecruiterAudioRef.current || new Audio();
-      currentRecruiterAudioRef.current = audio;
-
-      if (typeof document !== "undefined" && !audio.isConnected) {
-        audio.setAttribute("data-workzo-recruiter-audio", "true");
-        audio.style.position = "fixed";
-        audio.style.left = "-9999px";
-        audio.style.top = "0";
-        audio.style.width = "1px";
-        audio.style.height = "1px";
-        audio.style.opacity = "0";
-        document.body.appendChild(audio);
-      }
-
       audio.preload = "auto";
-      audio.autoplay = false;
-      audio.controls = false;
-      audio.loop = false;
-      audio.muted = false;
-      audio.volume = 0.01;
-      audio.setAttribute("playsinline", "true");
+      audio.volume = 0;
+      audio.muted = true;
       (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline =
         true;
-
-      // Unmuted near-silent WAV. Do NOT use muted audio here: mobile browsers
-      // often do not unlock future audible playback from muted media.
       audio.src =
         "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQQAAAAAAA==";
-      audio.load();
+      currentRecruiterAudioRef.current = audio;
 
-      await audio.play();
-      audio.pause();
-      audio.currentTime = 0;
-      audio.volume = 1;
-      unlocked = true;
-    } catch (error) {
-      console.warn("WorkZo HTML audio unlock failed:", error);
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.then === "function") {
+        playPromise
+          .then(() => {
+            recruiterAudioUnlockedRef.current = true;
+            audio.pause();
+            audio.currentTime = 0;
+            audio.muted = false;
+            audio.volume = 1;
+          })
+          .catch(() => {
+            audio.muted = false;
+            audio.volume = 1;
+          });
+      } else {
+        recruiterAudioUnlockedRef.current = true;
+        audio.muted = false;
+        audio.volume = 1;
+      }
+    } catch {
+      // Ignore unlock failures; the normal play path will still try.
     }
-
-    recruiterAudioUnlockedRef.current = unlocked;
-    return unlocked;
   }, []);
 
   const addTranscript = useCallback((item: TranscriptItem) => {
@@ -1973,34 +1903,26 @@ export default function InterviewPage() {
   }, []);
 
   const speakRecruiter = useCallback(
-    async (text: string, afterSpeak?: () => void) => {
-      if (!speakerOn) {
+    (text: string, afterSpeak?: () => void) => {
+      if (
+        typeof window === "undefined" ||
+        !window.speechSynthesis ||
+        !speakerOn
+      ) {
         afterSpeak?.();
         return;
       }
 
-      const cleanText = softenRecruiterSpeech(text);
+      const cleanText = cleanLiveRecruiterSpeech(softenRecruiterSpeech(text));
+      const runtimeVoice = recruiterRuntimeVoice(recruiterId);
 
-      // Recruiter audio and candidate mic must never run together.
-      // Mobile Chrome/Safari can mute/duck playback if SpeechRecognition is active.
       try {
         recognitionRef.current?.abort?.();
         recognitionRef.current?.stop();
       } catch {}
-      pendingAnswerRef.current = "";
-      if (finalizationTimerRef.current) {
-        window.clearTimeout(finalizationTimerRef.current);
-        finalizationTimerRef.current = null;
-      }
-      setIsListening(false);
 
       try {
-        currentAudioSourceRef.current?.stop();
-        currentAudioSourceRef.current = null;
-      } catch {}
-
-      try {
-        currentRecruiterAudioRef.current?.pause();
+        window.speechSynthesis.cancel();
       } catch {}
 
       let didFinish = false;
@@ -2015,179 +1937,39 @@ export default function InterviewPage() {
           safetyTimeout = null;
         }
 
-        try {
-          currentAudioSourceRef.current?.disconnect();
-        } catch {}
-
-        currentAudioSourceRef.current = null;
         isSpeakingRef.current = false;
         setIsSpeaking(false);
         setVoiceStatus("Listening...");
         afterSpeak?.();
       };
 
-      const playWithHtmlAudio = async (audioBlob: Blob) => {
-        const audioUrl = URL.createObjectURL(
-          audioBlob.type === "audio/mpeg"
-            ? audioBlob
-            : new Blob([await audioBlob.arrayBuffer()], { type: "audio/mpeg" }),
-        );
-        const audio = currentRecruiterAudioRef.current || new Audio();
-        currentRecruiterAudioRef.current = audio;
-
-        // Mobile Safari/Chrome are much more reliable when the audio element
-        // is attached to the DOM and reused after the first mic tap.
-        if (typeof document !== "undefined" && !audio.isConnected) {
-          audio.setAttribute("data-workzo-recruiter-audio", "true");
-          audio.style.position = "fixed";
-          audio.style.left = "-9999px";
-          audio.style.width = "1px";
-          audio.style.height = "1px";
-          audio.style.opacity = "0";
-          document.body.appendChild(audio);
-        }
-
-        audio.pause();
-        audio.src = audioUrl;
-        audio.preload = "auto";
-        audio.autoplay = false;
-        audio.muted = false;
-        audio.volume = 1;
-        audio.setAttribute("playsinline", "true");
-        (audio as HTMLAudioElement & { playsInline?: boolean }).playsInline =
-          true;
-
-        const cleanup = () => {
-          try {
-            URL.revokeObjectURL(audioUrl);
-          } catch {}
-          finishSpeech();
-        };
-
-        audio.onended = cleanup;
-        audio.onerror = cleanup;
-
-        try {
-          audio.load();
-        } catch {}
-
-        const mobileFallbackTimer = window.setTimeout(() => {
-          // If mobile says it is playing but no progress starts, fall back to
-          // system speech instead of leaving the user in silent “speaking” state.
-          if (isMobileBrowser() && !didFinish && audio.currentTime < 0.05) {
-            try {
-              audio.pause();
-            } catch {}
-            try {
-              URL.revokeObjectURL(audioUrl);
-            } catch {}
-            const fallbackStarted = speakWithSystemVoiceFallback({
-              recruiterId,
-              text: cleanText,
-              onDone: finishSpeech,
-            });
-            if (!fallbackStarted) finishSpeech();
-          }
-        }, 1200);
-
-        const previousCleanup = cleanup;
-        audio.onended = () => {
-          window.clearTimeout(mobileFallbackTimer);
-          previousCleanup();
-        };
-        audio.onerror = () => {
-          window.clearTimeout(mobileFallbackTimer);
-          previousCleanup();
-        };
-
-        await audio.play();
-      };
-
-      const playWithAudioContext = async (audioBlob: Blob) => {
-        const AudioContextConstructor =
-          typeof window !== "undefined"
-            ? window.AudioContext ||
-              (window as Window & { webkitAudioContext?: typeof AudioContext })
-                .webkitAudioContext
-            : null;
-
-        if (!AudioContextConstructor) {
-          await playWithHtmlAudio(audioBlob);
-          return;
-        }
-
-        const context =
-          audioContextRef.current || new AudioContextConstructor();
-        audioContextRef.current = context;
-        await context.resume();
-
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const audioBuffer = await context.decodeAudioData(arrayBuffer.slice(0));
-        const source = context.createBufferSource();
-        const gain = context.createGain();
-        gain.gain.value = 1;
-        source.buffer = audioBuffer;
-        source.connect(gain);
-        gain.connect(context.destination);
-        source.onended = finishSpeech;
-        currentAudioSourceRef.current = source;
-        source.start(context.currentTime + 0.02);
-      };
-
-      isSpeakingRef.current = true;
-      setIsSpeaking(true);
-      setIsListening(false);
-      setVoiceStatus("Recruiter speaking...");
-
-      safetyTimeout = window.setTimeout(
-        finishSpeech,
-        Math.min(16000, Math.max(5500, cleanText.length * 85)),
-      );
-
-      // Product Hunt-safe mobile behavior:
-      // On many mobile browsers, async ElevenLabs blob playback remains silent
-      // even after audio unlock. Use native system speech on mobile so the
-      // recruiter is always audible, and keep ElevenLabs for desktop where it is stable.
-      if (isMobileBrowser()) {
-        const fallbackStarted = speakWithSystemVoiceFallback({
-          recruiterId,
-          text: cleanText,
-          onDone: finishSpeech,
-        });
-
-        if (!fallbackStarted) {
-          finishSpeech();
-        }
-        return;
-      }
-
       try {
-        const audioBlob = await fetchElevenLabsAudio({
-          recruiterId,
-          text: cleanText,
-        });
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.pitch = runtimeVoice.pitch;
+        utterance.rate =
+          recruiterStateRef.current === "pressuring" ||
+          recruiterStateRef.current === "skeptical"
+            ? Math.min(0.96, runtimeVoice.rate + 0.04)
+            : runtimeVoice.rate;
+        utterance.volume = 1;
 
-        try {
-          await playWithAudioContext(audioBlob);
-        } catch (webAudioError) {
-          console.warn(
-            "WorkZo WebAudio playback failed, trying HTML audio:",
-            webAudioError,
-          );
-          await playWithHtmlAudio(audioBlob);
-        }
+        utterance.onend = finishSpeech;
+        utterance.onerror = finishSpeech;
+
+        isSpeakingRef.current = true;
+        setIsSpeaking(true);
+        setIsListening(false);
+        setVoiceStatus("Recruiter speaking...");
+
+        safetyTimeout = window.setTimeout(
+          finishSpeech,
+          Math.min(16000, Math.max(3500, cleanText.length * 55)),
+        );
+
+        window.speechSynthesis.speak(utterance);
       } catch (error) {
-        console.warn("WorkZo ElevenLabs voice failed:", error);
-
-        const fallbackStarted = speakWithSystemVoiceFallback({
-          recruiterId,
-          text: cleanText,
-          onDone: finishSpeech,
-        });
-
-        if (!fallbackStarted) {
-          finishSpeech();
-        }
+        console.warn("WorkZo browser voice failed:", error);
+        finishSpeech();
       }
     },
     [recruiterId, speakerOn],
@@ -2503,10 +2285,6 @@ export default function InterviewPage() {
     );
     setActiveSetup(setup);
 
-    // Must run directly from the user's tap before any long async work,
-    // otherwise mobile Chrome/Safari may block ElevenLabs playback silently.
-    await unlockRecruiterAudio();
-
     try {
       await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -2520,6 +2298,8 @@ export default function InterviewPage() {
       setVoiceStatus("Microphone permission is needed to start.");
       return;
     }
+
+    unlockRecruiterAudio();
 
     const profile = getRecruiterVoiceProfile(setup.recruiterPersonality);
     const recruiterVoiceId = openAiVoiceIdForRecruiter(
@@ -2599,9 +2379,7 @@ export default function InterviewPage() {
       recognitionRef.current?.stop();
     } catch {}
     try {
-      const audio = currentRecruiterAudioRef.current;
-      audio?.pause();
-      if (audio?.parentNode) audio.parentNode.removeChild(audio);
+      currentRecruiterAudioRef.current?.pause();
       currentRecruiterAudioRef.current = null;
     } catch {}
 
@@ -2651,8 +2429,8 @@ export default function InterviewPage() {
     transcript,
   ]);
 
-  const handleMicClick = useCallback(async () => {
-    await unlockRecruiterAudio();
+  const handleMicClick = useCallback(() => {
+    unlockRecruiterAudio();
 
     if (isLive) {
       if (!isSpeaking) {
