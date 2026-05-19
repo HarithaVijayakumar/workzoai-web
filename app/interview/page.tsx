@@ -242,11 +242,8 @@ async function unlockMobileAudioForSpeech() {
 
   try {
     // iOS Safari must be unlocked from the SAME tap gesture.
-    // Do not speak/cancel a SpeechSynthesis primer here: the delayed cancel can
-    // accidentally cancel the real recruiter sentence that starts immediately
-    // after this unlock function resolves. This was the reason mobile looked
-    // like it started but the recruiter stayed silent.
-    window.speechSynthesis?.cancel?.();
+    // Never cancel speech here. Cancelling during the tap chain can swallow the
+    // first real recruiter sentence on iPhone/Chrome/Safari.
     window.speechSynthesis?.resume?.();
     window.speechSynthesis?.getVoices?.();
   } catch {}
@@ -2389,6 +2386,7 @@ export default function InterviewPage() {
           window.speechSynthesis.resume?.();
         } catch {}
         const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "en-US";
         const runtimeVoice = recruiterRuntimeVoice(recruiterId);
         const voice = getLockedBrowserVoice();
 
@@ -2405,6 +2403,7 @@ export default function InterviewPage() {
             const retryVoice = getLockedBrowserVoice();
             if (retryVoice && !didFinish) {
               const retry = new SpeechSynthesisUtterance(text);
+              retry.lang = "en-US";
               retry.voice = retryVoice;
               retry.pitch = runtimeVoice.pitch;
               retry.rate = runtimeVoice.rate;
@@ -2479,6 +2478,7 @@ export default function InterviewPage() {
                 return;
               }
               const fallback = new SpeechSynthesisUtterance(text);
+              fallback.lang = "en-US";
               if (fallbackVoice) fallback.voice = fallbackVoice;
               fallback.pitch = runtimeVoice.pitch;
               fallback.rate = runtimeVoice.rate;
@@ -3030,21 +3030,21 @@ export default function InterviewPage() {
 
   const handleMicClick = useCallback(() => {
     if (isMobileBrowserRuntime() && !mobileAudioUnlockedRef.current) {
-      setVoiceStatus("Starting recruiter audio...");
+      // CRITICAL for iOS/Chrome mobile: do not wait for an async unlock promise
+      // before starting SpeechSynthesis. Waiting moves the real speech outside
+      // the user gesture and the recruiter becomes visually active but silent.
+      mobileAudioUnlockedRef.current = true;
+      setHasUnlockedMobileAudio(true);
       setNeedsMobileAudioStart(false);
-      void unlockMobileAudioForSpeech().then(() => {
-        mobileAudioUnlockedRef.current = true;
-        setHasUnlockedMobileAudio(true);
-        setNeedsMobileAudioStart(false);
-        if (!isLiveRef.current) {
-          // Start from the same user action chain. On iOS this keeps speech
-          // audible; mic listening begins only after recruiter speech ends.
-          void startStandardInterview();
-        } else if (!isSpeakingRef.current && !isListening) {
-          manualListenRequestedRef.current = true;
-          listenForAnswer();
-        }
-      });
+      setVoiceStatus("Starting recruiter audio...");
+      void unlockMobileAudioForSpeech();
+
+      if (!isLiveRef.current) {
+        void startStandardInterview();
+      } else if (!isSpeakingRef.current && !isListening) {
+        manualListenRequestedRef.current = true;
+        listenForAnswer();
+      }
       return;
     }
 
