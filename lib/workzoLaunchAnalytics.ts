@@ -81,7 +81,7 @@ function getSessionId() {
 }
 
 function sendToFounderApi(item: Record<string, unknown>) {
-  if (typeof window === "undefined" || isLocalHost()) return;
+  if (typeof window === "undefined") return;
   try {
     const serialized = JSON.stringify(item);
     if (navigator.sendBeacon) {

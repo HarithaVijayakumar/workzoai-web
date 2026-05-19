@@ -327,7 +327,7 @@ export const useInterviewStore = create<InterviewState>()(
                 id: createId("msg"),
                 timestamp: Date.now(),
               },
-            ].slice(-50),
+            ].slice(-80),
           };
         }),
 
@@ -457,7 +457,7 @@ export const useInterviewStore = create<InterviewState>()(
               pressureLevel: state.pressureLevel,
               timestamp: Date.now(),
             },
-          ].slice(-40),
+          ].slice(-100),
         }));
       },
 
@@ -535,11 +535,11 @@ export const useInterviewStore = create<InterviewState>()(
       name: "workzo-interview-memory",
       partialize: (state) => ({
         setup: state.setup,
-        persistentPatterns: state.persistentPatterns.slice(-20),
-        answerHistory: state.answerHistory.slice(-25),
-        interruptionHistory: state.interruptionHistory.slice(-20),
-        emotionTimeline: state.emotionTimeline.slice(-25),
-        recruiterTrustHistory: state.recruiterTrustHistory.slice(-25),
+        persistentPatterns: state.persistentPatterns,
+        answerHistory: state.answerHistory,
+        interruptionHistory: state.interruptionHistory,
+        emotionTimeline: state.emotionTimeline,
+        recruiterTrustHistory: state.recruiterTrustHistory,
       }),
     }
   )

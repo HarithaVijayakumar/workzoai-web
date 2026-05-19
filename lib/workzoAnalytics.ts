@@ -74,11 +74,17 @@ function getOrCreateSessionId() {
   return id;
 }
 
+function storeLocalAnalyticsEvent(body: Record<string, unknown>) {
+  try {
+    const key = "workzo-founder-local-events";
+    const existing = JSON.parse(window.localStorage.getItem(key) || "[]") as unknown[];
+    existing.push(body);
+    window.localStorage.setItem(key, JSON.stringify(existing.slice(-1000)));
+  } catch {}
+}
+
 export function trackWorkZoEvent(payload: WorkZoAnalyticsPayload) {
   if (typeof window === "undefined") return;
-
-  // Do not send local development/testing events to founder analytics.
-  if (isLocalHost()) return;
 
   const body = {
     ...payload,
@@ -88,10 +94,12 @@ export function trackWorkZoEvent(payload: WorkZoAnalyticsPayload) {
     source: trafficSource(),
     host: window.location.host,
     origin: window.location.origin,
-    isLocal: false,
+    isLocal: isLocalHost(),
     userAgent: navigator.userAgent,
     timestamp: new Date().toISOString(),
   };
+
+  storeLocalAnalyticsEvent(body);
 
   try {
     const serialized = JSON.stringify(body);

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { mkdir, readFile, writeFile } from "fs/promises";
+import os from "os";
 import path from "path";
 
 type RawAnalyticsEvent = Record<string, unknown>;
@@ -21,8 +22,18 @@ type NormalizedAnalyticsEvent = {
   metadata: Record<string, unknown>;
 };
 
-const DATA_DIR = path.join(process.cwd(), ".workzo-data");
+const DATA_DIR = path.join(os.tmpdir(), "workzo-data");
 const DATA_FILE = path.join(DATA_DIR, "analytics-events.jsonl");
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __WORKZO_ANALYTICS_EVENTS__: NormalizedAnalyticsEvent[] | undefined;
+}
+
+function memoryEvents() {
+  globalThis.__WORKZO_ANALYTICS_EVENTS__ ||= [];
+  return globalThis.__WORKZO_ANALYTICS_EVENTS__;
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -79,9 +90,12 @@ function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
 }
 
 async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
+  const inMemory = memoryEvents();
+  let fileEvents: NormalizedAnalyticsEvent[] = [];
+
   try {
     const raw = await readFile(DATA_FILE, "utf8");
-    return raw
+    fileEvents = raw
       .split("\n")
       .filter(Boolean)
       .map((line) => {
@@ -93,12 +107,27 @@ async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
       })
       .filter(Boolean) as NormalizedAnalyticsEvent[];
   } catch {
-    return [];
+    fileEvents = [];
   }
+
+  const merged = [...fileEvents, ...inMemory];
+  const seen = new Set<string>();
+
+  return merged.filter((event) => {
+    const key = `${event.sessionId}|${event.event}|${event.timestamp}|${event.path}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 async function appendEvents(events: RawAnalyticsEvent[]) {
   if (!events.length) return;
+  const normalized = events.map(normalizeEvent);
+  const memory = memoryEvents();
+  memory.push(...normalized);
+  globalThis.__WORKZO_ANALYTICS_EVENTS__ = memory.slice(-5000);
+
   await mkdir(DATA_DIR, { recursive: true });
   const lines = events
     .map((event) => ({ ...event, receivedAt: new Date().toISOString() }))
