@@ -74,7 +74,8 @@ export function detectRecruiterEmotion({
   }
 
   if (
-    shortAnswer
+    shortAnswer &&
+    !/\b(hi|hello|thank you|thanks|yes|no|okay|ok|sure)\b/i.test(lower)
   ) {
     return "Impatient";
   }

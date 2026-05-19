@@ -64,6 +64,7 @@ export async function POST(request: Request) {
         recruiterPersonality: text(body.recruiterPersonality || setup.recruiterPersonality),
         language: text(setup.language),
         recruiterMemoryProfile: setup.recruiterMemoryProfile,
+        jobMemoryProfile: setup.jobMemoryProfile,
       },
     });
 

@@ -1547,22 +1547,26 @@ function InterviewRoom({
           .wz-topbar .wz-end-actions button:first-child { display: none !important; }
           .wz-room-grid { grid-template-columns: 1fr !important; height: auto !important; min-height: 0 !important; gap: 12px !important; }
           .wz-recruiter-stage { min-height: 0 !important; height: auto !important; overflow: visible !important; padding-bottom: 0 !important; border-radius: 24px !important; }
-          .wz-avatar-shell { width: calc(100% - 20px) !important; height: clamp(370px, 58vh, 520px) !important; min-height: 370px !important; margin-top: 54px !important; border-radius: 24px !important; }
+          .wz-avatar-shell { width: calc(100% - 18px) !important; height: clamp(300px, 46vh, 430px) !important; min-height: 300px !important; margin-top: 18px !important; border-radius: 22px !important; }
           .wz-avatar-shell video, .wz-avatar-shell img { object-position: center top !important; }
-          .wz-avatar-shell .wz-name-block { left: 22px !important; bottom: 24px !important; }
-          .wz-avatar-shell .wz-state-card { right: 18px !important; bottom: 24px !important; max-width: 142px !important; padding: 14px !important; }
+          .wz-avatar-shell .wz-name-block { left: 18px !important; bottom: 18px !important; max-width: 58% !important; }
+          .wz-avatar-shell .wz-state-card { right: 14px !important; bottom: 16px !important; max-width: 132px !important; padding: 11px !important; }
           .wz-live-badge { left: 24px !important; top: 20px !important; }
           .wz-live-status-badge { right: 20px !important; top: 20px !important; max-width: calc(100% - 150px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .wz-status-line { margin-top: 18px !important; font-size: 15px !important; }
           .wz-subtitle-pill { width: calc(100% - 36px) !important; margin-left: auto !important; margin-right: auto !important; }
-          .wz-bottom-controls { position: static !important; width: calc(100% - 24px) !important; margin: 14px auto 0 !important; transform: none !important; padding: 12px !important; gap: 12px !important; }
+          .wz-bottom-controls { position: sticky !important; bottom: 10px !important; width: calc(100% - 20px) !important; margin: 12px auto 0 !important; transform: none !important; padding: 10px !important; gap: 10px !important; z-index: 40 !important; }
           .wz-bottom-controls button { min-width: 0 !important; }
           .wz-bottom-controls .wz-mic-wrap { order: -1; width: 100%; }
-          .wz-bottom-controls .wz-mic-button { height: 72px !important; width: 72px !important; }
-          .wz-metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; padding: 14px !important; gap: 10px !important; }
+          .wz-bottom-controls .wz-mic-button { height: 66px !important; width: 66px !important; }
+          .wz-metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; padding: 10px !important; gap: 8px !important; }
           .wz-metrics-row > div { border-right: 0 !important; border-radius: 18px; background: rgba(15,23,42,.42); padding: 12px !important; }
           .wz-transcript-panel { display: none !important; }
           .wz-side-panel { display: none !important; }
+
+          .wz-status-line { min-height: 20px !important; }
+          .wz-subtitle-pill { max-height: 74px !important; overflow-y: auto !important; }
+          .wz-mobile-page * { -webkit-tap-highlight-color: transparent; }
         }
       `}</style>
 
@@ -2659,7 +2663,15 @@ export default function InterviewPage() {
         intelligence?.displayQuestion?.replace(/\s+/g, " ").trim() ||
         fallbackAnalysis.followUp;
 
-      const shouldCountAsAnswer = Boolean(intelligence?.shouldCountAsAnswer);
+      const fallbackShouldCountAsAnswer =
+        fallbackAnalysis.signal === "strong_metrics" ||
+        fallbackAnalysis.signal === "good_ownership" ||
+        fallbackAnalysis.signal === "recovery";
+
+      const shouldCountAsAnswer =
+        typeof intelligence?.shouldCountAsAnswer === "boolean"
+          ? intelligence.shouldCountAsAnswer
+          : fallbackShouldCountAsAnswer;
       const trustDelta =
         typeof intelligence?.trustDelta === "number"
           ? intelligence.trustDelta
@@ -2715,16 +2727,16 @@ export default function InterviewPage() {
       );
 
       const thinkingDelay = Math.max(
-        450,
+        320,
         Math.min(
-          1800,
+          1250,
           intelligence?.intent === "possible_exaggeration" ||
             intelligence?.intent === "nonsense" ||
             intelligence?.intent === "contradiction"
-            ? 1200
+            ? 950
             : shouldCountAsAnswer
-              ? 900
-              : 650,
+              ? 620
+              : 420,
         ),
       );
 
@@ -3066,6 +3078,8 @@ export default function InterviewPage() {
         onEndInterview={stopInterview}
         speakerOn={speakerOn}
         onToggleSpeaker={handleToggleSpeaker}
+        needsMobileAudioStart={needsMobileAudioStart}
+        hasUnlockedMobileAudio={hasUnlockedMobileAudio}
       />
     </main>
   );

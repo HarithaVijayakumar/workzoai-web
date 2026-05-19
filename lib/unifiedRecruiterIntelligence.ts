@@ -168,6 +168,7 @@ export type UnifiedRecruiterInput = {
     recruiterPersonality?: string;
     language?: string;
     recruiterMemoryProfile?: unknown;
+    jobMemoryProfile?: unknown;
   };
   recruiterTrust?: number;
   recruiterState?: string | null;
@@ -691,6 +692,124 @@ function detectCVConflict(answer: string, profile: CandidateEvidenceProfile) {
   return "";
 }
 
+
+function answerGeneralRecruiterQuestion(answer: string, targetRole: string) {
+  const lower = answer.toLowerCase();
+
+  const companyFacts: Array<[RegExp, string]> = [
+    [/\bzoho\b/i, "Yes. Zoho is a global SaaS company known for CRM, support, finance, workplace, and business software. If your experience is from Zoho, I’ll listen for customer-facing depth, product understanding, and support ownership."],
+    [/\bebay\b/i, "Yes. eBay is a global online marketplace connecting buyers and sellers. In an interview, experience related to eBay would usually connect to marketplace operations, trust, customer experience, seller support, or platform scale."],
+    [/\btesla\b/i, "Yes. Tesla is an electric vehicle, energy, and technology company. If someone claims Tesla experience, I’d expect a clear scope, team, function, and evidence because the responsibilities can vary widely."],
+    [/\bmicrosoft\b/i, "Yes. Microsoft is a global technology company across cloud, software, productivity, AI, and enterprise products. I’d connect it to product, customer, cloud, support, or business impact depending on the role."],
+    [/\bamazon\b/i, "Yes. Amazon spans ecommerce, logistics, cloud through AWS, devices, and digital services. For interview relevance, I’d look for scale, ownership, customer impact, and operational metrics."],
+    [/\bgoogle\b/i, "Yes. Google is a major technology company across search, ads, cloud, Android, YouTube, and AI. I’d expect specific team, product, and measurable scope if you mention it in an interview."],
+    [/\bsalesforce\b/i, "Yes. Salesforce is a leading CRM and enterprise SaaS company. For customer success roles, it connects strongly to pipeline, customer adoption, retention, and stakeholder management."],
+    [/\bservicenow\b/i, "Yes. ServiceNow is an enterprise workflow and IT service management platform. It often connects to support operations, ITSM, automation, SLAs, and enterprise processes."],
+    [/\bzendesk\b/i, "Yes. Zendesk is customer support and service software. It connects well to support workflows, tickets, CSAT, SLAs, and customer experience."],
+  ];
+
+  for (const [pattern, response] of companyFacts) {
+    if (pattern.test(lower)) return response;
+  }
+
+  const conceptFacts: Array<[RegExp, string]> = [
+    [/\bb2b\b/i, "B2B means business-to-business: a company sells to other companies. In interviews, it usually means longer sales cycles, more stakeholders, contracts, SLAs, and relationship management."],
+    [/\bb2c\b/i, "B2C means business-to-consumer: a company sells directly to individual customers. The focus is usually volume, user experience, fast support, retention, and consumer satisfaction."],
+    [/\bcrm\b/i, "CRM means customer relationship management. It helps teams manage leads, customers, support history, follow-ups, and business relationships."],
+    [/\bsla\b/i, "SLA means service level agreement. In support or customer success, it defines expected response or resolution times and is often used to measure reliability."],
+    [/\bcsat\b/i, "CSAT means customer satisfaction score. It is used to measure how satisfied customers are after an interaction or service experience."],
+    [/\bnps\b/i, "NPS means Net Promoter Score. It measures how likely customers are to recommend a product or company."],
+    [/\bapi\b/i, "API means application programming interface. It lets systems communicate with each other. In support or product roles, API understanding helps diagnose integrations and customer issues."],
+    [/\bats\b/i, "ATS means applicant tracking system. Employers use it to manage job applications and screen resumes."],
+    [/\bsaas\b/i, "SaaS means software as a service: cloud software sold by subscription. Customer success in SaaS usually focuses on onboarding, adoption, renewals, and retention."],
+  ];
+
+  for (const [pattern, response] of conceptFacts) {
+    if (pattern.test(lower)) return response;
+  }
+
+  if (/\bwhat should i do\b|\bhow should i answer\b|\bwhat do i need to do\b/i.test(lower)) {
+    return `Answer naturally like a real interview. Give me the situation, what you personally did, and why it matters for ${targetRole}.`;
+  }
+
+  return "Yes, I can answer that briefly. I’ll keep side explanations short so we don’t lose the interview flow.";
+}
+
+function buildRoleAwareNextQuestion(input: UnifiedRecruiterInput, targetRole: string, cvRead: CandidateEvidenceProfile, recruiterMemory: RecruiterMemoryProfile) {
+  const setup = input.setup || {};
+  const jd = cleanText(setup.jobDescription).toLowerCase();
+  const role = targetRole.toLowerCase();
+  const answerCount = recruiterMemory.answerCount || 0;
+
+  const customerSuccess = /customer success|customer success manager|\bcsm\b|renewal|retention|onboarding|adoption|churn|account management|customer health/.test(`${role} ${jd}`);
+  const support = /support|technical support|customer support|helpdesk|ticket|sla|troubleshoot|incident/.test(`${role} ${jd}`);
+  const data = /data analyst|analytics|sql|dashboard|bi|power bi|tableau|excel|reporting/.test(`${role} ${jd}`);
+  const product = /product|design|ux|roadmap|user research|figma|prototype/.test(`${role} ${jd}`);
+
+  if (customerSuccess) {
+    const qs = [
+      "Tell me about a customer situation where you improved adoption, retention, or trust.",
+      "Walk me through a difficult customer conversation where you had to protect the relationship.",
+      "How would you identify whether a customer is at risk before they complain?",
+      "Give me an example of how you worked with product, support, or sales to solve a customer problem.",
+    ];
+    return qs[answerCount % qs.length];
+  }
+
+  if (support) {
+    const qs = [
+      "Tell me about a difficult support issue you handled from first contact to resolution.",
+      "How did you manage urgency, SLA expectations, and customer communication at the same time?",
+      "Give me an example where you found the root cause instead of just giving a quick workaround.",
+      "How did you turn a frustrated customer into a calmer or more confident one?",
+    ];
+    return qs[answerCount % qs.length];
+  }
+
+  if (data) {
+    const qs = [
+      "Tell me about a time you used data to make a decision or improve a process.",
+      "Walk me through a dashboard, report, or analysis you created and what changed because of it.",
+      "How do you check whether your analysis is actually reliable?",
+      "Give me an example where data challenged an assumption.",
+    ];
+    return qs[answerCount % qs.length];
+  }
+
+  if (product) {
+    const qs = [
+      "Tell me about a product or design decision where you had to balance user needs and business constraints.",
+      "Walk me through how you validated a product idea or design choice.",
+      "Give me an example where feedback changed your design or product direction.",
+      "How do you decide what to prioritize when users want different things?",
+    ];
+    return qs[answerCount % qs.length];
+  }
+
+  const general = [
+    "Walk me through one specific situation where you handled pressure and still delivered a clear result.",
+    "Tell me about a time you had to influence someone without having direct authority.",
+    "Give me an example where you made a decision with incomplete information.",
+    "Tell me about a mistake or weak moment and how you recovered from it.",
+  ];
+
+  return general[answerCount % general.length];
+}
+
+function detectPlausibilityConcern(answer: string, profile: CandidateEvidenceProfile, targetRole: string) {
+  const lower = answer.toLowerCase();
+  const role = targetRole.toLowerCase();
+  const hasSupportOrCS = /support|customer success|customer|client|ticket|sla|onboarding|retention|renewal/.test(`${role} ${profile.summary.toLowerCase()}`);
+  const highScaleClaim = /\b(led|managed|owned|built|designed|created)\b.{0,60}\b(entire|global|all|company-wide|millions|billion|ceo|cto|founder|1000|10,000)\b/i.test(answer);
+  const deepEngineeringClaim = /\b(designed|architected|built|implemented)\b.{0,80}\b(engine|autopilot|kernel|compiler|operating system|chip|data center|core infrastructure|payment network)\b/i.test(answer);
+  const impossibleTooling = /\b(excel|word|powerpoint|photoshop|canva)\b.{0,80}\b(kernel|compiler|backend api|cloud infrastructure|database cluster|neural network|autopilot|engine)\b/i.test(answer);
+
+  if (impossibleTooling) return "The tools and technical outcome you mentioned do not fit together realistically.";
+  if (hasSupportOrCS && deepEngineeringClaim) return "That sounds far outside the likely scope of the role/background I have. I need the realistic version of your involvement.";
+  if (highScaleClaim) return "That is a very large claim. I need scope, team context, and proof before I can accept it.";
+  return "";
+}
+
 function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDecision {
   const answer = cleanText(input.answer);
   const currentQuestion = cleanText(input.currentQuestion) || "Tell me about yourself.";
@@ -702,7 +821,8 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
   const cvRead = buildEvidenceProfile(cvText, jobDescription);
   const recruiterMemory = buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
   const memoryContradiction = detectMeaningContradiction(answer, cvRead, recruiterMemory);
-  const cvConflict = detectCVConflict(answer, cvRead) || memoryContradiction;
+  const plausibilityConcern = detectPlausibilityConcern(answer, cvRead, targetRole);
+  const cvConflict = detectCVConflict(answer, cvRead) || memoryContradiction || plausibilityConcern;
 
   const basePsychology: UnifiedRecruiterPsychology = {
     trust,
@@ -761,9 +881,10 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
   }
 
   if (intent === "candidate_question") {
+    const sideAnswer = answerGeneralRecruiterQuestion(answer, targetRole);
     return withProfile({
       intent,
-      spokenReply: `Yes — I can handle that. I’ll keep side explanations brief so this still feels like an interview. Let’s come back to your answer: ${currentQuestion}`,
+      spokenReply: `${sideAnswer} Now let’s come back to the interview question: ${currentQuestion}`,
       displayQuestion: currentQuestion,
       shouldAdvanceQuestion: false,
       shouldCountAsAnswer: false,
@@ -835,7 +956,9 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     ...cvRead.projectSignals,
   ];
   const roleConnectionScore = overlapScore(answer, roleEvidence);
-  const hasRoleConnection = roleConnectionScore >= 2 || /customer|client|stakeholder|support|success|ticket|sla|retention|onboarding|renewal|problem|communication|data|analysis|project|team|user|business/i.test(answer);
+  const hasRoleConnection =
+    roleConnectionScore >= 2 ||
+    /customer|client|stakeholder|support|success|ticket|sla|retention|onboarding|renewal|churn|adoption|account|relationship|problem|communication|data|analysis|project|team|user|business|product|design|technical|process|operation|sales|service/i.test(answer);
   const hasPersonalOwnership = /\b(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|worked|supported|coordinated|analyzed|implemented)\b/i.test(answer);
   const hasOutcome = /\b(result|impact|improved|reduced|increased|saved|resolved|closed|delivered|launched|customer|satisfaction|time|percent|%|\d+)\b/i.test(answer);
 
@@ -885,7 +1008,7 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
   }
 
   const nextQuestion = hasOutcome
-    ? "Walk me through one specific situation where you had to handle a difficult stakeholder or customer expectation."
+    ? buildRoleAwareNextQuestion(input, targetRole, cvRead, recruiterMemory)
     : "Before we move on, give me the result or impact of that work. What changed because of what you did?";
 
   return withProfile({
@@ -1400,6 +1523,12 @@ BEHAVIOR RULES:
 11. If the answer is solid, acknowledge briefly and move to the next relevant question.
 12. Use market/company style: corporate = structured; startup = ownership/speed; consulting = logic/clarity; technical = depth; global = balanced.
 13. Speak like a real interviewer: short, natural, sometimes warm, sometimes skeptical. No rubric language.
+14. Answer normal knowledge questions briefly and accurately, then return to the interview. Do not treat them as answers.
+15. Do not give long company lectures. One or two recruiter-relevant sentences are enough.
+16. If the candidate's claim is outside normal role scope, challenge scope, not the person.
+17. Never use repetitive canned phrases like "answer too generic", "answer too short", or "I noticed this pattern earlier" during live speech.
+18. Prefer: "I’m not fully seeing the scope yet", "What part did you personally own?", "Help me connect that to the role", "What changed because of your work?".
+
 
 LIVE PRESSURE RULES:
 - Pressure must be behavioral, not just harder questions.
@@ -1617,9 +1746,16 @@ function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: Uni
   };
 
   const safeIntentDoesNotCount = ["greeting", "smalltalk", "clarification", "candidate_question", "interruption", "offtopic", "nonsense", "possible_exaggeration", "contradiction"].includes(intent);
-  const rawShouldCount = Boolean(raw.shouldCountAsAnswer);
+  const rawShouldCount =
+    typeof raw.shouldCountAsAnswer === "boolean"
+      ? raw.shouldCountAsAnswer
+      : fallback.shouldCountAsAnswer;
   const shouldCountAsAnswer = safeIntentDoesNotCount ? false : rawShouldCount;
-  const shouldAdvanceQuestion = Boolean(raw.shouldAdvanceQuestion && shouldCountAsAnswer && intent === "interview_answer");
+  const rawShouldAdvance =
+    typeof raw.shouldAdvanceQuestion === "boolean"
+      ? raw.shouldAdvanceQuestion
+      : fallback.shouldAdvanceQuestion;
+  const shouldAdvanceQuestion = Boolean(rawShouldAdvance && shouldCountAsAnswer && intent === "interview_answer");
 
   const feedback = cleanText(raw.feedback) || fallback.feedback;
   const correction = cleanText(raw.correction) || undefined;

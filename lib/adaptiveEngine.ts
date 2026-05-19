@@ -108,7 +108,7 @@ export function evaluateAdaptiveState(
     pressureLevel = Math.max(15, pressureLevel - 10);
 
     recruiterReaction =
-      "Good. That answer is much stronger because you explained ownership and measurable impact.";
+      "Good — now I can see what you owned and what changed. Let’s go one level deeper.";
 
     interruptionChance = 5;
 

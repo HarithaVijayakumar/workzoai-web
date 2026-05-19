@@ -90,10 +90,10 @@ export function evaluatePressure({
 Use stronger recruiter pressure.
 
 Examples:
-- "wait, that's still vague."
-- "okay, but what was the actual result?"
-- "you're speaking too generally."
-- "be more specific."
+- "Let me pause you there — I’m still not seeing the actual scope."
+- "What changed because of your work?"
+- "You’re staying quite broad. Bring it down to one specific situation."
+- "Give me the specific action and result."
 `,
     };
   }
