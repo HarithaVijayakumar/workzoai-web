@@ -141,6 +141,10 @@ type UnifiedRecruiterApiResponse = {
     shouldUseSilence?: boolean;
   };
   conversationStage?: string;
+  pressure?: { level?: number; label?: string; reason?: string; behaviorShift?: string };
+  recruiterMemoryInsight?: { callbackLine?: string; openDoubt?: string; strongestMoment?: string; weakestMoment?: string; recallMode?: string };
+  honestFeedback?: { headline?: string; recruiterRead?: string; risk?: string; nextFix?: string };
+  livePressureSimulation?: { pressureMode?: string; pacingCue?: string; warmthCue?: string; silenceCue?: string; nextFollowUpStyle?: string; interruptionRisk?: string };
 };
 
 const recruiterAliasMap: Record<string, RecruiterId> = {
@@ -1678,6 +1682,34 @@ function InterviewRoom({
           .wz-subtitle-pill { max-height: 76px !important; overflow-y: auto !important; }
           .wz-mobile-page * { -webkit-tap-highlight-color: transparent; }
 
+          /* Phase 1.5 priority 5: compact, stable mobile interview room. */
+          .wz-mobile-page { padding-top: max(8px, env(safe-area-inset-top)) !important; }
+          .wz-topbar { gap: 8px !important; margin-bottom: 8px !important; }
+          .wz-topbar a, .wz-topbar button { flex-shrink: 0 !important; }
+          .wz-topbar .wz-end-actions { width: 100% !important; justify-content: space-between !important; }
+          .wz-live-badge, .wz-live-status-badge { max-width: 42vw !important; overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; padding: 7px 10px !important; letter-spacing: .10em !important; font-size: 10px !important; }
+          .wz-room-grid { gap: 10px !important; }
+          .wz-avatar-shell { min-height: 255px !important; height: 38vh !important; max-height: 340px !important; border-radius: 24px !important; }
+          .wz-name-block h2 { font-size: 18px !important; line-height: 1.1 !important; }
+          .wz-name-block p { font-size: 11px !important; }
+          .wz-state-card { padding: 9px 11px !important; max-width: 46vw !important; }
+          .wz-state-card p:first-child { font-size: 9px !important; letter-spacing: .12em !important; }
+          .wz-state-card p:last-child { font-size: 11px !important; }
+          .wz-bottom-controls { position: sticky !important; bottom: calc(env(safe-area-inset-bottom) + 8px) !important; z-index: 50 !important; width: min(94vw, 420px) !important; margin-top: 8px !important; padding: 8px 10px !important; border-radius: 22px !important; }
+          .wz-bottom-controls .wz-mic-wrap button { height: 58px !important; width: 58px !important; }
+          .wz-bottom-controls .wz-mic-wrap p { max-width: 78vw !important; margin-left: auto !important; margin-right: auto !important; line-height: 1.25 !important; }
+          .wz-metrics-row { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 0 !important; padding: 8px 6px !important; border-radius: 0 0 22px 22px !important; }
+          .wz-metrics-row > div { border-right: 0 !important; padding: 8px 10px !important; }
+          .wz-metrics-row p { font-size: 11px !important; }
+          .wz-metrics-row p:nth-child(2) { font-size: 18px !important; }
+          .wz-transcript-panel { min-height: 360px !important; max-height: none !important; border-radius: 22px !important; }
+          .wz-transcript-panel > div:first-child { overflow-x: auto !important; padding-left: 10px !important; padding-right: 10px !important; }
+          .wz-transcript-panel button { white-space: nowrap !important; font-size: 12px !important; padding-left: 10px !important; padding-right: 10px !important; }
+          .wz-transcript-scroll { max-height: 54vh !important; padding: 10px 12px !important; }
+          .wz-transcript-scroll p { font-size: 14px !important; line-height: 1.6 !important; }
+          .wz-side-panel { display: none !important; }
+
+
           /* Launch-safe mobile layout: no clipped title pill, no horizontal drift, less cramped top area. */
           .wz-topbar { display: grid !important; grid-template-columns: 1fr 1fr !important; min-height: 64px !important; margin-bottom: 8px !important; }
           .wz-topbar .wz-room-title { display: none !important; }
@@ -3027,6 +3059,11 @@ export default function InterviewPage() {
           intent: intelligence?.intent || "fallback",
           countedAsAnswer: shouldCountAsAnswer,
           trust: nextTrust,
+          pressure: intelligence?.pressure?.level ?? null,
+          pressureLabel: intelligence?.pressure?.label ?? null,
+          pressureReason: intelligence?.pressure?.reason ?? null,
+          recruiterMood: intelligence?.livePressureSimulation?.pressureMode ?? null,
+          memoryRecall: intelligence?.recruiterMemoryInsight?.recallMode ?? null,
         },
       });
     },

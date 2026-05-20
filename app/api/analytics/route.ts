@@ -22,6 +22,8 @@ type NormalizedAnalyticsEvent = {
   timestamp: string;
   receivedAt: string;
   source: string;
+  device: "mobile" | "desktop" | "tablet" | "unknown";
+  isMobile: boolean;
   metadata: Record<string, unknown>;
 };
 
@@ -111,6 +113,20 @@ function detectTrafficSource(event: RawAnalyticsEvent) {
   return "Direct / unknown";
 }
 
+
+function detectDevice(event: RawAnalyticsEvent): "mobile" | "desktop" | "tablet" | "unknown" {
+  const metadata = asRecord(event.metadata);
+  const ua = `${asString(event.userAgent)} ${asString(metadata.userAgent)} ${asString(metadata.device)} ${asString(metadata.platform)}`.toLowerCase();
+  if (/ipad|tablet/.test(ua)) return "tablet";
+  if (/iphone|android|mobile|ipod/.test(ua)) return "mobile";
+  if (/windows|macintosh|linux|desktop/.test(ua)) return "desktop";
+  return "unknown";
+}
+
+function sessionKey(event: NormalizedAnalyticsEvent) {
+  return event.sessionId || `${event.source}:${event.path}:${event.receivedAt.slice(0, 13)}`;
+}
+
 function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
   const metadata = asRecord(event.metadata);
   const receivedAt = asString(event.receivedAt, new Date().toISOString());
@@ -129,6 +145,8 @@ function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
     timestamp: asString(event.timestamp, receivedAt),
     receivedAt,
     source: detectTrafficSource(event),
+    device: detectDevice(event),
+    isMobile: detectDevice(event) === "mobile" || detectDevice(event) === "tablet",
     metadata,
   };
 }
@@ -175,8 +193,11 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
   const roles: Record<string, number> = {};
   const modes: Record<string, number> = {};
   const trafficSources: Record<string, number> = {};
+  const devices: Record<string, number> = {};
+  const errors: Record<string, number> = {};
   const weakSignals: Record<string, number> = {};
   const sessions = new Set<string>();
+  const sessionReplay: Record<string, { events: number; first: string; last: string; device: string; recruiter: string; role: string; started: boolean; completed: boolean; lastEvent: string; dropoff: string }> = {};
 
   const modePerformance: Record<string, { starts: number; completions: number; voiceFailures: number; results: number; avgTrust: number | null }> = {};
 
@@ -187,6 +208,17 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     increment(roles, event.role);
     increment(modes, event.mode);
     increment(trafficSources, event.source);
+    increment(devices, event.device);
+    if (/error|failed|blocked|exception/i.test(event.event)) increment(errors, event.event);
+
+    const key = sessionKey(event);
+    const replay = (sessionReplay[key] ||= { events: 0, first: event.timestamp, last: event.timestamp, device: event.device, recruiter: event.recruiter, role: event.role, started: false, completed: false, lastEvent: event.event, dropoff: "Visited" });
+    replay.events += 1;
+    replay.last = event.timestamp;
+    replay.lastEvent = event.event;
+    replay.started ||= event.event === "interview_started" || event.event === "voice_started";
+    replay.completed ||= event.event === "interview_completed" || event.event === "results_viewed";
+    replay.dropoff = replay.completed ? "Completed/results" : replay.started ? "Started interview" : event.event.includes("upload") ? "Uploaded CV" : "Visited/unknown";
 
     const signal = asString(event.metadata.signal || event.metadata.tag || event.metadata.weakness || event.metadata.action);
     if (signal) increment(weakSignals, signal);
@@ -256,6 +288,10 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     roles,
     modes,
     trafficSources,
+    devices,
+    errors,
+    mobileShare: pct((devices.mobile || 0) + (devices.tablet || 0), events.length),
+    sessionReplay: Object.values(sessionReplay).sort((a, b) => b.last.localeCompare(a.last)).slice(0, 100),
     weakSignals,
     dropoffFunnel,
     modePerformance,

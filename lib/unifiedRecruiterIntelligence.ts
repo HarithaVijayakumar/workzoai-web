@@ -1729,7 +1729,7 @@ function deriveHumanImperfection(
   };
 }
 
-function deriveHonestFeedback(decision: Pick<UnifiedRecruiterDecision, "intent" | "feedback" | "concern" | "correction" | "recruiterState" | "shouldCountAsAnswer" | "trustDelta">) {
+function deriveHonestFeedback(decision: Pick<UnifiedRecruiterDecision, "intent" | "feedback" | "concern" | "correction" | "recruiterState" | "shouldCountAsAnswer" | "trustDelta" | "psychology" | "pressure">) {
   if (["greeting", "smalltalk", "clarification", "candidate_question", "interruption"].includes(decision.intent)) {
     return {
       headline: "Conversation handled, not scored",
@@ -2096,12 +2096,28 @@ function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: Uni
   const feedback = cleanText(raw.feedback) || fallback.feedback;
   const correction = cleanText(raw.correction) || undefined;
   const concern = cleanText(raw.concern) || undefined;
-  const derivedForFeedback = { intent, feedback, concern, correction, recruiterState, shouldCountAsAnswer, trustDelta };
   const fallbackPressure = deriveLivePressure(psychology, recruiterState, intent);
   const rawPressure = raw.pressure || {};
   const pressureLabel = ["low", "moderate", "high", "intense"].includes((rawPressure as any).label)
     ? ((rawPressure as any).label as "low" | "moderate" | "high" | "intense")
     : fallbackPressure.label;
+  const pressure = {
+    level: clamp(Number((rawPressure as any).level ?? fallbackPressure.level), 12, 96),
+    label: pressureLabel,
+    reason: cleanText((rawPressure as any).reason) || fallbackPressure.reason,
+    behaviorShift: cleanText((rawPressure as any).behaviorShift) || fallbackPressure.behaviorShift,
+  };
+  const derivedForFeedback = {
+    intent,
+    feedback,
+    concern,
+    correction,
+    recruiterState,
+    shouldCountAsAnswer,
+    trustDelta,
+    psychology,
+    pressure,
+  };
 
   return {
     intent,
@@ -2119,12 +2135,7 @@ function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: Uni
     cvRead: fallback.cvRead,
     recruiterMemory: fallback.recruiterMemory,
     memoryEvents: Array.isArray(raw.memoryEvents) ? (raw.memoryEvents as RecruiterMemoryEvent[]).slice(0, 6) : fallback.memoryEvents || [],
-    pressure: {
-      level: clamp(Number((rawPressure as any).level ?? fallbackPressure.level), 12, 96),
-      label: pressureLabel,
-      reason: cleanText((rawPressure as any).reason) || fallbackPressure.reason,
-      behaviorShift: cleanText((rawPressure as any).behaviorShift) || fallbackPressure.behaviorShift,
-    },
+    pressure,
     honestFeedback: {
       ...deriveHonestFeedback(derivedForFeedback),
       ...(raw.honestFeedback && typeof raw.honestFeedback === "object"
@@ -2328,13 +2339,135 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
   return decision;
 }
 
+
+function deriveAnswerQualitySignals(answerRaw: string) {
+  const answer = cleanText(answerRaw);
+  const lower = answer.toLowerCase();
+  const wordCount = answer.split(/\s+/).filter(Boolean).length;
+  const hasOwnership = /(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|coordinated|supported|analyzed|implemented|decided)/i.test(answer);
+  const hasOutcome = hasAnyOutcome(answer) || hasQuantitativeOutcome(answer);
+  const hasMetrics = hasQuantitativeOutcome(answer) || /(csat|nps|sla|kpi|retention|renewal|churn|tickets?|users?|customers?|percent|percentage|score|rating|reduced|increased|saved|improved)/i.test(lower);
+  const vague = /(good|nice|great job|many things|stuff|things|you know|etc|basically|i think|maybe|probably|kind of|sort of)/i.test(lower);
+  const roleBridge = /(customer|client|stakeholder|support|success|retention|renewal|onboarding|relationship|rapport|satisfaction|technical|problem|issue|communication|language|germany|learn|quick learner)/i.test(lower);
+  return { wordCount, hasOwnership, hasOutcome, hasMetrics, vague, roleBridge };
+}
+
+function derivePersistentMoodLine(psychology: UnifiedRecruiterPsychology, state: UnifiedRecruiterDecision["recruiterState"]) {
+  if (state === "losing_confidence" || psychology.trust < 38) {
+    return "Recruiter is losing confidence and will require direct proof before moving deeper.";
+  }
+  if (state === "skeptical" || psychology.skepticism > 68) {
+    return "Skepticism is carrying forward; the recruiter will test ownership and realism more closely.";
+  }
+  if (state === "pressuring" || psychology.patience < 42) {
+    return "Pressure is tightening; the recruiter will shorten the conversation and ask sharper follow-ups.";
+  }
+  if (state === "recovering_trust" || psychology.trust >= 68) {
+    return "Trust is recovering; the recruiter can move into deeper, more strategic follow-ups.";
+  }
+  return "Pressure remains realistic and balanced.";
+}
+
+function applyPhase15TrustPressure(input: UnifiedRecruiterInput, decision: UnifiedRecruiterDecision): UnifiedRecruiterDecision {
+  // Phase 1.5 priority 3: recruiter psychology must persist beyond one answer.
+  // This uses current trust + remembered weak/strong signals + answer quality to tune the next tone.
+  const answer = cleanText(input.answer);
+  const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
+  const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
+  const quality = deriveAnswerQualitySignals(answer);
+  const previousTrust = clamp(typeof input.recruiterTrust === "number" ? input.recruiterTrust : decision.psychology.trust, 12, 92);
+  const openDoubtPenalty = Math.min(10, memory.openDoubts.length * 3 + memory.contradictionSignals.length * 4);
+  const weakPatternPenalty = Math.min(8, memory.weakMoments.length * 2);
+  const strongPatternBoost = Math.min(8, memory.strongMoments.length * 2);
+
+  let persistentDelta = decision.trustDelta;
+  if (decision.shouldCountAsAnswer) {
+    if (!quality.hasOwnership && quality.wordCount > 10) persistentDelta -= 2;
+    if (!quality.hasOutcome && !quality.hasMetrics && quality.wordCount > 22 && !/weakness|strength|background|tell me about yourself/i.test(input.currentQuestion || "")) persistentDelta -= 2;
+    if (quality.vague && quality.wordCount > 25) persistentDelta -= 1;
+    if (quality.hasOwnership && quality.hasOutcome) persistentDelta += 1;
+    if (quality.roleBridge && quality.hasOutcome) persistentDelta += 1;
+  }
+  if (["contradiction", "possible_exaggeration", "nonsense"].includes(decision.intent)) persistentDelta -= 3;
+  persistentDelta = clamp(persistentDelta, -12, 12);
+
+  const nextTrust = clamp(previousTrust + persistentDelta - Math.round(openDoubtPenalty * 0.35) + Math.round(strongPatternBoost * 0.25), 12, 92);
+  const nextSkepticism = clamp(
+    decision.psychology.skepticism + openDoubtPenalty + weakPatternPenalty - strongPatternBoost + (persistentDelta < 0 ? 8 : persistentDelta > 3 ? -5 : 0),
+    8,
+    94,
+  );
+  const nextPatience = clamp(
+    decision.psychology.patience - openDoubtPenalty * 0.6 - (quality.vague ? 6 : 0) + (persistentDelta > 3 ? 5 : 0),
+    16,
+    96,
+  );
+  const nextInterest = clamp(decision.psychology.interest + (quality.roleBridge ? 5 : 0) + (quality.hasOutcome ? 4 : 0) - (decision.intent === "offtopic" ? 10 : 0), 15, 96);
+
+  const nextState: UnifiedRecruiterDecision["recruiterState"] =
+    nextTrust < 35
+      ? "losing_confidence"
+      : nextSkepticism > 74 || persistentDelta <= -6
+        ? "skeptical"
+        : nextPatience < 38 || (nextSkepticism > 64 && quality.vague)
+          ? "pressuring"
+          : persistentDelta >= 5 && previousTrust < 62
+            ? "recovering_trust"
+            : nextInterest > 70 || persistentDelta > 2
+              ? "engaged"
+              : decision.recruiterState;
+
+  const psychology: UnifiedRecruiterPsychology = {
+    trust: nextTrust,
+    interest: nextInterest,
+    skepticism: nextSkepticism,
+    patience: nextPatience,
+    engagement: clamp(nextInterest + (quality.hasOutcome ? 4 : 0) - (nextSkepticism > 78 ? 8 : 0), 16, 96),
+    confidenceInCandidate: clamp(nextTrust + (quality.hasOwnership ? 3 : 0) + (quality.hasOutcome ? 3 : 0) - (nextSkepticism > 78 ? 8 : 0), 12, 94),
+  };
+
+  const pressure = deriveLivePressure(psychology, nextState, decision.intent);
+  const livePressureSimulation = deriveLivePressureSimulation(psychology, nextState, decision.intent, pressure);
+  const recruiterMemoryInsight = deriveRecruiterMemoryInsight(memory, {
+    intent: decision.intent,
+    recruiterState: nextState,
+    trustDelta: persistentDelta,
+    shouldCountAsAnswer: decision.shouldCountAsAnswer,
+    concern: decision.concern,
+    correction: decision.correction,
+  });
+  const honestFeedback = deriveHonestFeedback({ ...decision, trustDelta: persistentDelta, recruiterState: nextState, psychology, pressure });
+  const moodLine = derivePersistentMoodLine(psychology, nextState);
+
+  const shouldAddSkepticalMemory = decision.shouldCountAsAnswer && (persistentDelta < 0 || nextSkepticism > 72);
+  const memoryEvents = uniqueMemoryEvents([
+    ...(decision.memoryEvents || []),
+    ...(shouldAddSkepticalMemory
+      ? [{ type: "doubt" as const, text: moodLine, weight: nextSkepticism > 76 ? 8 : 5 }]
+      : []),
+  ]);
+
+  return {
+    ...decision,
+    trustDelta: persistentDelta,
+    recruiterState: nextState,
+    psychology,
+    pressure,
+    livePressureSimulation,
+    recruiterMemoryInsight,
+    honestFeedback,
+    memoryEvents,
+    feedback: decision.feedback ? `${decision.feedback} ${moodLine}` : moodLine,
+  };
+}
+
 export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInput): Promise<UnifiedRecruiterDecision> {
   const fallback = buildFallbackDecision(input);
   const cvRead = fallback.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
   const recruiterMemory = fallback.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
 
   if (!process.env.OPENAI_API_KEY) {
-    return applyNaturalConversationGuard(input, {
+    return applyPhase15TrustPressure(input, applyNaturalConversationGuard(input, {
       ...fallback,
       pressure: deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent),
       honestFeedback: deriveHonestFeedback(fallback),
@@ -2344,7 +2477,7 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
       humanImperfection: fallback.humanImperfection || deriveHumanImperfection(input, fallback, recruiterMemory),
       socialSignals: fallback.socialSignals || deriveSocialSignals(input.answer, fallback, recruiterMemory),
       cinematicRealism: fallback.cinematicRealism || deriveCinematicRealism(input, fallback, fallback.socialSignals || deriveSocialSignals(input.answer, fallback, recruiterMemory), deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent)),
-    });
+    }));
   }
 
   try {
@@ -2378,7 +2511,7 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
     const normalized = normalizeDecision(parsed, fallback);
     const updated = updateMemoryAfterDecision(cleanText(input.answer), normalized, recruiterMemory);
     const finalPressure = normalized.pressure || deriveLivePressure(normalized.psychology, normalized.recruiterState, normalized.intent);
-    return applyNaturalConversationGuard(input, {
+    return applyPhase15TrustPressure(input, applyNaturalConversationGuard(input, {
       ...normalized,
       recruiterMemory: updated.memory,
       memoryEvents: uniqueMemoryEvents([...(normalized.memoryEvents || []), ...updated.events]),
@@ -2388,8 +2521,8 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
       humanImperfection: normalized.humanImperfection || deriveHumanImperfection(input, normalized, updated.memory),
       socialSignals: normalized.socialSignals || deriveSocialSignals(input.answer, normalized, updated.memory),
       cinematicRealism: normalized.cinematicRealism || deriveCinematicRealism(input, normalized, normalized.socialSignals || deriveSocialSignals(input.answer, normalized, updated.memory), finalPressure),
-    });
+    }));
   } catch {
-    return applyNaturalConversationGuard(input, fallback);
+    return applyPhase15TrustPressure(input, applyNaturalConversationGuard(input, fallback));
   }
 }
