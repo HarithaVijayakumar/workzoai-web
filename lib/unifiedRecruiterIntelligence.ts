@@ -358,6 +358,60 @@ function findMissingJobSkills(cvText: string, jobDescription: string) {
     .slice(0, 4);
 }
 
+function hasAskedRecently(input: UnifiedRecruiterInput, pattern: RegExp) {
+  return (input.transcript || [])
+    .filter((item) => item.role === "recruiter")
+    .slice(-8)
+    .some((item) => pattern.test(cleanText(item.text)));
+}
+
+function recentCandidateText(input: UnifiedRecruiterInput, take = 8) {
+  return (input.transcript || [])
+    .filter((item) => item.role === "candidate")
+    .slice(-take)
+    .map((item) => cleanText(item.text))
+    .join(" ");
+}
+
+function hasCustomerSuccessRoleFit(answer: string, targetRole: string, input: UnifiedRecruiterInput) {
+  const role = cleanText(targetRole).toLowerCase();
+  if (!/customer success|customer service|account manager|support|client/i.test(role)) return false;
+  const evidence = `${answer} ${recentCandidateText(input, 5)}`.toLowerCase();
+  return /customer|client|support|ticket|satisfaction|csat|rapport|relationship|resolved|issue|escalation|technical support|b2b|b2c|retention|onboarding/.test(evidence);
+}
+
+function buildMemoryAwareCallbackQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, targetRole: string) {
+  const recent = recentCandidateText(input, 8).toLowerCase();
+  const askedStrength = hasAskedRecently(input, /strongest professional strength|what.*strength|best at/i);
+  const askedWeakness = hasAskedRecently(input, /weakness|development area|challenge/i);
+  const askedCustomer = hasAskedRecently(input, /difficult customer|customer situation|unhappy customer|escalation/i);
+  const askedLearning = hasAskedRecently(input, /learn.*quick|learn something quickly|adapt/i);
+
+  if (/language|germany|german|grammar|fluent|learn the language/.test(recent) && !askedLearning) {
+    return "You mentioned learning German after moving to Germany. Tell me about another situation where you had to learn something quickly for work.";
+  }
+
+  if (/customer|client|support|ticket|satisfaction|rapport|relationship|csat/.test(recent) && !askedCustomer) {
+    return `That customer-facing experience is relevant for ${targetRole}. Tell me about one difficult customer situation you handled and how you recovered it.`;
+  }
+
+  if (/weakness|grammar|language|not sure|improve/.test(recent) && askedWeakness) {
+    return "Thanks for being honest. How are you actively improving that area, and how would you make sure it does not affect customers?";
+  }
+
+  const missingSkills = findMissingJobSkills(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
+  if (missingSkills.length && !hasAskedRecently(input, new RegExp(missingSkills[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"))) {
+    const skill = missingSkills[0];
+    return `I see ${skill} in the role requirements, but I don’t see strong evidence of it in your CV. Have you used it before, or how would you close that gap?`;
+  }
+
+  if (!askedStrength) {
+    return "What would you say is your strongest professional strength, and can you back it up with one example?";
+  }
+
+  return `Let’s make this practical for ${targetRole}. Imagine a customer is unhappy after repeated technical issues. How would you handle that conversation?`;
+}
+
 function buildNaturalNextQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, memory: RecruiterMemoryProfile, answer: string) {
   const setup = input.setup || {};
   const jobDescription = cleanText(setup.jobDescription);
@@ -371,12 +425,15 @@ function buildNaturalNextQuestion(input: UnifiedRecruiterInput, cvRead: Candidat
     return `Thanks. What is making you interested in ${targetRole} at this point in your career?`;
   }
 
-  if (missingSkills.length && turns <= 4) {
-    const skill = missingSkills[0];
-    return `I see ${skill} in the role requirements, but I don’t see strong evidence of it in your CV. How would you manage that gap if you joined this role?`;
+  // Follow the candidate's thread first. This is what makes it feel like a real interviewer.
+  if (/language|germany|german|grammar|fluent|quick learner|learn/.test(answerLower)) {
+    return "You mentioned learning quickly. Tell me about a work situation where you had to learn a new process, tool, or product fast.";
   }
 
-  if (/customer|client|ticket|support|stakeholder|relationship/i.test(answerLower)) {
+  if (/customer|client|ticket|support|stakeholder|relationship|satisfaction|rapport|csat/i.test(answerLower)) {
+    if (hasCustomerSuccessRoleFit(answer, targetRole, input)) {
+      return `That customer-facing experience is relevant for ${targetRole}. Tell me about one difficult customer situation you handled and what you learned from it.`;
+    }
     return "Can you give me one real example where that relationship became difficult and how you handled it?";
   }
 
@@ -388,11 +445,16 @@ function buildNaturalNextQuestion(input: UnifiedRecruiterInput, cvRead: Candidat
     return "When you say you coordinated or led that work, what exactly was your responsibility compared with the rest of the team?";
   }
 
+  if (missingSkills.length && turns <= 5) {
+    const skill = missingSkills[0];
+    return `I see ${skill} in the role requirements, but I don’t see strong evidence of it in your CV. Have you used it before, or how would you close that gap?`;
+  }
+
   if ((memory.openDoubts || []).length) {
     return `Earlier I was still unsure about ${compact(memory.openDoubts[0], 70)}. Can you clarify that with one concrete example?`;
   }
 
-  return "What would you say is your strongest professional strength, and can you back it up with one example?";
+  return buildMemoryAwareCallbackQuestion(input, cvRead, targetRole);
 }
 
 
@@ -1040,6 +1102,24 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
   }
 
   if (!hasRoleConnection) {
+    // For customer-success/support roles, customer-facing evidence is already a role link.
+    // Do not keep asking the candidate to "make the connection" when they already mentioned customers, support, satisfaction, tickets, or rapport.
+    if (hasCustomerSuccessRoleFit(answer, targetRole, input)) {
+      const nextQuestion = buildNaturalNextQuestion(input, cvRead, recruiterMemory, answer);
+      return withProfile({
+        intent: "interview_answer",
+        spokenReply: `I see the link: your support background gives you customer-facing experience. ${nextQuestion}`,
+        displayQuestion: nextQuestion,
+        shouldAdvanceQuestion: true,
+        shouldCountAsAnswer: true,
+        shouldStayOnCurrentQuestion: false,
+        trustDelta: 2,
+        recruiterState: "interested",
+        feedback: "Accepted customer-facing role connection and moved to a deeper realistic follow-up.",
+        psychology: { ...basePsychology, trust: clamp(trust + 2, 12, 92), interest: clamp(basePsychology.interest + 4, 20, 95) },
+      });
+    }
+
     return withProfile({
       intent: "partial_answer",
       spokenReply: `I understand the background, but I don’t yet see the connection to ${targetRole}. Make that link for me: which part of this experience would help you in this role?`,
@@ -1683,6 +1763,14 @@ REAL-LIFE INTERVIEW FLOW RULES — CRITICAL:
 - If JD requires a skill missing from CV, ask naturally: “I see X in the role, but it’s not clear in your CV. Have you used it before, or how would you close that gap?”
 - Keep one question at a time. Avoid repeating the same wording.
 
+
+MEMORY LINKING RULES — CRITICAL:
+- Do not forget a point after one turn. If the candidate mentioned customer satisfaction, repeat customers, language weakness, moving to Germany, quick learning, technical support, or role fit, use it naturally later.
+- Do not ask the candidate to connect technical support to Customer Success if they already mentioned customers, tickets, satisfaction, rapport, repeat customers, or support. Accept that as the connection and go deeper: difficult customer, retention, escalation, onboarding, or relationship management.
+- When a candidate gives a weak but relevant answer, do not repeat the same demand. Summarize the useful part, then ask a more specific next question.
+- Stay on one thread for 1–2 turns before switching topics. Human recruiters do not jump strength → weakness → learning → strength without callbacks.
+- Use callbacks like: “You mentioned language as a development area…” or “Earlier you described customer satisfaction…” only when useful.
+
 HARD BANS:
 - Do not say: "answer too generic", "answer too short", "I noticed this pattern earlier", "STAR format", "as an AI".
 - Do not lecture about companies for more than one sentence unless the candidate explicitly asks.
@@ -2035,11 +2123,31 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
     };
   }
 
+  // If the model tries to ask for role connection after the candidate already gave customer/support evidence,
+  // convert it into a realistic deeper customer-success follow-up.
+  if (/don.?t yet see the connection|make that link|connect.*role/i.test(decision.spokenReply) && hasCustomerSuccessRoleFit(answer, targetRole, input)) {
+    const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
+    const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
+    const nextQuestion = buildNaturalNextQuestion(input, cvRead, memory, answer);
+    return {
+      ...decision,
+      intent: "interview_answer",
+      spokenReply: `I see the connection: your support background gave you direct customer-facing experience. ${nextQuestion}`,
+      displayQuestion: nextQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: Math.max(decision.trustDelta, 2),
+      recruiterState: "interested",
+      feedback: "Prevented unnecessary role-connection repeat and moved deeper.",
+    };
+  }
+
   // Hard anti-loop: if the model repeats the same recruiter line, force a natural progression.
   if (repeatedRecruiterLineRisk(input, decision.spokenReply) && decision.intent !== "greeting" && decision.intent !== "smalltalk") {
     const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
     const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
-    const nextQuestion = buildHumanProgressionQuestion(input, cvRead, memory, answer);
+    const nextQuestion = buildMemoryAwareCallbackQuestion(input, cvRead, targetRole);
     return {
       ...decision,
       spokenReply: `Okay, I have enough to continue. ${nextQuestion}`,
@@ -2048,7 +2156,7 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
       shouldCountAsAnswer: true,
       shouldStayOnCurrentQuestion: false,
       recruiterState: "interested",
-      feedback: "Prevented repeated follow-up loop and progressed the interview.",
+      feedback: "Prevented repeated follow-up loop and progressed with memory-aware callback.",
     };
   }
 

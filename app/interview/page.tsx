@@ -1687,6 +1687,17 @@ function InterviewRoom({
           .wz-bottom-controls { margin-top: 8px !important; padding: 10px !important; }
           .wz-metrics-row { margin-top: 10px !important; }
         }
+        @media (max-width: 920px) {
+          .wz-mobile-root { overflow-x: hidden !important; }
+          .wz-mobile-page { padding-left: 10px !important; padding-right: 10px !important; overflow-x: hidden !important; }
+          .wz-topbar { display: grid !important; grid-template-columns: 1fr 1fr !important; min-height: 58px !important; gap: 8px !important; margin-bottom: 8px !important; }
+          .wz-topbar .wz-room-title { display: none !important; }
+          .wz-topbar a { max-width: 100% !important; width: 100% !important; justify-content: center !important; padding: 10px 12px !important; font-size: 13px !important; }
+          .wz-topbar .wz-end-actions { width: 100% !important; margin-left: 0 !important; }
+          .wz-topbar .wz-end-actions button:first-child { display: none !important; }
+          .wz-topbar .wz-end-actions button:last-child { width: 100% !important; justify-content: center !important; padding: 10px 12px !important; font-size: 13px !important; }
+          .wz-avatar-shell { max-width: 100% !important; overflow: hidden !important; }
+        }
       `}</style>
 
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_42%_8%,rgba(56,189,248,0.18),transparent_34%),radial-gradient(circle_at_80%_40%,rgba(124,58,237,0.16),transparent_30%),linear-gradient(180deg,rgba(2,6,23,0.2),#020617_85%)]" />
@@ -1704,7 +1715,7 @@ function InterviewRoom({
 
           <div className="wz-room-title absolute left-1/2 top-5 flex -translate-x-1/2 rounded-full border border-cyan-300/15 bg-slate-900/80 p-1 shadow-[0_0_44px_rgba(34,211,238,0.18)] backdrop-blur-xl">
             <div className="rounded-full bg-gradient-to-r from-blue-600/80 to-violet-600/80 px-9 py-2.5 text-sm font-black text-white shadow-lg">
-              Cinematic Live Recruiter Room
+              Live Recruiter Room
             </div>
           </div>
 
