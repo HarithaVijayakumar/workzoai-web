@@ -693,7 +693,7 @@ function inferIntentHeuristically(answer: string): CandidateIntent {
     return "possible_exaggeration";
   }
 
-  if (/(nervous|anxious|fine|good|okay|ok|ready|can hear you|doing well)/i.test(lower) && words.length <= 16) return "smalltalk";
+  if (/\b(nervous|anxious|fine|good|okay|ok|ready|can hear you|doing well)\b/i.test(lower) && words.length <= 16) return "smalltalk";
 
   if (words.length < 12) return "partial_answer";
 
@@ -756,6 +756,80 @@ function answerLikelyAddressesQuestion(answer: string, currentQuestion: string) 
   }
 
   return answer.split(/\s+/).length >= 12;
+}
+
+
+function hasQualitativeOutcome(answer: string) {
+  const lower = cleanText(answer).toLowerCase();
+  return /\b(customers? (?:were|was|became|felt|got|stayed|returned|came back|asked for me|trusted|happy|satisfied)|customer satisfaction|positive feedback|repeat customer|repeat business|returned back|asked for me again|fewer complaints|less escalation|resolved faster|fixed faster|saved time|improved experience|better experience|issue was resolved|problem was solved|they were happy|they trusted me|renewal|retention|reduced churn|csat|nps)\b/i.test(lower);
+}
+
+function hasQuantitativeOutcome(answer: string) {
+  return /\b(\d+\s*(?:%|percent|hours?|days?|weeks?|months?|customers?|clients?|tickets?|cases?|users?|projects?)|increased|reduced|improved|saved|cut|decreased|grew|resolved|closed|delivered|launched|retained|renewed|csat|nps|sla|kpi)\b/i.test(answer);
+}
+
+function hasAnyOutcome(answer: string) {
+  return hasQuantitativeOutcome(answer) || hasQualitativeOutcome(answer);
+}
+
+function wasLastRecruiterAskingForImpact(transcript?: TranscriptItem[]) {
+  const lastRecruiter = (transcript || []).slice().reverse().find((item) => item.role === "recruiter");
+  const text = cleanText(lastRecruiter?.text).toLowerCase();
+  return /\b(result|impact|what changed|outcome|measurable|what happened after|after your work)\b/i.test(text);
+}
+
+function repeatedRecruiterLineRisk(input: UnifiedRecruiterInput, nextLine: string) {
+  const normalizedNext = cleanText(nextLine).toLowerCase();
+  if (!normalizedNext) return false;
+  const recentRecruiterLines = (input.transcript || [])
+    .filter((item) => item.role === "recruiter")
+    .slice(-3)
+    .map((item) => cleanText(item.text).toLowerCase());
+  return recentRecruiterLines.some((line) => line && (line === normalizedNext || line.includes(normalizedNext.slice(0, 80)) || normalizedNext.includes(line.slice(0, 80))));
+}
+
+function buildHumanProgressionQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, memory: RecruiterMemoryProfile, answer: string) {
+  const setup = input.setup || {};
+  const jobDescription = cleanText(setup.jobDescription);
+  const cvText = cleanText(setup.cvText);
+  const targetRole = firstNonEmpty(setup.targetRole, extractRoleFromJobDescription(jobDescription), "this role");
+  const candidateTurns = (input.transcript || []).filter((item) => item.role === "candidate").length;
+  const missingSkills = findMissingJobSkills(cvText, jobDescription);
+  const lower = cleanText(answer).toLowerCase();
+
+  if (candidateTurns <= 2) {
+    if (/support|customer|client|ticket|relationship|satisfaction/i.test(lower)) {
+      return "That customer-facing experience is relevant. Can you tell me about one difficult customer situation you handled and what you learned from it?";
+    }
+    return `Thanks. What is making you interested in moving toward ${targetRole} now?`;
+  }
+
+  if (missingSkills.length && candidateTurns <= 5) {
+    const skill = missingSkills[0];
+    return `I see ${skill} in the role requirements, but it is not very clear in your CV. Have you worked with it before, or how would you close that gap quickly if you joined?`;
+  }
+
+  if (/strength|good at|best at|strong/i.test(cleanText(input.currentQuestion).toLowerCase())) {
+    return "That helps. What would you say is your biggest development area or weakness right now?";
+  }
+
+  if (/weakness|challenge|development area/i.test(cleanText(input.currentQuestion).toLowerCase())) {
+    return "Thanks for being honest. Tell me about a recent situation where you had to learn something quickly.";
+  }
+
+  if (/customer|client|stakeholder|relationship|support|ticket/i.test(lower)) {
+    return "Let’s go one level deeper. What did you do when the customer was unhappy or the issue was not easy to solve?";
+  }
+
+  if (/data|analysis|sql|excel|dashboard|metric|report/i.test(lower)) {
+    return "Can you give me one example where data changed the decision you made?";
+  }
+
+  return buildNaturalNextQuestion(input, cvRead, memory, answer);
+}
+
+function shouldAcceptPartialOutcome(answer: string, input: UnifiedRecruiterInput) {
+  return wasLastRecruiterAskingForImpact(input.transcript) && hasAnyOutcome(answer);
 }
 
 function detectCVConflict(answer: string, profile: CandidateEvidenceProfile) {
@@ -947,7 +1021,8 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
   const roleConnectionScore = overlapScore(answer, roleEvidence);
   const hasRoleConnection = roleConnectionScore >= 2 || /customer|client|stakeholder|support|success|ticket|sla|retention|onboarding|renewal|problem|communication|data|analysis|project|team|user|business/i.test(answer);
   const hasPersonalOwnership = /\b(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|worked|supported|coordinated|analyzed|implemented)\b/i.test(answer);
-  const hasOutcome = /\b(result|impact|improved|reduced|increased|saved|resolved|closed|delivered|launched|customer|satisfaction|time|percent|%|\d+)\b/i.test(answer);
+  const hasOutcome = hasAnyOutcome(answer);
+  const acceptedPartialOutcome = shouldAcceptPartialOutcome(answer, input);
 
   if (!candidateAttemptedQuestion) {
     return withProfile({
@@ -994,25 +1069,43 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     });
   }
 
-  const nextQuestion = hasOutcome
-    ? buildNaturalNextQuestion(input, cvRead, recruiterMemory, answer)
-    : "Before we move on, give me the result or impact of that work. What changed because of what you did?";
+  const impactFollowUp = "Before we move on, give me the result or impact of that work. What changed because of what you did?";
+  const canAcceptAndMove = hasOutcome || acceptedPartialOutcome;
+  const nextQuestion = canAcceptAndMove
+    ? buildHumanProgressionQuestion(input, cvRead, recruiterMemory, answer)
+    : impactFollowUp;
+
+  if (!canAcceptAndMove && repeatedRecruiterLineRisk(input, impactFollowUp)) {
+    const progressionQuestion = buildHumanProgressionQuestion(input, cvRead, recruiterMemory, answer);
+    return withProfile({
+      intent: "interview_answer",
+      spokenReply: `Okay, I’ll take that as a qualitative outcome. It sounds like the customer trusted you enough to come back. ${progressionQuestion}`,
+      displayQuestion: progressionQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: 2,
+      recruiterState: "interested",
+      feedback: "Accepted qualitative impact to avoid looping on the same follow-up.",
+      psychology: { ...basePsychology, trust: clamp(trust + 2, 12, 92), interest: clamp(basePsychology.interest + 5, 20, 95) },
+    });
+  }
 
   return withProfile({
     intent: "interview_answer",
-    spokenReply: hasOutcome
-      ? `Okay, that connects better. I can see the role fit more clearly. ${nextQuestion}`
-      : `That gives me the direction, but I still need the outcome. ${nextQuestion}`,
+    spokenReply: canAcceptAndMove
+      ? `Okay, that helps. I can see the outcome more clearly. ${nextQuestion}`
+      : `I understand the direction. Give me just one outcome before we move on — even a rough or qualitative one is fine. What changed for the customer, team, or business?`,
     displayQuestion: nextQuestion,
-    shouldAdvanceQuestion: hasOutcome,
-    shouldCountAsAnswer: hasOutcome,
-    shouldStayOnCurrentQuestion: !hasOutcome,
-    trustDelta: hasOutcome ? 4 : 1,
-    recruiterState: hasOutcome ? "engaged" : "interested",
-    feedback: hasOutcome
-      ? "Candidate answered with role connection and outcome."
-      : "Candidate connected role but needs clearer impact.",
-    psychology: { ...basePsychology, trust: clamp(trust + (hasOutcome ? 4 : 1), 12, 92), interest: clamp(basePsychology.interest + 6, 20, 95) },
+    shouldAdvanceQuestion: canAcceptAndMove,
+    shouldCountAsAnswer: canAcceptAndMove,
+    shouldStayOnCurrentQuestion: !canAcceptAndMove,
+    trustDelta: canAcceptAndMove ? (hasQuantitativeOutcome(answer) ? 4 : 2) : 0,
+    recruiterState: canAcceptAndMove ? "engaged" : "interested",
+    feedback: canAcceptAndMove
+      ? "Candidate answered with role connection and acceptable outcome."
+      : "Candidate connected role but still needs one outcome; asked in a softer non-looping way.",
+    psychology: { ...basePsychology, trust: clamp(trust + (canAcceptAndMove ? (hasQuantitativeOutcome(answer) ? 4 : 2) : 0), 12, 92), interest: clamp(basePsychology.interest + 6, 20, 95) },
   });
 }
 
@@ -1575,6 +1668,21 @@ CONVERSATION STAGE RULES — CRITICAL:
 - Only activate deep probing after the candidate has actually answered a real interview question.
 - If the candidate corrects you (“No, I just said I’m doing good”), acknowledge and reset naturally.
 
+
+FOLLOW-UP SATISFACTION RULES — CRITICAL:
+- Do not repeat the same follow-up twice. If the candidate gives a partial or qualitative answer, acknowledge it and move forward.
+- Qualitative outcomes count in a real interview: “customers came back”, “customer was satisfied”, “repeat customers”, “fewer escalations”, “positive feedback”, and “resolved faster” are acceptable outcomes even without numbers.
+- If you asked for impact and the candidate gives any customer/team/business result, accept it, summarize it briefly, and ask the next natural question.
+- Do not get stuck demanding metrics. Prefer: “That gives me a qualitative outcome. Do you have any rough numbers?” only once, then move on.
+- A real recruiter balances pressure with momentum. Probe once, then progress.
+
+REAL-LIFE INTERVIEW FLOW RULES — CRITICAL:
+- Let the candidate introduce themselves naturally before deep probing.
+- Ask natural interview questions: why this role, why changing positions, strengths, weaknesses/development area, difficult customer situation, missing JD skill, ownership, and result.
+- Use the candidate’s introduction to choose follow-ups. Example: if they mention technical support/customer satisfaction, ask about a difficult customer or how that maps to Customer Success.
+- If JD requires a skill missing from CV, ask naturally: “I see X in the role, but it’s not clear in your CV. Have you used it before, or how would you close that gap?”
+- Keep one question at a time. Avoid repeating the same wording.
+
 HARD BANS:
 - Do not say: "answer too generic", "answer too short", "I noticed this pattern earlier", "STAR format", "as an AI".
 - Do not lecture about companies for more than one sentence unless the candidate explicitly asks.
@@ -1881,13 +1989,79 @@ function uniqueMemoryEvents(events: RecruiterMemoryEvent[]) {
   return out;
 }
 
+
+function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: UnifiedRecruiterDecision): UnifiedRecruiterDecision {
+  const answer = cleanText(input.answer);
+  const targetRole = firstNonEmpty(input.setup?.targetRole, extractRoleFromJobDescription(cleanText(input.setup?.jobDescription)), "this role");
+
+  // Never let the model score or pressure basic rapport.
+  if (isIntroRapportQuestion(input.currentQuestion || "") && isCandidateRapportReply(answer)) {
+    return {
+      ...decision,
+      intent: "smalltalk",
+      spokenReply: buildRapportReply(answer, targetRole),
+      displayQuestion: `Tell me a little about yourself and connect your recent experience to ${targetRole}.`,
+      shouldAdvanceQuestion: false,
+      shouldCountAsAnswer: false,
+      shouldStayOnCurrentQuestion: true,
+      trustDelta: 0,
+      recruiterState: "interested",
+      feedback: "Rapport handled without scoring.",
+    };
+  }
+
+  // If the recruiter just asked for impact and the candidate gives a qualitative outcome,
+  // accept it and move on instead of repeating the same demand.
+  if (wasLastRecruiterAskingForImpact(input.transcript) && hasAnyOutcome(answer)) {
+    const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
+    const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
+    const nextQuestion = buildHumanProgressionQuestion(input, cvRead, memory, answer);
+    return {
+      ...decision,
+      intent: "interview_answer",
+      spokenReply: `Okay, that gives me an outcome. It sounds like your work improved the customer experience and built trust. ${nextQuestion}`,
+      displayQuestion: nextQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: Math.max(decision.trustDelta, hasQuantitativeOutcome(answer) ? 4 : 2),
+      recruiterState: decision.recruiterState === "skeptical" ? "interested" : "engaged",
+      feedback: "Accepted qualitative outcome and moved forward naturally.",
+      psychology: {
+        ...decision.psychology,
+        trust: clamp(decision.psychology.trust + (hasQuantitativeOutcome(answer) ? 3 : 1), 12, 92),
+        interest: clamp(decision.psychology.interest + 4, 20, 95),
+      },
+    };
+  }
+
+  // Hard anti-loop: if the model repeats the same recruiter line, force a natural progression.
+  if (repeatedRecruiterLineRisk(input, decision.spokenReply) && decision.intent !== "greeting" && decision.intent !== "smalltalk") {
+    const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
+    const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
+    const nextQuestion = buildHumanProgressionQuestion(input, cvRead, memory, answer);
+    return {
+      ...decision,
+      spokenReply: `Okay, I have enough to continue. ${nextQuestion}`,
+      displayQuestion: nextQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      recruiterState: "interested",
+      feedback: "Prevented repeated follow-up loop and progressed the interview.",
+    };
+  }
+
+  return decision;
+}
+
 export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInput): Promise<UnifiedRecruiterDecision> {
   const fallback = buildFallbackDecision(input);
   const cvRead = fallback.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
   const recruiterMemory = fallback.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
 
   if (!process.env.OPENAI_API_KEY) {
-    return {
+    return applyNaturalConversationGuard(input, {
       ...fallback,
       pressure: deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent),
       honestFeedback: deriveHonestFeedback(fallback),
@@ -1897,7 +2071,7 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
       humanImperfection: fallback.humanImperfection || deriveHumanImperfection(input, fallback, recruiterMemory),
       socialSignals: fallback.socialSignals || deriveSocialSignals(input.answer, fallback, recruiterMemory),
       cinematicRealism: fallback.cinematicRealism || deriveCinematicRealism(input, fallback, fallback.socialSignals || deriveSocialSignals(input.answer, fallback, recruiterMemory), deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent)),
-    };
+    });
   }
 
   try {
@@ -1931,7 +2105,7 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
     const normalized = normalizeDecision(parsed, fallback);
     const updated = updateMemoryAfterDecision(cleanText(input.answer), normalized, recruiterMemory);
     const finalPressure = normalized.pressure || deriveLivePressure(normalized.psychology, normalized.recruiterState, normalized.intent);
-    return {
+    return applyNaturalConversationGuard(input, {
       ...normalized,
       recruiterMemory: updated.memory,
       memoryEvents: uniqueMemoryEvents([...(normalized.memoryEvents || []), ...updated.events]),
@@ -1941,8 +2115,8 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
       humanImperfection: normalized.humanImperfection || deriveHumanImperfection(input, normalized, updated.memory),
       socialSignals: normalized.socialSignals || deriveSocialSignals(input.answer, normalized, updated.memory),
       cinematicRealism: normalized.cinematicRealism || deriveCinematicRealism(input, normalized, normalized.socialSignals || deriveSocialSignals(input.answer, normalized, updated.memory), finalPressure),
-    };
+    });
   } catch {
-    return fallback;
+    return applyNaturalConversationGuard(input, fallback);
   }
 }
