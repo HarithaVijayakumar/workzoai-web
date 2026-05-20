@@ -3,6 +3,9 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import os from "os";
 import path from "path";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type RawAnalyticsEvent = Record<string, unknown>;
 
 type NormalizedAnalyticsEvent = {
@@ -22,8 +25,9 @@ type NormalizedAnalyticsEvent = {
   metadata: Record<string, unknown>;
 };
 
-const DATA_DIR = path.join(os.tmpdir(), "workzo-data");
-const DATA_FILE = path.join(DATA_DIR, "analytics-events.jsonl");
+const LOCAL_DATA_DIR = path.join(process.cwd(), ".workzo-data");
+const TMP_DATA_DIR = path.join(os.tmpdir(), "workzo-data");
+const DATA_FILE_NAME = "analytics-events.jsonl";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -47,10 +51,50 @@ function asString(value: unknown, fallback = "") {
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) {
-    return Number(value);
-  }
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Number(value);
   return null;
+}
+
+function candidateFiles() {
+  return [
+    path.join(LOCAL_DATA_DIR, DATA_FILE_NAME),
+    path.join(TMP_DATA_DIR, DATA_FILE_NAME),
+  ];
+}
+
+async function readJsonl(filePath: string): Promise<RawAnalyticsEvent[]> {
+  try {
+    const raw = await readFile(filePath, "utf8");
+    return raw
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line) as RawAnalyticsEvent;
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean) as RawAnalyticsEvent[];
+  } catch {
+    return [];
+  }
+}
+
+async function appendJsonl(events: RawAnalyticsEvent[]) {
+  const lines = events.map((event) => JSON.stringify(event)).join("\n") + "\n";
+
+  // Local dev should survive npm builds and code edits. Vercel/serverless may not
+  // allow writing to process.cwd(), so fall back to /tmp instead of failing.
+  for (const dir of [LOCAL_DATA_DIR, TMP_DATA_DIR]) {
+    try {
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, DATA_FILE_NAME), lines, { flag: "a" });
+      return;
+    } catch {
+      // try next writable location
+    }
+  }
 }
 
 function detectTrafficSource(event: RawAnalyticsEvent) {
@@ -59,7 +103,7 @@ function detectTrafficSource(event: RawAnalyticsEvent) {
   if (explicit) return explicit;
 
   const url = `${asString(event.path)} ${asString(event.referrer)} ${asString(event.utm_source)}`.toLowerCase();
-  if (url.includes("producthunt") || url.includes("product_hunt") || url.includes("ph")) return "Product Hunt";
+  if (url.includes("producthunt") || url.includes("product_hunt")) return "Product Hunt";
   if (url.includes("linkedin")) return "LinkedIn";
   if (url.includes("instagram")) return "Instagram";
   if (url.includes("reddit")) return "Reddit";
@@ -89,31 +133,9 @@ function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
   };
 }
 
-async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
-  const inMemory = memoryEvents();
-  let fileEvents: NormalizedAnalyticsEvent[] = [];
-
-  try {
-    const raw = await readFile(DATA_FILE, "utf8");
-    fileEvents = raw
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return normalizeEvent(JSON.parse(line) as RawAnalyticsEvent);
-        } catch {
-          return null;
-        }
-      })
-      .filter(Boolean) as NormalizedAnalyticsEvent[];
-  } catch {
-    fileEvents = [];
-  }
-
-  const merged = [...fileEvents, ...inMemory];
+function dedupe(events: NormalizedAnalyticsEvent[]) {
   const seen = new Set<string>();
-
-  return merged.filter((event) => {
+  return events.filter((event) => {
     const key = `${event.sessionId}|${event.event}|${event.timestamp}|${event.path}`;
     if (seen.has(key)) return false;
     seen.add(key);
@@ -121,19 +143,21 @@ async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
   });
 }
 
+async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
+  const rawFiles = await Promise.all(candidateFiles().map(readJsonl));
+  const fileEvents = rawFiles.flat().map(normalizeEvent);
+  const inMemory = memoryEvents();
+  return dedupe([...fileEvents, ...inMemory]).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+}
+
 async function appendEvents(events: RawAnalyticsEvent[]) {
   if (!events.length) return;
-  const normalized = events.map(normalizeEvent);
+  const stamped = events.map((event) => ({ ...event, receivedAt: new Date().toISOString() }));
+  const normalized = stamped.map(normalizeEvent);
   const memory = memoryEvents();
   memory.push(...normalized);
   globalThis.__WORKZO_ANALYTICS_EVENTS__ = memory.slice(-5000);
-
-  await mkdir(DATA_DIR, { recursive: true });
-  const lines = events
-    .map((event) => ({ ...event, receivedAt: new Date().toISOString() }))
-    .map((event) => JSON.stringify(event))
-    .join("\n");
-  await writeFile(DATA_FILE, `${lines}\n`, { flag: "a" });
+  await appendJsonl(stamped);
 }
 
 function increment(map: Record<string, number>, key: string) {
@@ -154,10 +178,7 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
   const weakSignals: Record<string, number> = {};
   const sessions = new Set<string>();
 
-  const modePerformance: Record<
-    string,
-    { starts: number; completions: number; voiceFailures: number; results: number; avgTrust: number | null }
-  > = {};
+  const modePerformance: Record<string, { starts: number; completions: number; voiceFailures: number; results: number; avgTrust: number | null }> = {};
 
   for (const event of events) {
     sessions.add(event.sessionId);
@@ -170,14 +191,7 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     const signal = asString(event.metadata.signal || event.metadata.tag || event.metadata.weakness || event.metadata.action);
     if (signal) increment(weakSignals, signal);
 
-    const perf = (modePerformance[event.mode] ||= {
-      starts: 0,
-      completions: 0,
-      voiceFailures: 0,
-      results: 0,
-      avgTrust: null,
-    });
-
+    const perf = (modePerformance[event.mode] ||= { starts: 0, completions: 0, voiceFailures: 0, results: 0, avgTrust: null });
     if (event.event === "interview_started" || event.event === "voice_started") perf.starts += 1;
     if (event.event === "interview_completed") perf.completions += 1;
     if (event.event === "voice_failed" || event.event === "video_failed") perf.voiceFailures += 1;
@@ -185,12 +199,8 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
   }
 
   for (const mode of Object.keys(modePerformance)) {
-    const trustValues = events
-      .filter((event) => event.mode === mode && typeof event.trust === "number")
-      .map((event) => event.trust as number);
-    modePerformance[mode].avgTrust = trustValues.length
-      ? Math.round(trustValues.reduce((sum, value) => sum + value, 0) / trustValues.length)
-      : null;
+    const trustValues = events.filter((event) => event.mode === mode && typeof event.trust === "number").map((event) => event.trust as number);
+    modePerformance[mode].avgTrust = trustValues.length ? Math.round(trustValues.reduce((sum, value) => sum + value, 0) / trustValues.length) : null;
   }
 
   const uploads = counts.cv_uploaded || 0;
@@ -211,15 +221,12 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     { stage: "Results viewed", count: resultsViewed },
   ];
 
-  const biggestDrop = dropoffFunnel.reduce(
-    (best, stage, index) => {
-      if (index === 0) return best;
-      const previous = dropoffFunnel[index - 1];
-      const drop = Math.max(0, previous.count - stage.count);
-      return drop > best.drop ? { from: previous.stage, to: stage.stage, drop } : best;
-    },
-    { from: "", to: "", drop: 0 },
-  );
+  const biggestDrop = dropoffFunnel.reduce((best, stage, index) => {
+    if (index === 0) return best;
+    const previous = dropoffFunnel[index - 1];
+    const drop = Math.max(0, previous.count - stage.count);
+    return drop > best.drop ? { from: previous.stage, to: stage.stage, drop } : best;
+  }, { from: "", to: "", drop: 0 });
 
   const topWeakness = Object.entries(weakSignals).sort((a, b) => b[1] - a[1])[0]?.[0] || "Not enough answer data yet";
   const insight = biggestDrop.drop
@@ -254,6 +261,11 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     modePerformance,
     topWeakness,
     insight,
+    storage: {
+      primary: LOCAL_DATA_DIR,
+      fallback: TMP_DATA_DIR,
+      note: "Local dev events now persist under .workzo-data across rebuilds. Serverless hosts may still need Supabase/Firebase for permanent cross-deploy analytics.",
+    },
   };
 }
 

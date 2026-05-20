@@ -783,9 +783,9 @@ function repeatedRecruiterLineRisk(input: UnifiedRecruiterInput, nextLine: strin
   if (!normalizedNext) return false;
   const recentRecruiterLines = (input.transcript || [])
     .filter((item) => item.role === "recruiter")
-    .slice(-3)
+    .slice(-6)
     .map((item) => cleanText(item.text).toLowerCase());
-  return recentRecruiterLines.some((line) => line && (line === normalizedNext || line.includes(normalizedNext.slice(0, 80)) || normalizedNext.includes(line.slice(0, 80))));
+  return recentRecruiterLines.some((line) => line && (line === normalizedNext || line.includes(normalizedNext.slice(0, 58)) || normalizedNext.includes(line.slice(0, 58))));
 }
 
 function buildHumanProgressionQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, memory: RecruiterMemoryProfile, answer: string) {

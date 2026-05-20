@@ -1671,6 +1671,21 @@ function InterviewRoom({
           .wz-status-line { min-height: 20px !important; }
           .wz-subtitle-pill { max-height: 76px !important; overflow-y: auto !important; }
           .wz-mobile-page * { -webkit-tap-highlight-color: transparent; }
+
+          /* Launch-safe mobile layout: no clipped title pill, no horizontal drift, less cramped top area. */
+          .wz-topbar { display: grid !important; grid-template-columns: 1fr 1fr !important; min-height: 64px !important; margin-bottom: 8px !important; }
+          .wz-topbar .wz-room-title { display: none !important; }
+          .wz-topbar a { max-width: 100% !important; justify-content: center !important; border-radius: 22px !important; }
+          .wz-topbar .wz-end-actions { width: 100% !important; justify-content: stretch !important; }
+          .wz-topbar .wz-end-actions button:last-child { width: 100% !important; justify-content: center !important; border-radius: 22px !important; }
+          .wz-room-grid { width: 100% !important; overflow: visible !important; }
+          .wz-recruiter-stage { width: 100% !important; padding-top: 6px !important; }
+          .wz-avatar-shell { width: calc(100% - 10px) !important; height: clamp(285px, 43vh, 370px) !important; min-height: 285px !important; margin-top: 8px !important; }
+          .wz-avatar-shell .wz-name-block h2 { font-size: 28px !important; }
+          .wz-avatar-shell .wz-name-block p { font-size: 13px !important; line-height: 1.25 !important; }
+          .wz-live-status-badge { max-width: calc(100% - 132px) !important; }
+          .wz-bottom-controls { margin-top: 8px !important; padding: 10px !important; }
+          .wz-metrics-row { margin-top: 10px !important; }
         }
       `}</style>
 

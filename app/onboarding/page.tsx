@@ -516,7 +516,7 @@ export default function OnboardingPage() {
         <div className="absolute bottom-[-260px] left-1/2 h-[560px] w-[560px] -translate-x-1/2 rounded-full bg-indigo-600/12 blur-[130px]" />
       </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1480px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+8rem)] pt-3 sm:px-5 lg:h-screen lg:overflow-hidden lg:pb-3">
+      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1480px] flex-col px-4 pb-[calc(env(safe-area-inset-bottom)+10rem)] pt-3 sm:px-5 lg:h-screen lg:overflow-hidden lg:pb-3">
         <header className="flex min-h-[60px] shrink-0 items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 sm:px-5 shadow-[0_18px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
           <Link href="/" className="flex items-center gap-3 text-slate-200 transition hover:text-white">
             <ArrowLeft className="h-5 w-5" />
@@ -558,6 +558,13 @@ export default function OnboardingPage() {
         </header>
 
         <BetaPrivacyNotice compact className="mt-3 hidden lg:block" />
+
+        <div className="mt-3 rounded-2xl border border-amber-300/20 bg-amber-500/10 px-4 py-3 text-sm leading-6 text-amber-50 shadow-[0_14px_40px_rgba(0,0,0,0.18)] lg:hidden">
+          <p className="font-black">⚠️ Beta notice</p>
+          <p className="mt-1 text-amber-100/90">
+            WorkZo AI is an early beta. We are actively improving recruiter realism, voice interaction, memory, scoring, and natural interview simulations. Outputs may be imperfect, so use the feedback as practice guidance.
+          </p>
+        </div>
 
         <section className="grid flex-1 gap-4 overflow-visible py-3 lg:min-h-0 lg:overflow-hidden lg:grid-cols-[1fr_0.82fr]">
           <div className="flex flex-col overflow-visible rounded-[22px] border border-white/10 bg-white/[0.045] shadow-[0_22px_80px_rgba(0,0,0,0.30)] backdrop-blur-2xl lg:min-h-0 lg:overflow-hidden lg:rounded-[26px]">
