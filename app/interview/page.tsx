@@ -189,6 +189,20 @@ function timeLabel() {
   });
 }
 
+function isIntroRapportQuestionText(question: string) {
+  const lower = question.replace(/\s+/g, " ").trim().toLowerCase();
+  return /\b(how are you|how are you today|can you hear me|nice to meet you)\b/.test(lower);
+}
+
+function isRapportSmallTalkText(answer: string) {
+  const lower = answer.replace(/\s+/g, " ").trim().toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (!lower) return false;
+  if (/\b(nervous|anxious|excited|fine|good|okay|ok|ready|doing well|all good|can hear you|i can hear you|yes i can hear|yeah i can hear)\b/.test(lower) && words.length <= 18) return true;
+  if (/\b(no,?\s*)?i just said\b/.test(lower)) return true;
+  return false;
+}
+
 
 function isMobileBrowserRuntime() {
   if (typeof navigator === "undefined") return false;
@@ -832,6 +846,19 @@ function analyzeAnswer(
   const words = clean.split(" ").filter(Boolean);
   const lower = clean.toLowerCase();
 
+  if (isIntroRapportQuestionText(currentQuestion) && isRapportSmallTalkText(clean)) {
+    return {
+      signal: "good_ownership",
+      state: "interested",
+      trustDelta: 0,
+      caption: "Recruiter is keeping the opening human",
+      bridge: /nervous|anxious/i.test(clean)
+        ? "That’s completely normal — let’s ease into it."
+        : "Good to hear.",
+      followUp: "Tell me a little about yourself and how your recent experience connects to this role.",
+    };
+  }
+
   const hasNumber =
     /\d|percent|percentage|hours?|days?|weeks?|months?|customers?|tickets?|users?|reduced|increased|saved|improved|faster|slower|revenue|cost/i.test(
       clean,
@@ -993,6 +1020,7 @@ function isLikelyInterviewAnswer(answer: string) {
   const lower = clean.toLowerCase();
 
   if (isClarificationOrMetaQuestion(clean)) return false;
+  if (isRapportSmallTalkText(clean)) return false;
   if (words.length >= 12) return true;
 
   return /\b(i|my|we|our|project|worked|built|handled|resolved|improved|created|managed|led|analyzed|implemented|customer|team|process|result|impact)\b/i.test(

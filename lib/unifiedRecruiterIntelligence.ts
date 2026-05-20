@@ -162,13 +162,13 @@ export type UnifiedRecruiterInput = {
   setup?: {
     cvText?: string;
     jobDescription?: string;
-    jobMemoryProfile?: unknown;
     targetRole?: string;
     targetMarket?: string;
     companyStyle?: string;
     recruiterPersonality?: string;
     language?: string;
     recruiterMemoryProfile?: unknown;
+    jobMemoryProfile?: unknown;
   };
   recruiterTrust?: number;
   recruiterState?: string | null;
@@ -693,9 +693,54 @@ function inferIntentHeuristically(answer: string): CandidateIntent {
     return "possible_exaggeration";
   }
 
+  if (/(nervous|anxious|fine|good|okay|ok|ready|can hear you|doing well)/i.test(lower) && words.length <= 16) return "smalltalk";
+
   if (words.length < 12) return "partial_answer";
 
   return "interview_answer";
+}
+
+
+
+function isIntroRapportQuestion(currentQuestion: string) {
+  const question = cleanText(currentQuestion).toLowerCase();
+  return (
+    /\b(how are you|how are you today|can you hear me|are you there|nice to meet you)\b/i.test(question) ||
+    (!question || question === "tell me about yourself.")
+  );
+}
+
+function isCandidateRapportReply(answer: string) {
+  const lower = cleanText(answer).toLowerCase();
+  const words = lower.split(/\s+/).filter(Boolean);
+  if (!lower) return false;
+
+  // These are human rapport/setup replies, not competency answers.
+  if (/\b(i'?m|i am|feeling|bit|little|very)\b[^.]{0,35}\b(nervous|anxious|excited|fine|good|okay|ok|well|ready)\b/i.test(lower)) return true;
+  if (/\b(good|fine|okay|ok|great|doing well|all good|i can hear you|can hear you|yes i can hear|yeah i can hear)\b/i.test(lower) && words.length <= 16) return true;
+  if (/\b(no|yes),?\s*(problem|issue|trouble)\b/i.test(lower) && words.length <= 12) return true;
+  if (/\b(no,?\s*)?i just said\b/i.test(lower)) return true;
+  if (/\b(thank you|thanks)\b/i.test(lower) && words.length <= 14) return true;
+
+  return false;
+}
+
+function buildRapportReply(answer: string, targetRole: string) {
+  const lower = cleanText(answer).toLowerCase();
+
+  if (/\b(nervous|anxious)\b/i.test(lower)) {
+    return `That’s completely normal. Most people feel a bit nervous at the start, so let’s ease into it. Tell me a little about yourself and how your recent experience connects to ${targetRole}.`;
+  }
+
+  if (/\b(can hear you|i can hear you|yeah i can hear|yes i can hear)\b/i.test(lower)) {
+    return `Great, glad we’re connected. Let’s start naturally: tell me a little about yourself and how your recent experience connects to ${targetRole}.`;
+  }
+
+  if (/\b(no,?\s*)?i just said\b/i.test(lower)) {
+    return `Fair enough — thanks for clarifying. I won’t treat that as an interview answer. Let’s start properly: tell me a little about yourself and how your background connects to ${targetRole}.`;
+  }
+
+  return `Good to hear. Let’s start naturally: tell me a little about yourself and how your recent experience connects to ${targetRole}.`;
 }
 
 function answerLikelyAddressesQuestion(answer: string, currentQuestion: string) {
@@ -779,6 +824,21 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     const updated = updateMemoryAfterDecision(answer, enriched, recruiterMemory);
     return { ...enriched, recruiterMemory: updated.memory, memoryEvents: updated.events };
   };
+
+  if (isIntroRapportQuestion(currentQuestion) && isCandidateRapportReply(answer)) {
+    return withProfile({
+      intent: "smalltalk",
+      spokenReply: buildRapportReply(answer, targetRole),
+      displayQuestion: introQuestion,
+      shouldAdvanceQuestion: false,
+      shouldCountAsAnswer: false,
+      shouldStayOnCurrentQuestion: true,
+      trustDelta: 0,
+      recruiterState: "interested",
+      feedback: "Handled intro rapport/emotional small talk without scoring or pressure.",
+      psychology: { ...basePsychology, patience: clamp(basePsychology.patience + 4, 20, 95), engagement: clamp(basePsychology.engagement + 3, 20, 95) },
+    });
+  }
 
   if (intent === "greeting" || intent === "smalltalk") {
     return withProfile({
@@ -1508,6 +1568,13 @@ CINEMATIC EMOTIONAL REALISM RULES — UPGRADE 12:
 - Sometimes use short imperfect transitions: "Okay…", "Hold on", "Let me narrow that", "We’ll come back to that."
 - Do not overdo cinematic behavior. One subtle human beat is enough.
 
+CONVERSATION STAGE RULES — CRITICAL:
+- At the beginning, treat “I’m good”, “I’m nervous”, “can you hear me”, “thank you”, “no problem” as rapport/small talk, not interview evidence.
+- Do not score, challenge, pressure, or ask for STAR examples during rapport.
+- If the candidate says they are nervous, reassure briefly and ease into “tell me about yourself”.
+- Only activate deep probing after the candidate has actually answered a real interview question.
+- If the candidate corrects you (“No, I just said I’m doing good”), acknowledge and reset naturally.
+
 HARD BANS:
 - Do not say: "answer too generic", "answer too short", "I noticed this pattern earlier", "STAR format", "as an AI".
 - Do not lecture about companies for more than one sentence unless the candidate explicitly asks.
@@ -1658,13 +1725,21 @@ function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: Uni
     "losing_confidence",
   ];
 
-  const intent = intentValues.includes(raw.intent as CandidateIntent) ? (raw.intent as CandidateIntent) : fallback.intent;
+  let intent = intentValues.includes(raw.intent as CandidateIntent) ? (raw.intent as CandidateIntent) : fallback.intent;
+
+  // Guardrail: intro/small-talk decisions are deterministic.
+  // The model must not reinterpret “I’m nervous”, “I’m good”, or “can you hear me”
+  // as a weak interview answer and trigger pressure follow-ups.
+  if (["greeting", "smalltalk", "clarification", "candidate_question", "interruption"].includes(fallback.intent)) {
+    intent = fallback.intent;
+  }
   const recruiterState = stateValues.includes(raw.recruiterState as UnifiedRecruiterDecision["recruiterState"])
     ? (raw.recruiterState as UnifiedRecruiterDecision["recruiterState"])
     : fallback.recruiterState;
 
-  const spokenReply = cleanText(raw.spokenReply) || fallback.spokenReply;
-  const displayQuestion = cleanText(raw.displayQuestion) || fallback.displayQuestion;
+  const forceFallbackConversation = ["greeting", "smalltalk", "clarification", "candidate_question", "interruption"].includes(fallback.intent);
+  const spokenReply = forceFallbackConversation ? fallback.spokenReply : (cleanText(raw.spokenReply) || fallback.spokenReply);
+  const displayQuestion = forceFallbackConversation ? fallback.displayQuestion : (cleanText(raw.displayQuestion) || fallback.displayQuestion);
   const trustDelta = clamp(typeof raw.trustDelta === "number" ? raw.trustDelta : fallback.trustDelta, -15, 15);
 
   const psychology = {
