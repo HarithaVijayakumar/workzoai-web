@@ -30,6 +30,9 @@ type NormalizedAnalyticsEvent = {
 const LOCAL_DATA_DIR = path.join(process.cwd(), ".workzo-data");
 const TMP_DATA_DIR = path.join(os.tmpdir(), "workzo-data");
 const DATA_FILE_NAME = "analytics-events.jsonl";
+const SUPABASE_TABLE = process.env.WORKZO_ANALYTICS_TABLE || "workzo_analytics_events";
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -64,6 +67,94 @@ function candidateFiles() {
   ];
 }
 
+function supabaseEnabled() {
+  return Boolean(SUPABASE_URL && SUPABASE_SERVICE_KEY);
+}
+
+function supabaseRestUrl(query = "") {
+  const base = SUPABASE_URL.replace(/\/$/, "");
+  return `${base}/rest/v1/${SUPABASE_TABLE}${query}`;
+}
+
+async function supabaseRequest(pathQuery: string, init: RequestInit) {
+  if (!supabaseEnabled()) return null;
+
+  const response = await fetch(supabaseRestUrl(pathQuery), {
+    ...init,
+    headers: {
+      apikey: SUPABASE_SERVICE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+      "Content-Type": "application/json",
+      Prefer: "return=minimal",
+      ...(init.headers || {}),
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase analytics request failed: ${response.status} ${text}`);
+  }
+
+  return response;
+}
+
+async function readSupabaseEvents(): Promise<RawAnalyticsEvent[]> {
+  if (!supabaseEnabled()) return [];
+
+  try {
+    const response = await fetch(
+      supabaseRestUrl("?select=payload,received_at&order=received_at.desc&limit=1500"),
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_KEY,
+          Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+        },
+        cache: "no-store",
+      },
+    );
+
+    if (!response.ok) return [];
+
+    const rows = (await response.json()) as Array<{ payload?: RawAnalyticsEvent; received_at?: string }>;
+    return rows
+      .map((row) => ({ ...(row.payload || {}), receivedAt: row.received_at || (row.payload || {}).receivedAt }))
+      .filter(Boolean);
+  } catch (error) {
+    console.warn("Supabase analytics read failed, falling back to local analytics.", error);
+    return [];
+  }
+}
+
+async function writeSupabaseEvents(events: RawAnalyticsEvent[]) {
+  if (!supabaseEnabled() || !events.length) return false;
+
+  try {
+    const rows = events.map((event) => ({
+      session_id: asString(event.sessionId, "unknown_session"),
+      event: asString(event.event, "unknown_event"),
+      path: asString(event.path, "/"),
+      source: asString(event.source, "Direct / unknown"),
+      device: detectDevice(event),
+      recruiter: asString(event.recruiter, "Unknown recruiter"),
+      role: asString(event.role, "Unknown role"),
+      mode: asString(event.mode, "standard"),
+      trust: asNumber(event.trust),
+      pressure: asNumber(event.pressure),
+      score: asNumber(event.score),
+      timestamp: asString(event.timestamp, new Date().toISOString()),
+      received_at: asString(event.receivedAt, new Date().toISOString()),
+      payload: event,
+    }));
+
+    await supabaseRequest("", { method: "POST", body: JSON.stringify(rows) });
+    return true;
+  } catch (error) {
+    console.warn("Supabase analytics write failed, using local fallback.", error);
+    return false;
+  }
+}
+
 async function readJsonl(filePath: string): Promise<RawAnalyticsEvent[]> {
   try {
     const raw = await readFile(filePath, "utf8");
@@ -84,17 +175,16 @@ async function readJsonl(filePath: string): Promise<RawAnalyticsEvent[]> {
 }
 
 async function appendJsonl(events: RawAnalyticsEvent[]) {
+  if (!events.length) return;
   const lines = events.map((event) => JSON.stringify(event)).join("\n") + "\n";
 
-  // Local dev should survive npm builds and code edits. Vercel/serverless may not
-  // allow writing to process.cwd(), so fall back to /tmp instead of failing.
   for (const dir of [LOCAL_DATA_DIR, TMP_DATA_DIR]) {
     try {
       await mkdir(dir, { recursive: true });
       await writeFile(path.join(dir, DATA_FILE_NAME), lines, { flag: "a" });
       return;
     } catch {
-      // try next writable location
+      // Try next writable location.
     }
   }
 }
@@ -113,7 +203,6 @@ function detectTrafficSource(event: RawAnalyticsEvent) {
   return "Direct / unknown";
 }
 
-
 function detectDevice(event: RawAnalyticsEvent): "mobile" | "desktop" | "tablet" | "unknown" {
   const metadata = asRecord(event.metadata);
   const ua = `${asString(event.userAgent)} ${asString(metadata.userAgent)} ${asString(metadata.device)} ${asString(metadata.platform)}`.toLowerCase();
@@ -130,6 +219,7 @@ function sessionKey(event: NormalizedAnalyticsEvent) {
 function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
   const metadata = asRecord(event.metadata);
   const receivedAt = asString(event.receivedAt, new Date().toISOString());
+  const device = detectDevice(event);
 
   return {
     event: asString(event.event, "unknown_event"),
@@ -145,8 +235,8 @@ function normalizeEvent(event: RawAnalyticsEvent): NormalizedAnalyticsEvent {
     timestamp: asString(event.timestamp, receivedAt),
     receivedAt,
     source: detectTrafficSource(event),
-    device: detectDevice(event),
-    isMobile: detectDevice(event) === "mobile" || detectDevice(event) === "tablet",
+    device,
+    isMobile: device === "mobile" || device === "tablet",
     metadata,
   };
 }
@@ -162,10 +252,16 @@ function dedupe(events: NormalizedAnalyticsEvent[]) {
 }
 
 async function readStoredEvents(): Promise<NormalizedAnalyticsEvent[]> {
+  const supabaseEvents = await readSupabaseEvents();
   const rawFiles = await Promise.all(candidateFiles().map(readJsonl));
-  const fileEvents = rawFiles.flat().map(normalizeEvent);
+  const fileEvents = rawFiles.flat();
   const inMemory = memoryEvents();
-  return dedupe([...fileEvents, ...inMemory]).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+  return dedupe([
+    ...supabaseEvents.map(normalizeEvent),
+    ...fileEvents.map(normalizeEvent),
+    ...inMemory,
+  ]).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
 async function appendEvents(events: RawAnalyticsEvent[]) {
@@ -175,7 +271,14 @@ async function appendEvents(events: RawAnalyticsEvent[]) {
   const memory = memoryEvents();
   memory.push(...normalized);
   globalThis.__WORKZO_ANALYTICS_EVENTS__ = memory.slice(-5000);
-  await appendJsonl(stamped);
+
+  const storedInSupabase = await writeSupabaseEvents(stamped);
+
+  // Keep local dev/backstop persistence even when Supabase is configured. This
+  // makes analytics resilient during schema mistakes or temporary Supabase issues.
+  if (!storedInSupabase || process.env.NODE_ENV !== "production") {
+    await appendJsonl(stamped);
+  }
 }
 
 function increment(map: Record<string, number>, key: string) {
@@ -198,7 +301,6 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
   const weakSignals: Record<string, number> = {};
   const sessions = new Set<string>();
   const sessionReplay: Record<string, { events: number; first: string; last: string; device: string; recruiter: string; role: string; started: boolean; completed: boolean; lastEvent: string; dropoff: string }> = {};
-
   const modePerformance: Record<string, { starts: number; completions: number; voiceFailures: number; results: number; avgTrust: number | null }> = {};
 
   for (const event of events) {
@@ -212,18 +314,41 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     if (/error|failed|blocked|exception/i.test(event.event)) increment(errors, event.event);
 
     const key = sessionKey(event);
-    const replay = (sessionReplay[key] ||= { events: 0, first: event.timestamp, last: event.timestamp, device: event.device, recruiter: event.recruiter, role: event.role, started: false, completed: false, lastEvent: event.event, dropoff: "Visited" });
+    const replay = (sessionReplay[key] ||= {
+      events: 0,
+      first: event.timestamp,
+      last: event.timestamp,
+      device: event.device,
+      recruiter: event.recruiter,
+      role: event.role,
+      started: false,
+      completed: false,
+      lastEvent: event.event,
+      dropoff: "Visited",
+    });
     replay.events += 1;
     replay.last = event.timestamp;
     replay.lastEvent = event.event;
     replay.started ||= event.event === "interview_started" || event.event === "voice_started";
     replay.completed ||= event.event === "interview_completed" || event.event === "results_viewed";
-    replay.dropoff = replay.completed ? "Completed/results" : replay.started ? "Started interview" : event.event.includes("upload") ? "Uploaded CV" : "Visited/unknown";
+    replay.dropoff = replay.completed
+      ? "Completed/results"
+      : replay.started
+        ? "Started interview"
+        : event.event.includes("upload")
+          ? "Uploaded CV"
+          : "Visited/unknown";
 
     const signal = asString(event.metadata.signal || event.metadata.tag || event.metadata.weakness || event.metadata.action);
     if (signal) increment(weakSignals, signal);
 
-    const perf = (modePerformance[event.mode] ||= { starts: 0, completions: 0, voiceFailures: 0, results: 0, avgTrust: null });
+    const perf = (modePerformance[event.mode] ||= {
+      starts: 0,
+      completions: 0,
+      voiceFailures: 0,
+      results: 0,
+      avgTrust: null,
+    });
     if (event.event === "interview_started" || event.event === "voice_started") perf.starts += 1;
     if (event.event === "interview_completed") perf.completions += 1;
     if (event.event === "voice_failed" || event.event === "video_failed") perf.voiceFailures += 1;
@@ -231,8 +356,12 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
   }
 
   for (const mode of Object.keys(modePerformance)) {
-    const trustValues = events.filter((event) => event.mode === mode && typeof event.trust === "number").map((event) => event.trust as number);
-    modePerformance[mode].avgTrust = trustValues.length ? Math.round(trustValues.reduce((sum, value) => sum + value, 0) / trustValues.length) : null;
+    const trustValues = events
+      .filter((event) => event.mode === mode && typeof event.trust === "number")
+      .map((event) => event.trust as number);
+    modePerformance[mode].avgTrust = trustValues.length
+      ? Math.round(trustValues.reduce((sum, value) => sum + value, 0) / trustValues.length)
+      : null;
   }
 
   const uploads = counts.cv_uploaded || 0;
@@ -253,12 +382,15 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     { stage: "Results viewed", count: resultsViewed },
   ];
 
-  const biggestDrop = dropoffFunnel.reduce((best, stage, index) => {
-    if (index === 0) return best;
-    const previous = dropoffFunnel[index - 1];
-    const drop = Math.max(0, previous.count - stage.count);
-    return drop > best.drop ? { from: previous.stage, to: stage.stage, drop } : best;
-  }, { from: "", to: "", drop: 0 });
+  const biggestDrop = dropoffFunnel.reduce(
+    (best, stage, index) => {
+      if (index === 0) return best;
+      const previous = dropoffFunnel[index - 1];
+      const drop = Math.max(0, previous.count - stage.count);
+      return drop > best.drop ? { from: previous.stage, to: stage.stage, drop } : best;
+    },
+    { from: "", to: "", drop: 0 },
+  );
 
   const topWeakness = Object.entries(weakSignals).sort((a, b) => b[1] - a[1])[0]?.[0] || "Not enough answer data yet";
   const insight = biggestDrop.drop
@@ -298,15 +430,20 @@ function buildSummary(events: NormalizedAnalyticsEvent[]) {
     topWeakness,
     insight,
     storage: {
+      backend: supabaseEnabled() ? "supabase+local-fallback" : "local-file+memory",
+      supabaseConfigured: supabaseEnabled(),
+      supabaseTable: SUPABASE_TABLE,
       primary: LOCAL_DATA_DIR,
       fallback: TMP_DATA_DIR,
-      note: "Local dev events now persist under .workzo-data across rebuilds. Serverless hosts may still need Supabase/Firebase for permanent cross-deploy analytics.",
+      note: supabaseEnabled()
+        ? "Analytics are Supabase-ready with local fallback. Use the provided SQL table schema before enabling production analytics."
+        : "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY to persist analytics across deployments.",
     },
   };
 }
 
 export async function GET() {
-  const events = (await readStoredEvents()).slice(-1000).reverse();
+  const events = (await readStoredEvents()).slice(-1500).reverse();
   return NextResponse.json({ summary: buildSummary(events), events });
 }
 
@@ -318,9 +455,12 @@ export async function POST(request: Request) {
       : [body as RawAnalyticsEvent];
 
     await appendEvents(events.filter((event) => asString(event.event)));
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, supabaseConfigured: supabaseEnabled() });
   } catch (error) {
     console.error("Analytics event write failed:", error);
-    return NextResponse.json({ success: false, error: "Analytics event write failed." }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Analytics event write failed." },
+      { status: 500 },
+    );
   }
 }

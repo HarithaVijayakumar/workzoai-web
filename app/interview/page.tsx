@@ -1724,6 +1724,141 @@ function InterviewRoom({
           .wz-live-status-badge { max-width: calc(100% - 132px) !important; }
           .wz-bottom-controls { margin-top: 8px !important; padding: 10px !important; }
           .wz-metrics-row { margin-top: 10px !important; }
+
+
+          /* Phase 1.5 v68 mobile polish: tighter spacing, stable scrolling, clearer transcript, persistent mic. */
+          .wz-mobile-page {
+            padding: max(8px, env(safe-area-inset-top)) 10px calc(env(safe-area-inset-bottom) + 18px) !important;
+            height: auto !important;
+            min-height: 100dvh !important;
+            overflow-y: auto !important;
+            overscroll-behavior-y: contain !important;
+          }
+          .wz-topbar {
+            min-height: 50px !important;
+            margin-bottom: 6px !important;
+            gap: 7px !important;
+          }
+          .wz-topbar a, .wz-topbar .wz-end-actions button:last-child {
+            min-height: 42px !important;
+            padding: 9px 10px !important;
+            font-size: 12px !important;
+          }
+          .wz-recruiter-stage {
+            border-radius: 22px !important;
+            padding-bottom: 8px !important;
+          }
+          .wz-avatar-shell {
+            width: calc(100% - 8px) !important;
+            height: clamp(230px, 34vh, 310px) !important;
+            min-height: 230px !important;
+            max-height: 310px !important;
+            margin-top: 6px !important;
+            border-radius: 22px !important;
+          }
+          .wz-avatar-shell video, .wz-avatar-shell img {
+            object-position: center 18% !important;
+          }
+          .wz-avatar-shell .wz-name-block {
+            left: 14px !important;
+            bottom: 14px !important;
+            max-width: 54% !important;
+          }
+          .wz-avatar-shell .wz-name-block h2 {
+            font-size: 21px !important;
+          }
+          .wz-avatar-shell .wz-name-block p {
+            font-size: 11px !important;
+          }
+          .wz-avatar-shell .wz-state-card {
+            right: 10px !important;
+            bottom: 14px !important;
+            max-width: 132px !important;
+            padding: 8px 9px !important;
+            border-radius: 16px !important;
+          }
+          .wz-status-line {
+            margin-top: 8px !important;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+            font-size: 12px !important;
+          }
+          .wz-subtitle-pill {
+            width: calc(100% - 16px) !important;
+            max-height: 64px !important;
+            margin-top: 6px !important;
+            padding: 9px 12px !important;
+            font-size: 12px !important;
+            line-height: 1.45 !important;
+          }
+          .wz-bottom-controls {
+            position: sticky !important;
+            bottom: calc(env(safe-area-inset-bottom) + 8px) !important;
+            z-index: 70 !important;
+            width: min(94vw, 390px) !important;
+            margin: 8px auto 0 !important;
+            padding: 8px 9px !important;
+            border-radius: 20px !important;
+            box-shadow: 0 18px 48px rgba(0,0,0,.34), 0 0 28px rgba(59,130,246,.18) !important;
+          }
+          .wz-bottom-controls .wz-mic-wrap button {
+            height: 54px !important;
+            width: 54px !important;
+          }
+          .wz-bottom-controls .wz-mic-wrap p {
+            font-size: 11px !important;
+            line-height: 1.2 !important;
+            margin-top: 5px !important;
+          }
+          .wz-metrics-row {
+            margin-top: 8px !important;
+            padding: 6px !important;
+            gap: 6px !important;
+            border-radius: 0 0 20px 20px !important;
+          }
+          .wz-metrics-row > div {
+            padding: 8px !important;
+            border-radius: 14px !important;
+          }
+          .wz-metrics-row p {
+            font-size: 10px !important;
+          }
+          .wz-metrics-row p:nth-child(2) {
+            font-size: 16px !important;
+          }
+          .wz-transcript-panel {
+            margin-top: 10px !important;
+            min-height: 430px !important;
+            border-radius: 20px !important;
+          }
+          .wz-transcript-panel > div:first-child {
+            min-height: 52px !important;
+            padding: 10px !important;
+            gap: 6px !important;
+          }
+          .wz-transcript-panel button {
+            font-size: 11px !important;
+            padding: 7px 9px !important;
+          }
+          .wz-transcript-scroll {
+            max-height: min(58vh, 520px) !important;
+            padding: 10px !important;
+            scroll-behavior: smooth !important;
+          }
+          .wz-transcript-scroll p {
+            font-size: 14px !important;
+            line-height: 1.65 !important;
+            letter-spacing: -0.01em !important;
+          }
+          .wz-transcript-scroll .rounded-2xl {
+            border-radius: 16px !important;
+          }
+          .wz-live-badge, .wz-live-status-badge {
+            top: 12px !important;
+            font-size: 9px !important;
+            padding: 6px 9px !important;
+          }
+
         }
         @media (max-width: 920px) {
           .wz-mobile-root { overflow-x: hidden !important; }
