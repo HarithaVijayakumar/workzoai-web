@@ -9,6 +9,7 @@ export type WorkZoEventName =
   | "interview_completed"
   | "voice_started"
   | "voice_failed"
+  | "voice_error"
   | "voice_paused"
   | "voice_recovered"
   | "video_failed"
@@ -26,7 +27,7 @@ export type WorkZoAnalyticsPayload = {
   role?: string;
   market?: string;
   recruiter?: string;
-  mode?: "voice" | "video" | "standard" | "copilot";
+  mode?: "voice" | "vapi" | "video" | "standard" | "copilot";
   score?: number;
   trust?: number;
   pressure?: number;

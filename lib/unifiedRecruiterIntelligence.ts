@@ -74,7 +74,13 @@ export type RecruiterMemoryProfile = {
 };
 
 export type RecruiterMemoryEvent = {
-  type: "claim" | "contradiction" | "strength" | "weakness" | "doubt" | "callback";
+  type:
+    | "claim"
+    | "contradiction"
+    | "strength"
+    | "weakness"
+    | "doubt"
+    | "callback";
   text: string;
   weight: number;
 };
@@ -115,7 +121,12 @@ export type UnifiedRecruiterDecision = {
     nextFix: string;
   };
   recruiterMemoryInsight?: {
-    recallMode: "none" | "subtle_callback" | "active_doubt" | "recovery_moment" | "credibility_watch";
+    recallMode:
+      | "none"
+      | "subtle_callback"
+      | "active_doubt"
+      | "recovery_moment"
+      | "credibility_watch";
     callbackLine: string;
     rememberedSignal: string;
     openDoubt: string;
@@ -138,14 +149,27 @@ export type UnifiedRecruiterDecision = {
     followUpBias: string;
   };
   humanImperfection?: {
-    mode: "none" | "brief_pause" | "misunderstanding" | "topic_drift" | "revisit_later" | "impatient_shortening";
+    mode:
+      | "none"
+      | "brief_pause"
+      | "misunderstanding"
+      | "topic_drift"
+      | "revisit_later"
+      | "impatient_shortening";
     cue: string;
     naturalLine: string;
     shouldUse: boolean;
   };
   socialSignals?: CandidateSocialSignals;
   cinematicRealism?: {
-    emotionalBeat: "neutral" | "warming" | "tightening" | "doubt" | "recovery" | "curiosity" | "reset";
+    emotionalBeat:
+      | "neutral"
+      | "warming"
+      | "tightening"
+      | "doubt"
+      | "recovery"
+      | "curiosity"
+      | "reset";
     pauseBeforeSpeakingMs: number;
     recruiterMicroBehavior: string;
     naturalTransition: string;
@@ -184,7 +208,8 @@ export type UnifiedRecruiterInput = {
   recruiterState?: string | null;
 };
 
-const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const clamp = (value: number, min: number, max: number) =>
+  Math.max(min, Math.min(max, value));
 
 function cleanText(value: unknown) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -234,10 +259,14 @@ function extractRoleFromJobDescription(jobDescription: string) {
     .map((line) => line.trim())
     .filter(Boolean);
 
-  const roleLine = lines.find((line) => /\b(role|position|title|job)\b/i.test(line));
+  const roleLine = lines.find((line) =>
+    /\b(role|position|title|job)\b/i.test(line),
+  );
 
   if (roleLine) {
-    return roleLine.replace(/^(role|position|title|job)\s*:?\s*/i, "").slice(0, 80);
+    return roleLine
+      .replace(/^(role|position|title|job)\s*:?\s*/i, "")
+      .slice(0, 80);
   }
 
   const match = jobDescription.match(
@@ -247,71 +276,124 @@ function extractRoleFromJobDescription(jobDescription: string) {
   return match?.[0] || "";
 }
 
-function buildEvidenceProfile(cvTextRaw: string, jobDescriptionRaw: string): CandidateEvidenceProfile {
+function buildEvidenceProfile(
+  cvTextRaw: string,
+  jobDescriptionRaw: string,
+): CandidateEvidenceProfile {
   const cvText = cleanText(cvTextRaw);
   const jobDescription = cleanText(jobDescriptionRaw);
   const source = `${cvText} ${jobDescription}`;
 
-  const likelyRoles = extractMatches(cvText, [
-    /\b(technical support engineer|customer support engineer|support engineer|customer success manager|customer success specialist|data analyst|business analyst|software engineer|frontend developer|backend developer|product manager|project manager|qa engineer|technical consultant|implementation consultant|account manager|product designer|ux designer)\b/gi,
-    /(?:experience|role|position|title)\s*[:\-]\s*([^.;\n]{3,70})/gi,
-  ], 10);
+  const likelyRoles = extractMatches(
+    cvText,
+    [
+      /\b(technical support engineer|customer support engineer|support engineer|customer success manager|customer success specialist|data analyst|business analyst|software engineer|frontend developer|backend developer|product manager|project manager|qa engineer|technical consultant|implementation consultant|account manager|product designer|ux designer)\b/gi,
+      /(?:experience|role|position|title)\s*[:\-]\s*([^.;\n]{3,70})/gi,
+    ],
+    10,
+  );
 
-  const companies = extractMatches(cvText, [
-    /\b(Zoho|Microsoft|Amazon|Google|Tesla|Apple|Meta|Facebook|eBay|Salesforce|SAP|Oracle|IBM|Infosys|TCS|Wipro|Accenture|Deloitte|Capgemini|Cognizant|Freshworks|HubSpot|ServiceNow|Zendesk|Atlassian|Adobe|Netflix|Uber|Airbnb|Stripe|Shopify)\b/gi,
-    /(?:at|@)\s+([A-Z][A-Za-z0-9&.\- ]{2,40})(?:\s|,|\.|\n)/g,
-  ], 10);
+  const companies = extractMatches(
+    cvText,
+    [
+      /\b(Zoho|Microsoft|Amazon|Google|Tesla|Apple|Meta|Facebook|eBay|Salesforce|SAP|Oracle|IBM|Infosys|TCS|Wipro|Accenture|Deloitte|Capgemini|Cognizant|Freshworks|HubSpot|ServiceNow|Zendesk|Atlassian|Adobe|Netflix|Uber|Airbnb|Stripe|Shopify)\b/gi,
+      /(?:at|@)\s+([A-Z][A-Za-z0-9&.\- ]{2,40})(?:\s|,|\.|\n)/g,
+    ],
+    10,
+  );
 
-  const skills = extractMatches(source, [
-    /\b(Python|SQL|Excel|Tableau|Power BI|Looker|Salesforce|HubSpot|Zendesk|Freshdesk|Jira|Confluence|CRM|SaaS|API|REST|JavaScript|TypeScript|React|Next\.js|Node\.js|AWS|Azure|GCP|Docker|Kubernetes|Machine Learning|Generative AI|LLM|OpenAI|Streamlit|Supabase|Firebase|Vercel|GitHub|Figma|UX|UI)\b/gi,
-  ], 16);
+  const skills = extractMatches(
+    source,
+    [
+      /\b(Python|SQL|Excel|Tableau|Power BI|Looker|Salesforce|HubSpot|Zendesk|Freshdesk|Jira|Confluence|CRM|SaaS|API|REST|JavaScript|TypeScript|React|Next\.js|Node\.js|AWS|Azure|GCP|Docker|Kubernetes|Machine Learning|Generative AI|LLM|OpenAI|Streamlit|Supabase|Firebase|Vercel|GitHub|Figma|UX|UI)\b/gi,
+    ],
+    16,
+  );
 
-  const industries = extractMatches(source, [
-    /\b(SaaS|B2B|B2C|e-commerce|fintech|healthcare|education|automotive|cloud|enterprise software|consumer products|marketplace|telecom|banking|retail)\b/gi,
-  ], 10);
+  const industries = extractMatches(
+    source,
+    [
+      /\b(SaaS|B2B|B2C|e-commerce|fintech|healthcare|education|automotive|cloud|enterprise software|consumer products|marketplace|telecom|banking|retail)\b/gi,
+    ],
+    10,
+  );
 
-  const experienceSignals = extractMatches(cvText, [
-    /\b(\d+\+?\s*(?:years|yrs)\s+(?:of\s+)?experience)\b/gi,
-    /\b(worked with [^.;\n]{3,90})/gi,
-    /\b(resolved [^.;\n]{3,90})/gi,
-    /\b(supported [^.;\n]{3,90})/gi,
-    /\b(managed [^.;\n]{3,90})/gi,
-    /\b(handled [^.;\n]{3,90})/gi,
-  ], 8);
+  const experienceSignals = extractMatches(
+    cvText,
+    [
+      /\b(\d+\+?\s*(?:years|yrs)\s+(?:of\s+)?experience)\b/gi,
+      /\b(worked with [^.;\n]{3,90})/gi,
+      /\b(resolved [^.;\n]{3,90})/gi,
+      /\b(supported [^.;\n]{3,90})/gi,
+      /\b(managed [^.;\n]{3,90})/gi,
+      /\b(handled [^.;\n]{3,90})/gi,
+    ],
+    8,
+  );
 
-  const senioritySignals = extractMatches(cvText, [
-    /\b(intern|junior|associate|executive|specialist|engineer|senior|lead|manager|head|director)\b/gi,
-  ], 8);
+  const senioritySignals = extractMatches(
+    cvText,
+    [
+      /\b(intern|junior|associate|executive|specialist|engineer|senior|lead|manager|head|director)\b/gi,
+    ],
+    8,
+  );
 
-  const supportSignals = extractMatches(source, [
-    /\b(ticket(?:ing)?|SLA|escalation|troubleshooting|root cause|customer issue|technical support|helpdesk|incident|bug|resolution|support workflow|knowledge base)\b/gi,
-  ], 10);
+  const supportSignals = extractMatches(
+    source,
+    [
+      /\b(ticket(?:ing)?|SLA|escalation|troubleshooting|root cause|customer issue|technical support|helpdesk|incident|bug|resolution|support workflow|knowledge base)\b/gi,
+    ],
+    10,
+  );
 
-  const customerSignals = extractMatches(source, [
-    /\b(customer success|customer retention|onboarding|renewal|churn|stakeholder|account health|customer satisfaction|CSAT|NPS|relationship management|enterprise customer|B2B client|B2C customer)\b/gi,
-  ], 10);
+  const customerSignals = extractMatches(
+    source,
+    [
+      /\b(customer success|customer retention|onboarding|renewal|churn|stakeholder|account health|customer satisfaction|CSAT|NPS|relationship management|enterprise customer|B2B client|B2C customer)\b/gi,
+    ],
+    10,
+  );
 
-  const projectSignals = extractMatches(cvText, [
-    /\b(project(?:s)?\s*[:\-]\s*[^.;\n]{3,90})/gi,
-    /\b(built [^.;\n]{3,90})/gi,
-    /\b(created [^.;\n]{3,90})/gi,
-    /\b(developed [^.;\n]{3,90})/gi,
-    /\b(implemented [^.;\n]{3,90})/gi,
-  ], 8);
+  const projectSignals = extractMatches(
+    cvText,
+    [
+      /\b(project(?:s)?\s*[:\-]\s*[^.;\n]{3,90})/gi,
+      /\b(built [^.;\n]{3,90})/gi,
+      /\b(created [^.;\n]{3,90})/gi,
+      /\b(developed [^.;\n]{3,90})/gi,
+      /\b(implemented [^.;\n]{3,90})/gi,
+    ],
+    8,
+  );
 
-  const educationSignals = extractMatches(cvText, [
-    /\b(Bachelor(?:'s)?|Master(?:'s)?|MBA|B\.Tech|M\.Tech|BSc|MSc|bootcamp|certification|degree|diploma)\b[^.;\n]{0,80}/gi,
-  ], 8);
+  const educationSignals = extractMatches(
+    cvText,
+    [
+      /\b(Bachelor(?:'s)?|Master(?:'s)?|MBA|B\.Tech|M\.Tech|BSc|MSc|bootcamp|certification|degree|diploma)\b[^.;\n]{0,80}/gi,
+    ],
+    8,
+  );
 
-  const timelineSignals = extractMatches(cvText, [
-    /\b(20\d{2}\s*(?:-|–|to)\s*(?:20\d{2}|present|current|now))\b/gi,
-    /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+20\d{2}\s*(?:-|–|to)\s*(?:Present|Current|Now|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+20\d{2})\b/gi,
-  ], 8);
+  const timelineSignals = extractMatches(
+    cvText,
+    [
+      /\b(20\d{2}\s*(?:-|–|to)\s*(?:20\d{2}|present|current|now))\b/gi,
+      /\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+20\d{2}\s*(?:-|–|to)\s*(?:Present|Current|Now|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+20\d{2})\b/gi,
+    ],
+    8,
+  );
 
   const summaryParts = [
-    likelyRoles.length ? `Likely background: ${likelyRoles.slice(0, 3).join(", ")}` : "Background unclear from CV",
-    companies.length ? `Companies mentioned: ${companies.slice(0, 4).join(", ")}` : "No clear companies found",
-    skills.length ? `Skills/tools: ${skills.slice(0, 6).join(", ")}` : "Few explicit tools found",
+    likelyRoles.length
+      ? `Likely background: ${likelyRoles.slice(0, 3).join(", ")}`
+      : "Background unclear from CV",
+    companies.length
+      ? `Companies mentioned: ${companies.slice(0, 4).join(", ")}`
+      : "No clear companies found",
+    skills.length
+      ? `Skills/tools: ${skills.slice(0, 6).join(", ")}`
+      : "Few explicit tools found",
     customerSignals.length || supportSignals.length
       ? `Customer/support signals: ${[...customerSignals, ...supportSignals].slice(0, 5).join(", ")}`
       : "Limited customer/support evidence found",
@@ -335,7 +417,35 @@ function buildEvidenceProfile(cvTextRaw: string, jobDescriptionRaw: string): Can
 
 function tokenizeMeaning(text: string) {
   const stop = new Set([
-    "the", "and", "for", "with", "that", "this", "role", "job", "you", "your", "are", "was", "were", "have", "has", "had", "from", "into", "about", "tell", "little", "experience", "candidate", "question", "what", "when", "where", "why", "how",
+    "the",
+    "and",
+    "for",
+    "with",
+    "that",
+    "this",
+    "role",
+    "job",
+    "you",
+    "your",
+    "are",
+    "was",
+    "were",
+    "have",
+    "has",
+    "had",
+    "from",
+    "into",
+    "about",
+    "tell",
+    "little",
+    "experience",
+    "candidate",
+    "question",
+    "what",
+    "when",
+    "where",
+    "why",
+    "how",
   ]);
   return cleanText(text)
     .toLowerCase()
@@ -356,13 +466,14 @@ function overlapScore(answer: string, evidence: string[]) {
   return hits;
 }
 
-
 function extractJobSkillsFromText(text: string) {
   return unique(extractSkillClaims(text), 18);
 }
 
 function findMissingJobSkills(cvText: string, jobDescription: string) {
-  const cvSkills = new Set(extractSkillClaims(cvText).map((skill) => skill.toLowerCase()));
+  const cvSkills = new Set(
+    extractSkillClaims(cvText).map((skill) => skill.toLowerCase()),
+  );
   return extractJobSkillsFromText(jobDescription)
     .filter((skill) => !cvSkills.has(skill.toLowerCase()))
     .slice(0, 4);
@@ -383,34 +494,90 @@ function recentCandidateText(input: UnifiedRecruiterInput, take = 8) {
     .join(" ");
 }
 
-function hasCustomerSuccessRoleFit(answer: string, targetRole: string, input: UnifiedRecruiterInput) {
-  const role = cleanText(targetRole).toLowerCase();
-  if (!/customer success|customer service|account manager|support|client/i.test(role)) return false;
-  const evidence = `${answer} ${recentCandidateText(input, 5)}`.toLowerCase();
-  return /customer|client|support|ticket|satisfaction|csat|rapport|relationship|resolved|issue|escalation|technical support|b2b|b2c|retention|onboarding/.test(evidence);
+function recentRecruiterText(input: UnifiedRecruiterInput, take = 8) {
+  return (input.transcript || [])
+    .filter((item) => item.role === "recruiter")
+    .slice(-take)
+    .map((item) => cleanText(item.text))
+    .join(" ");
 }
 
-function buildMemoryAwareCallbackQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, targetRole: string) {
-  const recent = `${recentCandidateText(input, 8)} ${cvRead.summary} ${targetRole}`.toLowerCase();
-  const askedStrength = hasAskedRecently(input, /strongest professional strength|what.*strength|best at/i);
-  const askedWeakness = hasAskedRecently(input, /weakness|development area|challenge/i);
-  const askedCustomer = hasAskedRecently(input, /difficult customer|customer situation|unhappy customer|escalation/i);
-  const askedLearning = hasAskedRecently(input, /learn.*quick|learn something quickly|adapt/i);
+function hasCustomerSuccessRoleFit(
+  answer: string,
+  targetRole: string,
+  input: UnifiedRecruiterInput,
+) {
+  const role = cleanText(targetRole).toLowerCase();
+  if (
+    !/customer success|customer service|account manager|support|client/i.test(
+      role,
+    )
+  )
+    return false;
+  const evidence = `${answer} ${recentCandidateText(input, 5)}`.toLowerCase();
+  return /customer|client|support|ticket|satisfaction|csat|rapport|relationship|resolved|issue|escalation|technical support|b2b|b2c|retention|onboarding/.test(
+    evidence,
+  );
+}
 
-  if (/language|germany|german|grammar|fluent|learn the language/.test(recent) && !askedLearning) {
+function buildMemoryAwareCallbackQuestion(
+  input: UnifiedRecruiterInput,
+  cvRead: CandidateEvidenceProfile,
+  targetRole: string,
+) {
+  const recent =
+    `${recentCandidateText(input, 8)} ${cvRead.summary} ${targetRole}`.toLowerCase();
+  const askedStrength = hasAskedRecently(
+    input,
+    /strongest professional strength|what.*strength|best at/i,
+  );
+  const askedWeakness = hasAskedRecently(
+    input,
+    /weakness|development area|challenge/i,
+  );
+  const askedCustomer = hasAskedRecently(
+    input,
+    /difficult customer|customer situation|unhappy customer|escalation/i,
+  );
+  const askedLearning = hasAskedRecently(
+    input,
+    /learn.*quick|learn something quickly|adapt/i,
+  );
+
+  if (
+    /language|germany|german|grammar|fluent|learn the language/.test(recent) &&
+    !askedLearning
+  ) {
     return "You mentioned learning German after moving to Germany. Tell me about another situation where you had to learn something quickly for work.";
   }
 
-  if (/customer|client|support|ticket|satisfaction|rapport|relationship|csat/.test(recent) && !askedCustomer) {
+  if (
+    /customer|client|support|ticket|satisfaction|rapport|relationship|csat/.test(
+      recent,
+    ) &&
+    !askedCustomer
+  ) {
     return `That customer-facing experience is relevant for ${targetRole}. Tell me about one difficult customer situation you handled and how you recovered it.`;
   }
 
-  if (/weakness|grammar|language|not sure|improve/.test(recent) && askedWeakness) {
+  if (
+    /weakness|grammar|language|not sure|improve/.test(recent) &&
+    askedWeakness
+  ) {
     return "Thanks for being honest. How are you actively improving that area, and how would you make sure it does not affect customers?";
   }
 
-  const missingSkills = findMissingJobSkills(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-  if (missingSkills.length && !hasAskedRecently(input, new RegExp(missingSkills[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"))) {
+  const missingSkills = findMissingJobSkills(
+    cleanText(input.setup?.cvText),
+    cleanText(input.setup?.jobDescription),
+  );
+  if (
+    missingSkills.length &&
+    !hasAskedRecently(
+      input,
+      new RegExp(missingSkills[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"),
+    )
+  ) {
     const skill = missingSkills[0];
     return `I see ${skill} in the role requirements, but I don’t see strong evidence of it in your CV. Have you used it before, or how would you close that gap?`;
   }
@@ -422,25 +589,47 @@ function buildMemoryAwareCallbackQuestion(input: UnifiedRecruiterInput, cvRead: 
   return `Let’s make this practical for ${targetRole}. Imagine a customer is unhappy after repeated technical issues. How would you handle that conversation?`;
 }
 
-function buildNaturalNextQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, memory: RecruiterMemoryProfile, answer: string) {
+function buildNaturalNextQuestion(
+  input: UnifiedRecruiterInput,
+  cvRead: CandidateEvidenceProfile,
+  memory: RecruiterMemoryProfile,
+  answer: string,
+) {
   const setup = input.setup || {};
   const jobDescription = cleanText(setup.jobDescription);
   const cvText = cleanText(setup.cvText);
-  const targetRole = firstNonEmpty(setup.targetRole, extractRoleFromJobDescription(jobDescription), "this role");
-  const turns = (input.transcript || []).filter((item) => item.role === "candidate").length;
+  const targetRole = firstNonEmpty(
+    setup.targetRole,
+    extractRoleFromJobDescription(jobDescription),
+    "this role",
+  );
+  const turns = (input.transcript || []).filter(
+    (item) => item.role === "candidate",
+  ).length;
   const missingSkills = findMissingJobSkills(cvText, jobDescription);
   const answerLower = answer.toLowerCase();
 
   if (turns <= 1) {
+    if (isCustomerSuccessShortBackgroundAnswer(answer, targetRole, input)) {
+      return buildCustomerSuccessDepthQuestion(input, answer, targetRole);
+    }
     return `Thanks. What is making you interested in ${targetRole} at this point in your career?`;
   }
 
   // Follow the candidate's thread first. This is what makes it feel like a real interviewer.
-  if (/language|germany|german|grammar|fluent|quick learner|learn/.test(answerLower)) {
+  if (
+    /language|germany|german|grammar|fluent|quick learner|learn/.test(
+      answerLower,
+    )
+  ) {
     return "You mentioned learning quickly. Tell me about a work situation where you had to learn a new process, tool, or product fast.";
   }
 
-  if (/customer|client|ticket|support|stakeholder|relationship|satisfaction|rapport|csat/i.test(answerLower)) {
+  if (
+    /customer|client|ticket|support|stakeholder|relationship|satisfaction|rapport|csat/i.test(
+      answerLower,
+    )
+  ) {
     if (hasCustomerSuccessRoleFit(answer, targetRole, input)) {
       return `That customer-facing experience is relevant for ${targetRole}. Tell me about one difficult customer situation you handled and what you learned from it.`;
     }
@@ -467,38 +656,57 @@ function buildNaturalNextQuestion(input: UnifiedRecruiterInput, cvRead: Candidat
   return buildMemoryAwareCallbackQuestion(input, cvRead, targetRole);
 }
 
-
 function extractKnownCompanyMentions(text: string, limit = 8) {
-  return extractMatches(text, [
-    /\b(Zoho|Microsoft|Amazon|Google|Tesla|Apple|Meta|Facebook|eBay|Salesforce|SAP|Oracle|IBM|Infosys|TCS|Wipro|Accenture|Deloitte|Capgemini|Cognizant|Freshworks|HubSpot|ServiceNow|Zendesk|Atlassian|Adobe|Netflix|Uber|Airbnb|Stripe|Shopify|OpenAI|Anthropic|Nvidia|Toyota|BMW|Mercedes|Siemens|Bosch)\b/gi,
-  ], limit);
+  return extractMatches(
+    text,
+    [
+      /\b(Zoho|Microsoft|Amazon|Google|Tesla|Apple|Meta|Facebook|eBay|Salesforce|SAP|Oracle|IBM|Infosys|TCS|Wipro|Accenture|Deloitte|Capgemini|Cognizant|Freshworks|HubSpot|ServiceNow|Zendesk|Atlassian|Adobe|Netflix|Uber|Airbnb|Stripe|Shopify|OpenAI|Anthropic|Nvidia|Toyota|BMW|Mercedes|Siemens|Bosch)\b/gi,
+    ],
+    limit,
+  );
 }
 
 function extractNumberedClaims(text: string) {
-  return extractMatches(text, [
-    /\b(\d+\+?\s*(?:years|yrs|months|people|engineers|customers|clients|tickets|cases|projects|percent|%|million|thousand|k|m))\b/gi,
-    /\b(?:increased|reduced|improved|saved|grew|decreased|resolved|handled|managed|led)\s+[^.;\n]{0,70}?\b(\d+\+?\s*(?:%|percent|people|customers|clients|tickets|cases|projects|hours|days|weeks|months|years|k|m|million))\b/gi,
-  ], 8);
+  return extractMatches(
+    text,
+    [
+      /\b(\d+\+?\s*(?:years|yrs|months|people|engineers|customers|clients|tickets|cases|projects|percent|%|million|thousand|k|m))\b/gi,
+      /\b(?:increased|reduced|improved|saved|grew|decreased|resolved|handled|managed|led)\s+[^.;\n]{0,70}?\b(\d+\+?\s*(?:%|percent|people|customers|clients|tickets|cases|projects|hours|days|weeks|months|years|k|m|million))\b/gi,
+    ],
+    8,
+  );
 }
 
 function extractRoleClaims(text: string) {
-  return extractMatches(text, [
-    /\b(technical support engineer|customer support engineer|support engineer|customer success manager|customer success specialist|data analyst|business analyst|software engineer|frontend developer|backend developer|product manager|project manager|qa engineer|technical consultant|implementation consultant|account manager|product designer|ux designer|product design engineer|mechanical engineer|sales manager|marketing manager|founder|ceo|cto|director|head of [a-z ]+)\b/gi,
-    /\b(?:worked as|role was|i was a|i am a|i joined as|position was)\s+([^.;\n]{3,55})/gi,
-  ], 8);
+  return extractMatches(
+    text,
+    [
+      /\b(technical support engineer|customer support engineer|support engineer|customer success manager|customer success specialist|data analyst|business analyst|software engineer|frontend developer|backend developer|product manager|project manager|qa engineer|technical consultant|implementation consultant|account manager|product designer|ux designer|product design engineer|mechanical engineer|sales manager|marketing manager|founder|ceo|cto|director|head of [a-z ]+)\b/gi,
+      /\b(?:worked as|role was|i was a|i am a|i joined as|position was)\s+([^.;\n]{3,55})/gi,
+    ],
+    8,
+  );
 }
 
 function extractSkillClaims(text: string) {
-  return extractMatches(text, [
-    /\b(Python|SQL|Excel|Tableau|Power BI|Looker|Salesforce|HubSpot|Zendesk|Freshdesk|Jira|Confluence|CRM|SaaS|API|REST|JavaScript|TypeScript|React|Next\.js|Node\.js|AWS|Azure|GCP|Docker|Kubernetes|Machine Learning|Generative AI|LLM|OpenAI|Streamlit|Supabase|Firebase|Vercel|GitHub|Figma|UX|UI|Photoshop|Microsoft Word|PowerPoint|SAP|Oracle|ServiceNow)\b/gi,
-  ], 12);
+  return extractMatches(
+    text,
+    [
+      /\b(Python|SQL|Excel|Tableau|Power BI|Looker|Salesforce|HubSpot|Zendesk|Freshdesk|Jira|Confluence|CRM|SaaS|API|REST|JavaScript|TypeScript|React|Next\.js|Node\.js|AWS|Azure|GCP|Docker|Kubernetes|Machine Learning|Generative AI|LLM|OpenAI|Streamlit|Supabase|Firebase|Vercel|GitHub|Figma|UX|UI|Photoshop|Microsoft Word|PowerPoint|SAP|Oracle|ServiceNow)\b/gi,
+    ],
+    12,
+  );
 }
 
 function safeArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.map((item) => cleanText(item)).filter(Boolean) : [];
+  return Array.isArray(value)
+    ? value.map((item) => cleanText(item)).filter(Boolean)
+    : [];
 }
 
-function normalizeExternalMemory(value: unknown): Partial<RecruiterMemoryProfile> {
+function normalizeExternalMemory(
+  value: unknown,
+): Partial<RecruiterMemoryProfile> {
   if (!value || typeof value !== "object") return {};
   const raw = value as Record<string, unknown>;
   return {
@@ -515,7 +723,8 @@ function normalizeExternalMemory(value: unknown): Partial<RecruiterMemoryProfile
     strongestAnswer: cleanText(raw.strongestAnswer),
     weakestAnswer: cleanText(raw.weakestAnswer),
     lastAcceptedAnswer: cleanText(raw.lastAcceptedAnswer),
-    answerCount: typeof raw.answerCount === "number" ? raw.answerCount : undefined,
+    answerCount:
+      typeof raw.answerCount === "number" ? raw.answerCount : undefined,
     summary: cleanText(raw.summary),
   };
 }
@@ -523,10 +732,30 @@ function normalizeExternalMemory(value: unknown): Partial<RecruiterMemoryProfile
 function scoreAnswerMemory(text: string) {
   const answer = cleanText(text);
   let score = 0;
-  if (/\b(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|coordinated|analyzed|implemented)\b/i.test(answer)) score += 2;
-  if (/\b(result|impact|improved|reduced|increased|saved|resolved|closed|delivered|launched|customer satisfaction|csat|nps|sla|%|\d+)\b/i.test(answer)) score += 3;
-  if (/\b(customer|client|stakeholder|support|success|ticket|escalation|retention|onboarding|renewal|business)\b/i.test(answer)) score += 2;
-  if (/\b(not sure|maybe|i guess|something|stuff|things|basically|whatever|i don'?t know)\b/i.test(answer)) score -= 3;
+  if (
+    /\b(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|coordinated|analyzed|implemented)\b/i.test(
+      answer,
+    )
+  )
+    score += 2;
+  if (
+    /\b(result|impact|improved|reduced|increased|saved|resolved|closed|delivered|launched|customer satisfaction|csat|nps|sla|%|\d+)\b/i.test(
+      answer,
+    )
+  )
+    score += 3;
+  if (
+    /\b(customer|client|stakeholder|support|success|ticket|escalation|retention|onboarding|renewal|business)\b/i.test(
+      answer,
+    )
+  )
+    score += 2;
+  if (
+    /\b(not sure|maybe|i guess|something|stuff|things|basically|whatever|i don'?t know)\b/i.test(
+      answer,
+    )
+  )
+    score -= 3;
   if (answer.split(/\s+/).length < 12) score -= 2;
   return score;
 }
@@ -542,21 +771,59 @@ function buildRecruiterMemoryProfile(
     .map((item) => cleanText(item.text))
     .filter(Boolean);
 
-  const notableClaims = unique([
-    ...(ext.notableClaims || []),
-    ...candidateTurns.flatMap((turn) => extractMatches(turn, [
-      /\b(?:I|we)\s+(?:led|managed|built|created|implemented|designed|resolved|improved|handled|owned|launched)\s+[^.;\n]{4,100}/gi,
-    ], 4)),
-  ], 14);
+  const notableClaims = unique(
+    [
+      ...(ext.notableClaims || []),
+      ...candidateTurns.flatMap((turn) =>
+        extractMatches(
+          turn,
+          [
+            /\b(?:I|we)\s+(?:led|managed|built|created|implemented|designed|resolved|improved|handled|owned|launched)\s+[^.;\n]{4,100}/gi,
+          ],
+          4,
+        ),
+      ),
+    ],
+    14,
+  );
 
-  const roleClaims = unique([...(ext.roleClaims || []), ...profile.likelyRoles, ...candidateTurns.flatMap(extractRoleClaims)], 12);
-  const companyClaims = unique([...(ext.companyClaims || []), ...profile.companies, ...candidateTurns.flatMap((turn) => extractKnownCompanyMentions(turn, 8))], 12);
-  const skillClaims = unique([...(ext.skillClaims || []), ...profile.skills, ...candidateTurns.flatMap(extractSkillClaims)], 18);
-  const metricClaims = unique([...(ext.metricClaims || []), ...candidateTurns.flatMap(extractNumberedClaims)], 12);
+  const roleClaims = unique(
+    [
+      ...(ext.roleClaims || []),
+      ...profile.likelyRoles,
+      ...candidateTurns.flatMap(extractRoleClaims),
+    ],
+    12,
+  );
+  const companyClaims = unique(
+    [
+      ...(ext.companyClaims || []),
+      ...profile.companies,
+      ...candidateTurns.flatMap((turn) => extractKnownCompanyMentions(turn, 8)),
+    ],
+    12,
+  );
+  const skillClaims = unique(
+    [
+      ...(ext.skillClaims || []),
+      ...profile.skills,
+      ...candidateTurns.flatMap(extractSkillClaims),
+    ],
+    18,
+  );
+  const metricClaims = unique(
+    [
+      ...(ext.metricClaims || []),
+      ...candidateTurns.flatMap(extractNumberedClaims),
+    ],
+    12,
+  );
 
   let strongestAnswer = cleanText(ext.strongestAnswer);
   let weakestAnswer = cleanText(ext.weakestAnswer);
-  let strongestScore = strongestAnswer ? scoreAnswerMemory(strongestAnswer) : -999;
+  let strongestScore = strongestAnswer
+    ? scoreAnswerMemory(strongestAnswer)
+    : -999;
   let weakestScore = weakestAnswer ? scoreAnswerMemory(weakestAnswer) : 999;
 
   for (const turn of candidateTurns) {
@@ -571,34 +838,66 @@ function buildRecruiterMemoryProfile(
     }
   }
 
-  const strongMoments = unique([
-    ...(ext.strongMoments || []),
-    ...(strongestAnswer && strongestScore >= 4 ? [compact(strongestAnswer, 160)] : []),
-  ], 6);
+  const strongMoments = unique(
+    [
+      ...(ext.strongMoments || []),
+      ...(strongestAnswer && strongestScore >= 4
+        ? [compact(strongestAnswer, 160)]
+        : []),
+    ],
+    6,
+  );
 
-  const weakMoments = unique([
-    ...(ext.weakMoments || []),
-    ...(weakestAnswer && weakestScore <= 0 ? [compact(weakestAnswer, 160)] : []),
-  ], 6);
+  const weakMoments = unique(
+    [
+      ...(ext.weakMoments || []),
+      ...(weakestAnswer && weakestScore <= 0
+        ? [compact(weakestAnswer, 160)]
+        : []),
+    ],
+    6,
+  );
 
-  const roleFitSignals = unique([
-    ...(ext.roleFitSignals || []),
-    ...profile.customerSignals,
-    ...profile.supportSignals,
-    ...profile.projectSignals,
-  ], 10);
+  const roleFitSignals = unique(
+    [
+      ...(ext.roleFitSignals || []),
+      ...profile.customerSignals,
+      ...profile.supportSignals,
+      ...profile.projectSignals,
+    ],
+    10,
+  );
 
-  const contradictionSignals = unique([...(ext.contradictionSignals || [])], 10);
+  const contradictionSignals = unique(
+    [...(ext.contradictionSignals || [])],
+    10,
+  );
   const openDoubts = unique([...(ext.openDoubts || [])], 10);
-  const lastAcceptedAnswer = cleanText(ext.lastAcceptedAnswer) || candidateTurns[candidateTurns.length - 1] || "";
-  const answerCount = Math.max(typeof ext.answerCount === "number" ? ext.answerCount : 0, candidateTurns.length);
+  const lastAcceptedAnswer =
+    cleanText(ext.lastAcceptedAnswer) ||
+    candidateTurns[candidateTurns.length - 1] ||
+    "";
+  const answerCount = Math.max(
+    typeof ext.answerCount === "number" ? ext.answerCount : 0,
+    candidateTurns.length,
+  );
 
-  const summary = cleanText(ext.summary) || [
-    roleClaims.length ? `Role memory: ${roleClaims.slice(0, 3).join(", ")}` : "Role memory unclear",
-    companyClaims.length ? `Company memory: ${companyClaims.slice(0, 4).join(", ")}` : "No strong company memory",
-    metricClaims.length ? `Evidence memory: ${metricClaims.slice(0, 3).join(", ")}` : "Few measurable claims remembered",
-    weakMoments.length ? "There are weak/unclear moments to revisit carefully" : "No major weak moment yet",
-  ].join(". ");
+  const summary =
+    cleanText(ext.summary) ||
+    [
+      roleClaims.length
+        ? `Role memory: ${roleClaims.slice(0, 3).join(", ")}`
+        : "Role memory unclear",
+      companyClaims.length
+        ? `Company memory: ${companyClaims.slice(0, 4).join(", ")}`
+        : "No strong company memory",
+      metricClaims.length
+        ? `Evidence memory: ${metricClaims.slice(0, 3).join(", ")}`
+        : "Few measurable claims remembered",
+      weakMoments.length
+        ? "There are weak/unclear moments to revisit carefully"
+        : "No major weak moment yet",
+    ].join(". ");
 
   return {
     notableClaims,
@@ -619,41 +918,87 @@ function buildRecruiterMemoryProfile(
   };
 }
 
-function detectMeaningContradiction(answer: string, profile: CandidateEvidenceProfile, memory: RecruiterMemoryProfile) {
+function detectMeaningContradiction(
+  answer: string,
+  profile: CandidateEvidenceProfile,
+  memory: RecruiterMemoryProfile,
+) {
   const lower = answer.toLowerCase();
-  const evidenceText = `${profile.summary} ${memory.summary} ${memory.roleClaims.join(" ")} ${memory.companyClaims.join(" ")} ${memory.skillClaims.join(" ")} ${memory.notableClaims.join(" ")}`.toLowerCase();
+  const evidenceText =
+    `${profile.summary} ${memory.summary} ${memory.roleClaims.join(" ")} ${memory.companyClaims.join(" ")} ${memory.skillClaims.join(" ")} ${memory.notableClaims.join(" ")}`.toLowerCase();
 
-  if (/\b(no|none|never)\b[^.]{0,35}\b(customer|client|support|ticket|stakeholder|b2b|b2c)\b/i.test(lower) && /customer|client|support|ticket|stakeholder|b2b|b2c/.test(evidenceText)) {
+  if (
+    /\b(no|none|never)\b[^.]{0,35}\b(customer|client|support|ticket|stakeholder|b2b|b2c)\b/i.test(
+      lower,
+    ) &&
+    /customer|client|support|ticket|stakeholder|b2b|b2c/.test(evidenceText)
+  ) {
     return "Earlier/CV evidence points to customer or support exposure, but this answer says there was none.";
   }
 
-  if (/\b(no|none|never)\b[^.]{0,35}\b(sql|python|crm|api|salesforce|zendesk|jira|excel|power bi|tableau)\b/i.test(lower)) {
-    const denied = extractSkillClaims(answer).find((skill) => evidenceText.includes(skill.toLowerCase()));
-    if (denied) return `This answer denies ${denied}, but that skill/tool appears in the CV or earlier answers.`;
+  if (
+    /\b(no|none|never)\b[^.]{0,35}\b(sql|python|crm|api|salesforce|zendesk|jira|excel|power bi|tableau)\b/i.test(
+      lower,
+    )
+  ) {
+    const denied = extractSkillClaims(answer).find((skill) =>
+      evidenceText.includes(skill.toLowerCase()),
+    );
+    if (denied)
+      return `This answer denies ${denied}, but that skill/tool appears in the CV or earlier answers.`;
   }
 
-  const years = [...lower.matchAll(/\b(\d{1,2})\+?\s*(?:years|yrs)\b/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
-  const evidenceYears = [...evidenceText.matchAll(/\b(\d{1,2})\+?\s*(?:years|yrs|years of experience)\b/g)].map((m) => Number(m[1])).filter((n) => Number.isFinite(n));
+  const years = [...lower.matchAll(/\b(\d{1,2})\+?\s*(?:years|yrs)\b/g)]
+    .map((m) => Number(m[1]))
+    .filter((n) => Number.isFinite(n));
+  const evidenceYears = [
+    ...evidenceText.matchAll(
+      /\b(\d{1,2})\+?\s*(?:years|yrs|years of experience)\b/g,
+    ),
+  ]
+    .map((m) => Number(m[1]))
+    .filter((n) => Number.isFinite(n));
   if (years.length && evidenceYears.length) {
     const maxClaim = Math.max(...years);
     const maxEvidence = Math.max(...evidenceYears);
-    if (maxClaim >= maxEvidence + 4) return `The experience length jumped from about ${maxEvidence} years in the evidence to ${maxClaim} years in this answer.`;
+    if (maxClaim >= maxEvidence + 4)
+      return `The experience length jumped from about ${maxEvidence} years in the evidence to ${maxClaim} years in this answer.`;
   }
 
-  if (/\bb2b\b[^.]{0,45}\bconsumer\b/i.test(lower) || /\bb2c\b[^.]{0,45}\bbusiness\b/i.test(lower)) {
+  if (
+    /\bb2b\b[^.]{0,45}\bconsumer\b/i.test(lower) ||
+    /\bb2c\b[^.]{0,45}\bbusiness\b/i.test(lower)
+  ) {
     return "The B2B/B2C explanation is reversed or confused.";
   }
 
-  if (/\b(zohoo|zohho|zogo)\b/i.test(lower)) return "The company name appears to be misspelled; it is usually Zoho.";
-  if (/\b(e bay|ebya|ebey)\b/i.test(lower)) return "The company name appears to be misspelled; it is usually eBay.";
-  if (/\bmicrosft|micro soft\b/i.test(lower)) return "The company name appears to be misspelled; it is usually Microsoft.";
-  if (/\bamazn|amazone\b/i.test(lower)) return "The company name appears to be misspelled; it is usually Amazon.";
+  if (/\b(zohoo|zohho|zogo)\b/i.test(lower))
+    return "The company name appears to be misspelled; it is usually Zoho.";
+  if (/\b(e bay|ebya|ebey)\b/i.test(lower))
+    return "The company name appears to be misspelled; it is usually eBay.";
+  if (/\bmicrosft|micro soft\b/i.test(lower))
+    return "The company name appears to be misspelled; it is usually Microsoft.";
+  if (/\bamazn|amazone\b/i.test(lower))
+    return "The company name appears to be misspelled; it is usually Amazon.";
 
   const currentCompanies = extractKnownCompanyMentions(answer, 6);
-  const knownCompanies = new Set(memory.companyClaims.map((c) => c.toLowerCase()));
-  const profileCompanies = new Set(profile.companies.map((c) => c.toLowerCase()));
-  const unsupportedCompanies = currentCompanies.filter((c) => !knownCompanies.has(c.toLowerCase()) && !profileCompanies.has(c.toLowerCase()));
-  if (unsupportedCompanies.length && /\b(worked|joined|employed|led|managed|designed|built|owned|was at|for)\b/i.test(lower)) {
+  const knownCompanies = new Set(
+    memory.companyClaims.map((c) => c.toLowerCase()),
+  );
+  const profileCompanies = new Set(
+    profile.companies.map((c) => c.toLowerCase()),
+  );
+  const unsupportedCompanies = currentCompanies.filter(
+    (c) =>
+      !knownCompanies.has(c.toLowerCase()) &&
+      !profileCompanies.has(c.toLowerCase()),
+  );
+  if (
+    unsupportedCompanies.length &&
+    /\b(worked|joined|employed|led|managed|designed|built|owned|was at|for)\b/i.test(
+      lower,
+    )
+  ) {
     return `This introduces ${unsupportedCompanies[0]} as work experience, but that company is not supported by the CV or earlier memory.`;
   }
 
@@ -686,12 +1031,23 @@ function updateMemoryAfterDecision(
     next.lastAcceptedAnswer = compact(text, 220);
     const score = scoreAnswerMemory(text);
     if (score >= 4) {
-      next.strongMoments = unique([compact(text, 160), ...next.strongMoments], 6);
-      events.push({ type: "strength", text: "Stored as a strong evidence moment.", weight: 7 });
+      next.strongMoments = unique(
+        [compact(text, 160), ...next.strongMoments],
+        6,
+      );
+      events.push({
+        type: "strength",
+        text: "Stored as a strong evidence moment.",
+        weight: 7,
+      });
     }
     if (score <= 0) {
       next.weakMoments = unique([compact(text, 160), ...next.weakMoments], 6);
-      events.push({ type: "weakness", text: "Stored as a weak or unclear moment.", weight: 6 });
+      events.push({
+        type: "weakness",
+        text: "Stored as a weak or unclear moment.",
+        weight: 6,
+      });
     }
   }
 
@@ -699,67 +1055,158 @@ function updateMemoryAfterDecision(
   const companies = extractKnownCompanyMentions(text, 8);
   const skills = extractSkillClaims(text);
   const metrics = extractNumberedClaims(text);
-  if (roles.length) next.roleClaims = unique([...roles, ...next.roleClaims], 12);
-  if (companies.length) next.companyClaims = unique([...companies, ...next.companyClaims], 12);
-  if (skills.length) next.skillClaims = unique([...skills, ...next.skillClaims], 18);
-  if (metrics.length) next.metricClaims = unique([...metrics, ...next.metricClaims], 12);
+  if (roles.length)
+    next.roleClaims = unique([...roles, ...next.roleClaims], 12);
+  if (companies.length)
+    next.companyClaims = unique([...companies, ...next.companyClaims], 12);
+  if (skills.length)
+    next.skillClaims = unique([...skills, ...next.skillClaims], 18);
+  if (metrics.length)
+    next.metricClaims = unique([...metrics, ...next.metricClaims], 12);
 
-  const importantClaim = extractMatches(text, [/\b(?:I|we)\s+(?:led|managed|built|created|implemented|designed|resolved|improved|handled|owned|launched)\s+[^.;\n]{4,100}/gi], 3);
+  const importantClaim = extractMatches(
+    text,
+    [
+      /\b(?:I|we)\s+(?:led|managed|built|created|implemented|designed|resolved|improved|handled|owned|launched)\s+[^.;\n]{4,100}/gi,
+    ],
+    3,
+  );
   if (importantClaim.length) {
     next.notableClaims = unique([...importantClaim, ...next.notableClaims], 14);
-    events.push({ type: "claim", text: compact(importantClaim[0], 140), weight: 5 });
+    events.push({
+      type: "claim",
+      text: compact(importantClaim[0], 140),
+      weight: 5,
+    });
   }
 
-  if (decision.intent === "contradiction" || decision.intent === "possible_exaggeration" || decision.concern) {
+  if (
+    decision.intent === "contradiction" ||
+    decision.intent === "possible_exaggeration" ||
+    decision.concern
+  ) {
     const doubt = decision.concern || decision.correction || decision.feedback;
-    next.contradictionSignals = unique([compact(doubt, 160), ...next.contradictionSignals], 10);
+    next.contradictionSignals = unique(
+      [compact(doubt, 160), ...next.contradictionSignals],
+      10,
+    );
     next.openDoubts = unique([compact(doubt, 160), ...next.openDoubts], 10);
-    events.push({ type: "contradiction", text: compact(doubt, 140), weight: 9 });
+    events.push({
+      type: "contradiction",
+      text: compact(doubt, 140),
+      weight: 9,
+    });
   }
 
   next.summary = [
-    next.roleClaims.length ? `Role memory: ${next.roleClaims.slice(0, 3).join(", ")}` : "Role memory unclear",
-    next.companyClaims.length ? `Company memory: ${next.companyClaims.slice(0, 4).join(", ")}` : "No strong company memory",
-    next.metricClaims.length ? `Evidence memory: ${next.metricClaims.slice(0, 3).join(", ")}` : "Few measurable claims remembered",
-    next.roleFitSignals.length ? `Sticky candidate signals: ${next.roleFitSignals.slice(0, 4).join(", ")}` : "No sticky candidate signals yet",
-    next.openDoubts.length ? `Open doubts: ${next.openDoubts.slice(0, 2).join(" | ")}` : "No major open doubts",
+    next.roleClaims.length
+      ? `Role memory: ${next.roleClaims.slice(0, 3).join(", ")}`
+      : "Role memory unclear",
+    next.companyClaims.length
+      ? `Company memory: ${next.companyClaims.slice(0, 4).join(", ")}`
+      : "No strong company memory",
+    next.metricClaims.length
+      ? `Evidence memory: ${next.metricClaims.slice(0, 3).join(", ")}`
+      : "Few measurable claims remembered",
+    next.roleFitSignals.length
+      ? `Sticky candidate signals: ${next.roleFitSignals.slice(0, 4).join(", ")}`
+      : "No sticky candidate signals yet",
+    next.openDoubts.length
+      ? `Open doubts: ${next.openDoubts.slice(0, 2).join(" | ")}`
+      : "No major open doubts",
   ].join(". ");
 
   return { memory: next, events };
 }
 
-
 function recruiterDisplayNameFromSetup(setup?: UnifiedRecruiterInput["setup"]) {
   const raw = cleanText(setup?.recruiterPersonality).toLowerCase();
-  if (raw.includes("sarah") || raw.includes("friendly_hr") || raw.includes("friendly")) return "Sarah";
-  if (raw.includes("priya") || raw.includes("startup_recruiter") || raw.includes("startup")) return "Priya";
-  if (raw.includes("markus") || raw.includes("german_corporate") || raw.includes("corporate")) return "Markus";
-  if (raw.includes("daniel") || raw.includes("analytical_hiring_manager") || raw.includes("analytical")) return "Daniel";
+  if (
+    raw.includes("sarah") ||
+    raw.includes("friendly_hr") ||
+    raw.includes("friendly")
+  )
+    return "Sarah";
+  if (
+    raw.includes("priya") ||
+    raw.includes("startup_recruiter") ||
+    raw.includes("startup")
+  )
+    return "Priya";
+  if (
+    raw.includes("markus") ||
+    raw.includes("german_corporate") ||
+    raw.includes("corporate")
+  )
+    return "Markus";
+  if (
+    raw.includes("daniel") ||
+    raw.includes("analytical_hiring_manager") ||
+    raw.includes("analytical")
+  )
+    return "Daniel";
   return "Sarah";
 }
 
 function detectCandidateMultiIntent(answer: string) {
   const lower = cleanText(answer).toLowerCase();
   const wordCount = lower.split(/\s+/).filter(Boolean).length;
-  const asksName = /\b(your name|who are you|what'?s your name|what is your name|let me know your name|may i know your name)\b/i.test(lower);
-  const asksHowAreYou = /\b(how are you|how are you doing|and you\??|what about you)\b/i.test(lower);
-  const audioCheck = /\b(can you hear me|can hear you|i can hear you|can'?t hear|cannot hear|can not hear|no audio|voice is not audible|are you there)\b/i.test(lower);
-  const saysGood = /\b(i'?m|i am|doing|feel|feeling)?\s*(good|fine|okay|ok|great|well|ready)\b/i.test(lower);
-  const saysNervous = /\b(nervous|anxious|bit nervous|little nervous|excited)\b/i.test(lower);
-  const thanks = /\b(thank you|thanks|appreciate)\b/i.test(lower);
-  const hasWorkEvidence = /\b(worked|experience|technical support|customer|client|ticket|project|handled|resolved|managed|led|built|improved|role|support engineer|customer success)\b/i.test(lower);
-  const isMostlySocial = (asksName || asksHowAreYou || audioCheck || saysGood || saysNervous || thanks) && (wordCount <= 28 || !hasWorkEvidence);
-  return { asksName, asksHowAreYou, audioCheck, saysGood, saysNervous, thanks, hasWorkEvidence, isMostlySocial };
+  const asksName =
+    /\b(your name|who are you|what'?s your name|what is your name|let me know your name|may i know your name)\b/i.test(
+      lower,
+    );
+  const asksHowAreYou =
+    /\b(how are you|how are you doing|and you\??|what about you)\b/i.test(
+      lower,
+    );
+  const audioCheck =
+    /\b(can you hear me|can hear you|i can hear you|i hear you|hear you clearly|can'?t hear|cannot hear|can not hear|no audio|voice is not audible|are you there|do you clearly|you clearly)\b/i.test(
+      lower,
+    );
+  const saysGood =
+    /\b(i'?m|i am|doing|feel|feeling)?\s*(good|fine|okay|ok|great|well|ready)\b/i.test(
+      lower,
+    );
+  const saysNervous =
+    /\b(nervous|anxious|bit nervous|little nervous|excited)\b/i.test(lower);
+  const thanks = /\b(thank you|thanks|appreciate|thank you for inviting|thanks for inviting|thanks for the invite|thank you for this opportunity|thanks for this opportunity|giving me this opportunity)\b/i.test(lower);
+  const hasWorkEvidence =
+    /\b(worked|experience|technical support|customer|client|ticket|project|handled|resolved|managed|led|built|improved|role|support engineer|customer success)\b/i.test(
+      lower,
+    );
+  const isMostlySocial =
+    (asksName ||
+      asksHowAreYou ||
+      audioCheck ||
+      saysGood ||
+      saysNervous ||
+      thanks) &&
+    (wordCount <= 28 || !hasWorkEvidence);
+  return {
+    asksName,
+    asksHowAreYou,
+    audioCheck,
+    saysGood,
+    saysNervous,
+    thanks,
+    hasWorkEvidence,
+    isMostlySocial,
+  };
 }
 
-function buildMultiIntentRapportReply(input: UnifiedRecruiterInput, targetRole: string) {
+function buildMultiIntentRapportReply(
+  input: UnifiedRecruiterInput,
+  targetRole: string,
+) {
   const answer = cleanText(input.answer);
   const multi = detectCandidateMultiIntent(answer);
   const recruiterName = recruiterDisplayNameFromSetup(input.setup);
   const parts: string[] = [];
 
   if (multi.asksName) {
-    parts.push(`Of course — I’m ${recruiterName}, your recruiter for this interview.`);
+    parts.push(
+      `Of course — I’m ${recruiterName}, your recruiter for this interview.`,
+    );
   }
 
   if (multi.asksHowAreYou) {
@@ -767,15 +1214,23 @@ function buildMultiIntentRapportReply(input: UnifiedRecruiterInput, targetRole: 
   }
 
   if (multi.audioCheck) {
-    if (/can'?t hear|cannot hear|can not hear|no audio|voice is not audible/i.test(answer)) {
-      parts.push("Thanks for telling me. I’ll keep the transcript visible as well, and we can continue once the audio is clear on your side.");
+    if (
+      /can'?t hear|cannot hear|can not hear|no audio|voice is not audible/i.test(
+        answer,
+      )
+    ) {
+      parts.push(
+        "Thanks for telling me. I’ll keep the transcript visible as well, and we can continue once the audio is clear on your side.",
+      );
     } else {
       parts.push("Yes, I can hear you clearly.");
     }
   }
 
   if (multi.saysNervous) {
-    parts.push("That’s completely normal at the start of an interview, so let’s ease into it.");
+    parts.push(
+      "That’s completely normal at the start of an interview, so let’s ease into it.",
+    );
   } else if (multi.saysGood || multi.thanks) {
     parts.push("Good to hear.");
   }
@@ -789,25 +1244,131 @@ function isMostlyMultiIntentRapport(answer: string) {
   return detectCandidateMultiIntent(answer).isMostlySocial;
 }
 
+function buildSocialAcknowledgementPrefix(input: UnifiedRecruiterInput) {
+  const answer = cleanText(input.answer);
+  const lower = answer.toLowerCase();
+  const multi = detectCandidateMultiIntent(answer);
+  const recruiterName = recruiterDisplayNameFromSetup(input.setup);
+  const parts: string[] = [];
+
+  if (multi.audioCheck) {
+    if (/can'?t hear|cannot hear|can not hear|no audio|voice is not audible/i.test(lower)) {
+      parts.push("Thanks for telling me — I can hear you on my side, and I’ll keep the transcript visible too.");
+    } else {
+      parts.push("Yes, I can hear you clearly.");
+    }
+  }
+
+  if (multi.asksName) {
+    parts.push(`Of course — I’m ${recruiterName}, your recruiter for this interview.`);
+  }
+
+  if (multi.asksHowAreYou) {
+    parts.push("I’m doing well, thank you for asking.");
+  }
+
+  if (multi.thanks) {
+    parts.push("You’re very welcome — glad to have you here.");
+  }
+
+  if (multi.saysNervous) {
+    parts.push("That’s completely normal, so let’s ease into it.");
+  }
+
+  return unique(parts, 5).join(" ");
+}
+
+function hasSocialAcknowledgementNeed(answer: string) {
+  const multi = detectCandidateMultiIntent(answer);
+  return multi.audioCheck || multi.asksName || multi.asksHowAreYou || multi.thanks || multi.saysNervous;
+}
+
+function prependSocialAcknowledgementIfNeeded(
+  input: UnifiedRecruiterInput,
+  decision: UnifiedRecruiterDecision,
+): UnifiedRecruiterDecision {
+  const answer = cleanText(input.answer);
+  if (!hasSocialAcknowledgementNeed(answer)) return decision;
+  const prefix = buildSocialAcknowledgementPrefix(input);
+  if (!prefix) return decision;
+
+  const spoken = cleanText(decision.spokenReply);
+  const alreadyAcknowledged =
+    /\b(i can hear you|yes, i can hear|i’m .*recruiter|i'm .*recruiter|you’re very welcome|you're very welcome|glad to have you|thank you for asking)\b/i.test(
+      spoken,
+    );
+
+  if (alreadyAcknowledged) return decision;
+
+  return {
+    ...decision,
+    spokenReply: `${prefix} ${spoken}`.trim(),
+    feedback:
+      decision.feedback ||
+      "Acknowledged the candidate’s social/setup comment before continuing the interview.",
+    psychology: {
+      ...decision.psychology,
+      patience: clamp((decision.psychology?.patience ?? 70) + 2, 20, 95),
+      engagement: clamp((decision.psychology?.engagement ?? 70) + 2, 20, 95),
+    },
+    cinematicRealism: decision.cinematicRealism
+      ? {
+          ...decision.cinematicRealism,
+          emotionalBeat: "warming",
+          shouldSoften: true,
+          naturalTransition:
+            decision.cinematicRealism.naturalTransition ||
+            "The recruiter acknowledges the social cue before continuing.",
+        }
+      : decision.cinematicRealism,
+  };
+}
+
 function extractStickyMemorySignals(answer: string) {
   const text = cleanText(answer).toLowerCase();
   const signals: string[] = [];
-  if (/\btechnical support|support engineer|customer support|ticket|troubleshoot|resolved issues?\b/i.test(text)) {
+  if (
+    /\btechnical support|support engineer|customer support|ticket|troubleshoot|resolved issues?\b/i.test(
+      text,
+    )
+  ) {
     signals.push("Technical support background");
   }
-  if (/\bcustomer|client|customer-facing|customer facing|rapport|relationship|satisfaction|csat|repeat customer|customers came back|asked for me\b/i.test(text)) {
+  if (
+    /\bcustomer|client|customer-facing|customer facing|rapport|relationship|satisfaction|csat|repeat customer|customers came back|asked for me\b/i.test(
+      text,
+    )
+  ) {
     signals.push("Customer-facing experience and satisfaction focus");
   }
-  if (/\bcustomer success|success manager|retention|onboarding|renewal|account health|relationship management\b/i.test(text)) {
+  if (
+    /\bcustomer success|success manager|retention|onboarding|renewal|account health|relationship management\b/i.test(
+      text,
+    )
+  ) {
     signals.push("Motivation toward Customer Success responsibilities");
   }
-  if (/\b(language|grammar|english|german|communication)\b.*\b(weakness|improve|develop|better|challenge)|\bweakness\b.*\b(language|grammar|english|german|communication)\b/i.test(text)) {
+  if (
+    /\b(language|grammar|english|german|communication)\b.*\b(weakness|improve|develop|better|challenge)|\bweakness\b.*\b(language|grammar|english|german|communication)\b/i.test(
+      text,
+    )
+  ) {
     signals.push("Language/communication development area");
   }
-  if (/\bgermany|moved to germany|learned german|learn the language|quick learner|learn quickly|adapted\b/i.test(text)) {
-    signals.push("Adaptability and quick learning after moving/learning language");
+  if (
+    /\bgermany|moved to germany|learned german|learn the language|quick learner|learn quickly|adapted\b/i.test(
+      text,
+    )
+  ) {
+    signals.push(
+      "Adaptability and quick learning after moving/learning language",
+    );
   }
-  if (/\b(fix|resolve|resolved|as soon as possible|faster|quickly|reduced|improved)\b.*\b(issue|customer|ticket|problem)\b/i.test(text)) {
+  if (
+    /\b(fix|resolve|resolved|as soon as possible|faster|quickly|reduced|improved)\b.*\b(issue|customer|ticket|problem)\b/i.test(
+      text,
+    )
+  ) {
     signals.push("Fast issue-resolution mindset");
   }
   return unique(signals, 8);
@@ -819,11 +1380,17 @@ function inferIntentHeuristically(answer: string): CandidateIntent {
 
   if (!answer) return "clarification";
 
-  if (/^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(lower)) {
+  if (
+    /^(hi|hello|hey|good morning|good afternoon|good evening)\b/i.test(lower)
+  ) {
     if (words.length <= 8) return "greeting";
   }
 
-  if (/\b(can'?t hear|cannot hear|can not hear|no audio|audio is not working|voice is not audible|i can hear you|can you hear me|are you there|can you see me)\b/i.test(lower)) {
+  if (
+    /\b(can'?t hear|cannot hear|can not hear|no audio|audio is not working|voice is not audible|i can hear you|can you hear me|are you there|can you see me)\b/i.test(
+      lower,
+    )
+  ) {
     return "smalltalk";
   }
 
@@ -831,44 +1398,79 @@ function inferIntentHeuristically(answer: string): CandidateIntent {
     return "smalltalk";
   }
 
-  if (/\b(what should i do|what do i need to do|can you explain|repeat the question|what do you mean|i did not understand|i don'?t understand|could you repeat|please repeat|what is the task|how should i answer|should i start)\b/i.test(lower)) {
+  if (
+    /\b(what should i do|what do i need to do|can you explain|repeat the question|what do you mean|i did not understand|i don'?t understand|could you repeat|please repeat|what is the task|how should i answer|should i start)\b/i.test(
+      lower,
+    )
+  ) {
     return "clarification";
   }
 
-  if (/\b(do you know|have you heard of|what is|who is|can you tell me|does this app know|what does .* mean|meaning of|define|explain .* to me)\b/i.test(lower)) {
+  if (
+    /\b(do you know|have you heard of|what is|who is|can you tell me|does this app know|what does .* mean|meaning of|define|explain .* to me)\b/i.test(
+      lower,
+    )
+  ) {
     return "candidate_question";
   }
 
-  if (/\b(wait|hold on|stop|one second|before that|sorry to interrupt|let me interrupt|pause)\b/i.test(lower)) {
+  if (
+    /\b(wait|hold on|stop|one second|before that|sorry to interrupt|let me interrupt|pause)\b/i.test(
+      lower,
+    )
+  ) {
     return "interruption";
   }
 
-  if (words.length < 5 && !/\b(i|my|we|our|worked|handled|built|managed|led|created|improved|customer|project|experience|responsible)\b/i.test(lower)) {
+  if (
+    words.length < 5 &&
+    !/\b(i|my|we|our|worked|handled|built|managed|led|created|improved|customer|project|experience|responsible)\b/i.test(
+      lower,
+    )
+  ) {
     return "clarification";
   }
 
-  if (/\b(photoshop|word|microsoft word|powerpoint)\b.*\b(cloud infrastructure|kernel|compiler|operating system|engine architecture|deep learning model|backend api|database cluster)\b/i.test(lower)) {
+  if (
+    /\b(photoshop|word|microsoft word|powerpoint)\b.*\b(cloud infrastructure|kernel|compiler|operating system|engine architecture|deep learning model|backend api|database cluster)\b/i.test(
+      lower,
+    )
+  ) {
     return "nonsense";
   }
 
-  if (/\b(single[-\s]?handedly|personally built all|invented|created chatgpt|designed.*entire|owned.*entire company|ceo of google|ceo of microsoft|founded amazon|built google|made tesla)\b/i.test(lower)) {
+  if (
+    /\b(single[-\s]?handedly|personally built all|invented|created chatgpt|designed.*entire|owned.*entire company|ceo of google|ceo of microsoft|founded amazon|built google|made tesla)\b/i.test(
+      lower,
+    )
+  ) {
     return "possible_exaggeration";
   }
 
-  if (/\b(nervous|anxious|fine|good|okay|ok|ready|can hear you|doing well)\b/i.test(lower) && words.length <= 16 && !/\b(worked|experience|customer|support|role|skill|project|company|technical|success)\b/i.test(lower)) return "smalltalk";
+  if (
+    /\b(nervous|anxious|fine|good|okay|ok|ready|can hear you|doing well)\b/i.test(
+      lower,
+    ) &&
+    words.length <= 16 &&
+    !/\b(worked|experience|customer|support|role|skill|project|company|technical|success)\b/i.test(
+      lower,
+    )
+  )
+    return "smalltalk";
 
   if (words.length < 12) return "partial_answer";
 
   return "interview_answer";
 }
 
-
-
 function isIntroRapportQuestion(currentQuestion: string) {
   const question = cleanText(currentQuestion).toLowerCase();
   return (
-    /\b(how are you|how are you today|can you hear me|are you there|nice to meet you)\b/i.test(question) ||
-    (!question || question === "tell me about yourself.")
+    /\b(how are you|how are you today|can you hear me|are you there|nice to meet you)\b/i.test(
+      question,
+    ) ||
+    !question ||
+    question === "tell me about yourself."
   );
 }
 
@@ -878,23 +1480,46 @@ function isCandidateRapportReply(answer: string) {
   if (!lower) return false;
 
   // These are human rapport/setup replies, not competency answers.
-  if (/\b(i'?m|i am|feeling|bit|little|very)\b[^.]{0,35}\b(nervous|anxious|excited|fine|good|okay|ok|well|ready)\b/i.test(lower)) return true;
-  if (/\b(good|fine|okay|ok|great|doing well|all good|i can hear you|can hear you|yes i can hear|yeah i can hear)\b/i.test(lower) && words.length <= 16) return true;
-  if (/\b(no|yes),?\s*(problem|issue|trouble)\b/i.test(lower) && words.length <= 12) return true;
+  if (
+    /\b(i'?m|i am|feeling|bit|little|very)\b[^.]{0,35}\b(nervous|anxious|excited|fine|good|okay|ok|well|ready)\b/i.test(
+      lower,
+    )
+  )
+    return true;
+  if (
+    /\b(good|fine|okay|ok|great|doing well|all good|i can hear you|can hear you|yes i can hear|yeah i can hear)\b/i.test(
+      lower,
+    ) &&
+    words.length <= 16
+  )
+    return true;
+  if (
+    /\b(no|yes),?\s*(problem|issue|trouble)\b/i.test(lower) &&
+    words.length <= 12
+  )
+    return true;
   if (/\b(no,?\s*)?i just said\b/i.test(lower)) return true;
   if (/\b(thank you|thanks)\b/i.test(lower) && words.length <= 14) return true;
 
   return false;
 }
 
-function buildRapportReply(answer: string, targetRole: string, input?: UnifiedRecruiterInput) {
+function buildRapportReply(
+  answer: string,
+  targetRole: string,
+  input?: UnifiedRecruiterInput,
+) {
   const lower = cleanText(answer).toLowerCase();
 
   if (input && isMostlyMultiIntentRapport(answer)) {
     return buildMultiIntentRapportReply(input, targetRole);
   }
 
-  if (/\b(can'?t hear|cannot hear|can not hear|no audio|voice is not audible)\b/i.test(lower)) {
+  if (
+    /\b(can'?t hear|cannot hear|can not hear|no audio|voice is not audible)\b/i.test(
+      lower,
+    )
+  ) {
     return `Thanks for telling me. I can hear you on my side, and I’ll keep everything visible in the transcript too. Once you’re ready, let’s start with your background and how it connects to ${targetRole}.`;
   }
 
@@ -902,7 +1527,11 @@ function buildRapportReply(answer: string, targetRole: string, input?: UnifiedRe
     return `That’s completely normal. Most people feel a bit nervous at the start, so let’s ease into it. Tell me a little about yourself and how your recent experience connects to ${targetRole}.`;
   }
 
-  if (/\b(can hear you|i can hear you|yeah i can hear|yes i can hear)\b/i.test(lower)) {
+  if (
+    /\b(can hear you|i can hear you|yeah i can hear|yes i can hear)\b/i.test(
+      lower,
+    )
+  ) {
     return `Great, glad we’re connected. Let’s start naturally: tell me a little about yourself and how your recent experience connects to ${targetRole}.`;
   }
 
@@ -913,29 +1542,45 @@ function buildRapportReply(answer: string, targetRole: string, input?: UnifiedRe
   return `Good to hear. Let’s start naturally: tell me a little about yourself and how your recent experience connects to ${targetRole}.`;
 }
 
-function answerLikelyAddressesQuestion(answer: string, currentQuestion: string) {
+function answerLikelyAddressesQuestion(
+  answer: string,
+  currentQuestion: string,
+) {
   const answerLower = answer.toLowerCase();
   const questionLower = currentQuestion.toLowerCase();
 
-  if (/tell me (a little )?about yourself|introduce yourself|walk me through your background/.test(questionLower)) {
-    return /\b(i am|i'm|my background|i have|worked|experience|currently|previously|role|customer|support|data|project|managed|handled|built|led)\b/i.test(answerLower);
+  if (
+    /tell me (a little )?about yourself|introduce yourself|walk me through your background/.test(
+      questionLower,
+    )
+  ) {
+    return /\b(i am|i'm|my background|i have|worked|experience|currently|previously|role|customer|support|data|project|managed|handled|built|led)\b/i.test(
+      answerLower,
+    );
   }
 
-  if (/time|example|situation|moment|describe|walk me through/.test(questionLower)) {
-    return /\b(when|in my|at my|there was|we had|i had|i handled|i managed|i led|i worked|situation|project|customer|team|result|outcome|because|so i)\b/i.test(answerLower);
+  if (
+    /time|example|situation|moment|describe|walk me through/.test(questionLower)
+  ) {
+    return /\b(when|in my|at my|there was|we had|i had|i handled|i managed|i led|i worked|situation|project|customer|team|result|outcome|because|so i)\b/i.test(
+      answerLower,
+    );
   }
 
   return answer.split(/\s+/).length >= 12;
 }
 
-
 function hasQualitativeOutcome(answer: string) {
   const lower = cleanText(answer).toLowerCase();
-  return /\b(customers? (?:were|was|became|felt|got|stayed|returned|came back|asked for me|trusted|happy|satisfied)|customer satisfaction|positive feedback|repeat customer|repeat business|returned back|asked for me again|fewer complaints|less escalation|resolved faster|fixed faster|saved time|improved experience|better experience|issue was resolved|problem was solved|they were happy|they trusted me|renewal|retention|reduced churn|csat|nps)\b/i.test(lower);
+  return /\b(customers? (?:were|was|became|felt|got|stayed|returned|came back|asked for me|trusted|happy|satisfied)|customer satisfaction|positive feedback|repeat customer|repeat business|returned back|asked for me again|fewer complaints|less escalation|resolved faster|fixed faster|saved time|improved experience|better experience|issue was resolved|problem was solved|they were happy|they trusted me|renewal|retention|reduced churn|csat|nps)\b/i.test(
+    lower,
+  );
 }
 
 function hasQuantitativeOutcome(answer: string) {
-  return /\b(\d+\s*(?:%|percent|hours?|days?|weeks?|months?|customers?|clients?|tickets?|cases?|users?|projects?)|increased|reduced|improved|saved|cut|decreased|grew|resolved|closed|delivered|launched|retained|renewed|csat|nps|sla|kpi)\b/i.test(answer);
+  return /\b(\d+\s*(?:%|percent|hours?|days?|weeks?|months?|customers?|clients?|tickets?|cases?|users?|projects?)|increased|reduced|improved|saved|cut|decreased|grew|resolved|closed|delivered|launched|retained|renewed|csat|nps|sla|kpi)\b/i.test(
+    answer,
+  );
 }
 
 function hasAnyOutcome(answer: string) {
@@ -943,32 +1588,151 @@ function hasAnyOutcome(answer: string) {
 }
 
 function wasLastRecruiterAskingForImpact(transcript?: TranscriptItem[]) {
-  const lastRecruiter = (transcript || []).slice().reverse().find((item) => item.role === "recruiter");
+  const lastRecruiter = (transcript || [])
+    .slice()
+    .reverse()
+    .find((item) => item.role === "recruiter");
   const text = cleanText(lastRecruiter?.text).toLowerCase();
-  return /\b(result|impact|what changed|outcome|measurable|what happened after|after your work)\b/i.test(text);
+  return /\b(result|impact|what changed|outcome|measurable|what happened after|after your work)\b/i.test(
+    text,
+  );
 }
 
-function repeatedRecruiterLineRisk(input: UnifiedRecruiterInput, nextLine: string) {
+function getRecentRecruiterLines(input: UnifiedRecruiterInput, take = 6) {
+  return (input.transcript || [])
+    .filter((item) => item.role === "recruiter")
+    .slice(-take)
+    .map((item) => cleanText(item.text));
+}
+
+function getLastRecruiterLine(input: UnifiedRecruiterInput) {
+  return getRecentRecruiterLines(input, 1)[0] || "";
+}
+
+function wasLastRecruiterAskingForDecision(input: UnifiedRecruiterInput) {
+  const text =
+    `${getLastRecruiterLine(input)} ${cleanText(input.currentQuestion)}`.toLowerCase();
+  return /\b(hardest decision|difficult decision|tough decision|judg(e)?ment call|trade[- ]?off|decision you made|what did you decide|hardest part|difficult part)\b/i.test(
+    text,
+  );
+}
+
+function answeredDecisionFollowUp(answer: string) {
+  const lower = cleanText(answer).toLowerCase();
+  const hasDifficultyOrTradeoff =
+    /\b(hard|difficult|tough|challenge|decision|decide|convince|refused|not willing|wouldn'?t|couldn'?t|broken|no proper solution|had to let|let them go|send them off|felt bad|uncomfortable|unhappy|elderly|old customer|risk|trade[- ]?off|balance|honest|empathy|emotionally)\b/i.test(
+      lower,
+    );
+  const hasCustomerContext =
+    /\b(customer|client|user|router|wifi|wi[- ]?fi|internet|support|issue|problem|solution|technical|troubleshoot|buy|purchase|replace|product)\b/i.test(
+      lower,
+    );
+  return (
+    hasDifficultyOrTradeoff &&
+    (hasCustomerContext || lower.split(/\s+/).length >= 18)
+  );
+}
+
+function buildDecisionFollowupResolution(
+  input: UnifiedRecruiterInput,
+  answer: string,
+  targetRole: string,
+) {
+  const lower = cleanText(answer).toLowerCase();
+
+  if (/\b(elderly|old customer|old person|senior)\b/i.test(lower)) {
+    return `That makes sense. With an elderly customer, the challenge is not just technical — it is balancing honesty, patience, and empathy. For ${targetRole}, that matters a lot. How would you handle a similar customer today if they were frustrated but still needed a solution?`;
+  }
+
+  if (
+    /\b(refused|not willing|wouldn'?t|did not accept|didn'?t accept|not accept)\b/i.test(
+      lower,
+    )
+  ) {
+    return `That is a realistic customer situation. You could not force the customer, so the important part is how clearly and calmly you explained the options. How did you manage the customer's emotions during that conversation?`;
+  }
+
+  if (
+    /\b(broken|not work|doesn'?t work|didn'?t function|no solution|without any proper solution)\b/i.test(
+      lower,
+    )
+  ) {
+    return `I understand. The technical issue had a hard limit, and you had to communicate that without damaging trust. What did you do to make sure the customer still felt supported?`;
+  }
+
+  return `That answers the decision part. I can see the trade-off: you had to be honest while still protecting the customer relationship. Looking back, what would you do differently in that situation?`;
+}
+
+function sameFollowupIntentRepeated(
+  input: UnifiedRecruiterInput,
+  intentPattern: RegExp,
+  minimum = 2,
+) {
+  const count = getRecentRecruiterLines(input, 6).filter((line) =>
+    intentPattern.test(line),
+  ).length;
+  return count >= minimum;
+}
+
+function shouldForceDecisionTopicTransition(
+  input: UnifiedRecruiterInput,
+  answer: string,
+) {
+  return (
+    wasLastRecruiterAskingForDecision(input) && answeredDecisionFollowUp(answer)
+  );
+}
+
+function repeatedRecruiterLineRisk(
+  input: UnifiedRecruiterInput,
+  nextLine: string,
+) {
   const normalizedNext = cleanText(nextLine).toLowerCase();
   if (!normalizedNext) return false;
   const recentRecruiterLines = (input.transcript || [])
     .filter((item) => item.role === "recruiter")
     .slice(-6)
     .map((item) => cleanText(item.text).toLowerCase());
-  return recentRecruiterLines.some((line) => line && (line === normalizedNext || line.includes(normalizedNext.slice(0, 58)) || normalizedNext.includes(line.slice(0, 58))));
+  return recentRecruiterLines.some(
+    (line) =>
+      line &&
+      (line === normalizedNext ||
+        line.includes(normalizedNext.slice(0, 58)) ||
+        normalizedNext.includes(line.slice(0, 58))),
+  );
 }
 
-function buildHumanProgressionQuestion(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, memory: RecruiterMemoryProfile, answer: string) {
+function buildHumanProgressionQuestion(
+  input: UnifiedRecruiterInput,
+  cvRead: CandidateEvidenceProfile,
+  memory: RecruiterMemoryProfile,
+  answer: string,
+) {
   const setup = input.setup || {};
   const jobDescription = cleanText(setup.jobDescription);
   const cvText = cleanText(setup.cvText);
-  const targetRole = firstNonEmpty(setup.targetRole, extractRoleFromJobDescription(jobDescription), "this role");
-  const candidateTurns = (input.transcript || []).filter((item) => item.role === "candidate").length;
+  const targetRole = firstNonEmpty(
+    setup.targetRole,
+    extractRoleFromJobDescription(jobDescription),
+    "this role",
+  );
+  const candidateTurns = (input.transcript || []).filter(
+    (item) => item.role === "candidate",
+  ).length;
   const missingSkills = findMissingJobSkills(cvText, jobDescription);
   const lower = cleanText(answer).toLowerCase();
 
+  if (
+    wasLastRecruiterAskingForDecision(input) &&
+    answeredDecisionFollowUp(answer)
+  ) {
+    return buildDecisionFollowupResolution(input, answer, targetRole);
+  }
+
   if (candidateTurns <= 2) {
-    if (/support|customer|client|ticket|relationship|satisfaction/i.test(lower)) {
+    if (
+      /support|customer|client|ticket|relationship|satisfaction/i.test(lower)
+    ) {
       return "That customer-facing experience is relevant. Can you tell me about one difficult customer situation you handled and what you learned from it?";
     }
     return `Thanks. What is making you interested in moving toward ${targetRole} now?`;
@@ -979,16 +1743,24 @@ function buildHumanProgressionQuestion(input: UnifiedRecruiterInput, cvRead: Can
     return `I see ${skill} in the role requirements, but it is not very clear in your CV. Have you worked with it before, or how would you close that gap quickly if you joined?`;
   }
 
-  if (/strength|good at|best at|strong/i.test(cleanText(input.currentQuestion).toLowerCase())) {
+  if (
+    /strength|good at|best at|strong/i.test(
+      cleanText(input.currentQuestion).toLowerCase(),
+    )
+  ) {
     return "That helps. What would you say is your biggest development area or weakness right now?";
   }
 
-  if (/weakness|challenge|development area/i.test(cleanText(input.currentQuestion).toLowerCase())) {
+  if (
+    /weakness|challenge|development area/i.test(
+      cleanText(input.currentQuestion).toLowerCase(),
+    )
+  ) {
     return "Thanks for being honest. Tell me about a recent situation where you had to learn something quickly.";
   }
 
-  if (/customer|client|stakeholder|relationship|support|ticket/i.test(lower)) {
-    return "Let’s go one level deeper. What did you do when the customer was unhappy or the issue was not easy to solve?";
+  if (/customer|client|stakeholder|relationship|support|ticket|router|wifi|internet|technical|frustrated|unhappy/i.test(lower)) {
+    return buildOperationalCustomerFollowUp(input, answer, targetRole);
   }
 
   if (/data|analysis|sql|excel|dashboard|metric|report/i.test(lower)) {
@@ -998,58 +1770,262 @@ function buildHumanProgressionQuestion(input: UnifiedRecruiterInput, cvRead: Can
   return buildNaturalNextQuestion(input, cvRead, memory, answer);
 }
 
-function shouldAcceptPartialOutcome(answer: string, input: UnifiedRecruiterInput) {
-  return wasLastRecruiterAskingForImpact(input.transcript) && hasAnyOutcome(answer);
+function shouldAcceptPartialOutcome(
+  answer: string,
+  input: UnifiedRecruiterInput,
+) {
+  return (
+    wasLastRecruiterAskingForImpact(input.transcript) && hasAnyOutcome(answer)
+  );
 }
 
-function detectQuestionKind(question: string): UnifiedRecruiterDecision["conversationStage"] {
+function detectQuestionKind(
+  question: string,
+): UnifiedRecruiterDecision["conversationStage"] {
   const q = cleanText(question).toLowerCase();
-  if (/can you hear|how are you|nice to meet|hello|hi/.test(q)) return "audio_check";
-  if (/tell me.*about yourself|background|recent experience|introduce/.test(q)) return "background";
-  if (/why.*(role|position|interested|switch|changing)|why.*customer success|move.*customer/.test(q)) return "role_fit";
+  if (/can you hear|how are you|nice to meet|hello|hi/.test(q))
+    return "audio_check";
+  if (/tell me.*about yourself|background|recent experience|introduce/.test(q))
+    return "background";
+  if (
+    /why.*(role|position|interested|switch|changing)|why.*customer success|move.*customer/.test(
+      q,
+    )
+  )
+    return "role_fit";
   if (/strength|best at|good at/.test(q)) return "strengths";
   if (/weakness|development area|challenge/.test(q)) return "weakness";
-  if (/skill|worked with|knowledge of|close that gap|requirement|missing/.test(q)) return "skill_gap";
-  if (/situation|example|time when|handled|difficult|customer|stakeholder|pressure|learn/.test(q)) return "behavioral";
+  if (
+    /skill|worked with|knowledge of|close that gap|requirement|missing/.test(q)
+  )
+    return "skill_gap";
+  if (
+    /situation|example|time when|handled|difficult|customer|stakeholder|pressure|learn/.test(
+      q,
+    )
+  )
+    return "behavioral";
   return "behavioral";
 }
 
 function detectCandidateSignals(answer: string) {
   const text = cleanText(answer).toLowerCase();
   return {
-    hasSupport: /support|technical support|customer support|helpdesk|ticket|issue|resolve|troubleshoot/.test(text),
-    hasCustomer: /customer|client|user|stakeholder|csat|satisfaction|rapport|relationship|returned|asked for me|repeat/.test(text),
-    hasLearning: /learn|quick learner|germany|german|language|adapt|new tool|new product|training/.test(text),
-    hasWeaknessLanguage: /weakness|language|grammar|communication|german|english|improve my/.test(text),
-    hasRoleFit: /customer success|customer service|relationship|retention|onboarding|renewal|support|customer-facing|customer facing/.test(text),
-    hasSpecificExample: /for example|one time|once|situation|when|case|customer|ticket|project|issue/.test(text),
+    hasSupport:
+      /support|technical support|customer support|helpdesk|ticket|issue|resolve|troubleshoot/.test(
+        text,
+      ),
+    hasCustomer:
+      /customer|client|user|stakeholder|csat|satisfaction|rapport|relationship|trust|convinc|understand|explained?|wrap|rapple|returned|asked for me|repeat/.test(
+        text,
+      ),
+    hasLearning:
+      /learn|quick learner|germany|german|language|adapt|new tool|new product|training/.test(
+        text,
+      ),
+    hasWeaknessLanguage:
+      /weakness|language|grammar|communication|german|english|improve my/.test(
+        text,
+      ),
+    hasRoleFit:
+      /customer success|customer service|relationship|retention|onboarding|renewal|support|customer-facing|customer facing|customer trust|build trust|convinc|make.*understand|explain.*customer/.test(
+        text,
+      ),
+    hasSpecificExample:
+      /for example|one time|once|situation|when|case|customer|ticket|project|issue/.test(
+        text,
+      ),
     hasQualitativeResult: hasQualitativeOutcome(answer),
     hasQuantResult: hasQuantitativeOutcome(answer),
     wordCount: text.split(/\s+/).filter(Boolean).length,
   };
 }
 
-function humanTransition(input: UnifiedRecruiterInput, memory: RecruiterMemoryProfile, answer: string) {
+
+function isCustomerSuccessShortBackgroundAnswer(answer: string, targetRole: string, input?: UnifiedRecruiterInput) {
+  const text = cleanText(answer).toLowerCase();
+  const role = cleanText(targetRole).toLowerCase();
+  const transcriptContext = input ? `${recentRecruiterText(input, 6)} ${recentCandidateText(input, 4)}` : "";
+  const context = `${text} ${transcriptContext}`.toLowerCase();
+
+  // Voice transcripts are often fragmented: "customer handing skills", "good fit", "this company".
+  // If the current conversation is clearly about Customer Success / customer-facing work,
+  // accept the intent instead of repeating the opener.
+  const isCustomerSuccessContext =
+    /customer success|customer service|account manager|support|client|success manager|customer-facing|customer facing/.test(role) ||
+    /customer success manager|customer success|customer-facing role|customer facing role|technical support|support background/.test(context);
+
+  if (!isCustomerSuccessContext) return false;
+
+  const hasCustomerSignal = /customer|client|user|stakeholder|customer[- ]?facing|satisfaction|happy|rapport|rapple|trust|convinc|understand|relationship|support|handling|handing|handled|helped|communicat|explain/.test(context);
+  const hasMotivationSignal = /good fit|fit|change|move|field|interested|try|role|company|fully|100%|customer side|non[- ]technical|less technical|customer success|work for/.test(context);
+  const hasTransferableSkillSignal = /skill|experience|background|support|technical|customer|handling|handing|communication|relationship/.test(context);
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  return hasCustomerSignal && (hasMotivationSignal || hasTransferableSkillSignal || wordCount >= 6);
+}
+
+function buildCustomerSuccessDepthQuestion(input: UnifiedRecruiterInput, answer: string, targetRole: string) {
+  const text = cleanText(answer).toLowerCase();
+  const recent = getRecentRecruiterLines(input, 8).join(" ").toLowerCase();
+
+  if (/longer[- ]term|relationship|retention|renewal|account|success plan|health score/.test(recent)) {
+    return `Good. In ${targetRole}, the key shift is from solving one ticket to owning the relationship. Give me one example of how you would follow up after solving the issue so the customer stays engaged long term.`;
+  }
+
+  if (/rapport|rapple|trust|convinc|make.*understand|explain/.test(text)) {
+    return `That customer trust is relevant. Give me one specific customer situation where you had to explain something difficult, calm the customer, and still move the issue forward.`;
+  }
+
+  if (/technical|support|ticket|troubleshoot|issue|router|internet|product/.test(text)) {
+    return `Your support background is useful, but Customer Success is more proactive. Tell me about a customer issue you handled, then explain what you would do after the fix to prevent the same problem from coming back.`;
+  }
+
+  if (/satisfaction|happy|csat|feedback|good experience/.test(text)) {
+    return `You mentioned customer satisfaction. How would you measure whether a customer is truly successful after the conversation — not just temporarily happy?`;
+  }
+
+  return `Can you give me one concrete customer example — the problem, what you personally did, and how you would turn that into a longer-term customer-success relationship?`;
+}
+
+function isOpeningQuestionRepeatAfterRelevantAnswer(input: UnifiedRecruiterInput, decisionReply: string, answer: string, targetRole: string) {
+  return (
+    /to start|tell me a little about your background|what makes you interested|recent experience connects/i.test(decisionReply) &&
+    isCustomerSuccessShortBackgroundAnswer(answer, targetRole, input)
+  );
+}
+
+function buildShortAnswerAcceptanceReply(input: UnifiedRecruiterInput, answer: string, targetRole: string) {
+  const nextQuestion = buildCustomerSuccessDepthQuestion(input, answer, targetRole);
+  return {
+    spokenReply: `Okay, I understand the direction. You’re saying your customer-facing support experience is what attracts you to ${targetRole}. ${nextQuestion}`,
+    displayQuestion: nextQuestion,
+  };
+}
+
+function detectOperationalCustomerSignals(answer: string) {
+  const text = cleanText(answer).toLowerCase();
+  return {
+    empathy:
+      /empathy|empathetic|understand|stressful|calm|patient|fellow human|frustrated|angry|upset|unhappy/.test(
+        text,
+      ),
+    stepByStep:
+      /step by step|slowly|slow step|guide|guided|walk(ed)? through|instructions?|explain(ed)? clearly/.test(
+        text,
+      ),
+    technicalTranslation:
+      /technical|router|wifi|wi-fi|internet|ip address|troubleshoot|device|computer|configuration|product/.test(
+        text,
+      ),
+    noImmediateFix:
+      /couldn'?t fix|not possible|no solution|broken|didn'?t work|doesn'?t work|not willing|refused|could not solve|escalat(e|ed|ion)/.test(
+        text,
+      ),
+    relationship:
+      /rapport|rapple|trust|relationship|came back|asked for me|customer satisfaction|csat|satisfied|happy/.test(
+        text,
+      ),
+    b2bOrB2c: /b2b|b2c|business customer|individual customer|consumer|enterprise/.test(text),
+    ownership: /\b(i|my|personally|handled|managed|explained|guided|resolved|convinced|calmed|worked with)\b/.test(text),
+    substantial: text.split(/\s+/).filter(Boolean).length >= 18,
+  };
+}
+
+function buildOperationalCustomerFollowUp(
+  input: UnifiedRecruiterInput,
+  answer: string,
+  targetRole: string,
+) {
+  const signals = detectOperationalCustomerSignals(answer);
+  const recent = getRecentRecruiterLines(input, 5).join(" ").toLowerCase();
+
+  if (signals.stepByStep && signals.technicalTranslation && !/non-technical|explain/i.test(recent)) {
+    return `That is exactly the kind of situation where communication matters. How did you translate the technical steps into language the customer could actually follow?`;
+  }
+
+  if (signals.empathy && !/exact|words|calm/i.test(recent)) {
+    return `I like that you thought about the customer's stress. Give me the practical part: what did you say or do to calm them down during the conversation?`;
+  }
+
+  if (signals.noImmediateFix && !/preserve|trust|no immediate/i.test(recent)) {
+    return `That is a realistic customer-success problem: sometimes there is no immediate fix. How would you preserve trust with the customer while still being honest about the limitation?`;
+  }
+
+  if (signals.relationship && /customer success|success manager/i.test(targetRole)) {
+    return `You keep coming back to trust and rapport, which is important for ${targetRole}. How would you turn that kind of one-time support interaction into a longer-term customer relationship?`;
+  }
+
+  if (signals.b2bOrB2c) {
+    return `You mentioned different customer types. How would your approach change between a B2B customer and a B2C customer?`;
+  }
+
+  if (signals.ownership && signals.substantial) {
+    return `That gives me a clearer picture of how you handle customers. What would you improve if you had to handle the same situation again today?`;
+  }
+
+  return `Let’s make this more practical. In that moment, what was the first thing you did to reduce the customer’s frustration?`;
+}
+
+function isCustomerOperationalAnswer(answer: string) {
+  const signals = detectOperationalCustomerSignals(answer);
+  return (
+    signals.substantial &&
+    (signals.empathy ||
+      signals.stepByStep ||
+      signals.technicalTranslation ||
+      signals.noImmediateFix ||
+      signals.relationship ||
+      signals.b2bOrB2c)
+  );
+}
+
+function humanTransition(
+  input: UnifiedRecruiterInput,
+  memory: RecruiterMemoryProfile,
+  answer: string,
+) {
   const stage = detectQuestionKind(input.currentQuestion || "");
   const signals = detectCandidateSignals(answer);
-  const targetRole = firstNonEmpty(input.setup?.targetRole, extractRoleFromJobDescription(cleanText(input.setup?.jobDescription)), "this role");
+  const targetRole = firstNonEmpty(
+    input.setup?.targetRole,
+    extractRoleFromJobDescription(cleanText(input.setup?.jobDescription)),
+    "this role",
+  );
 
-  if (stage === "background" && signals.hasSupport && signals.hasCustomer) {
+  if (
+    stage === "background" &&
+    ((signals.hasSupport && signals.hasCustomer) ||
+      isCustomerSuccessShortBackgroundAnswer(answer, targetRole, input))
+  ) {
+    const wantsCustomerSuccess = isCustomerSuccessShortBackgroundAnswer(answer, targetRole, input);
     return {
       accepted: true,
-      stage: "role_fit" as const,
-      replyLead: `That makes sense. Your technical support background gives you direct customer-facing experience, which is relevant for ${targetRole}.`,
-      nextQuestion: `What made you want to move from technical support into ${targetRole}, instead of staying in a purely technical role?`,
+      stage: wantsCustomerSuccess ? ("behavioral" as const) : ("role_fit" as const),
+      replyLead: wantsCustomerSuccess
+        ? `Okay, I understand the direction. Your customer-facing support experience is a relevant bridge into ${targetRole}.`
+        : `That makes sense. Your technical support background gives you direct customer-facing experience, which is relevant for ${targetRole}.`,
+      nextQuestion: wantsCustomerSuccess
+        ? buildCustomerSuccessDepthQuestion(input, answer, targetRole)
+        : `What made you want to move from technical support into ${targetRole}, instead of staying in a purely technical role?`,
       delta: 3,
     };
   }
 
-  if (stage === "role_fit" && (signals.hasCustomer || signals.hasRoleFit || signals.hasSupport)) {
+  if (
+    stage === "role_fit" &&
+    (signals.hasCustomer ||
+      signals.hasRoleFit ||
+      signals.hasSupport ||
+      /customer|client|trust|rapport|wrap|rapple|convinc|make them understand|explain|relationship|customer-facing|customer facing/i.test(answer))
+  ) {
     return {
       accepted: true,
       stage: "behavioral" as const,
-      replyLead: "Okay, I can see the connection now — customer trust and problem-solving are clearly part of your story.",
-      nextQuestion: "Tell me about one difficult customer situation you handled. What was the problem, what did you do, and how did the customer respond?",
+      replyLead:
+        "Okay, I can see the connection now — customer trust and problem-solving are clearly part of your story.",
+      nextQuestion:
+        "Tell me about one difficult customer situation you handled. What was the problem, what did you do, and how did the customer respond?",
       delta: 3,
     };
   }
@@ -1058,7 +2034,8 @@ function humanTransition(input: UnifiedRecruiterInput, memory: RecruiterMemoryPr
     return {
       accepted: true,
       stage: "skill_gap" as const,
-      replyLead: "That’s a realistic weakness to mention, and I appreciate that you framed it as something you are actively improving.",
+      replyLead:
+        "That’s a realistic weakness to mention, and I appreciate that you framed it as something you are actively improving.",
       nextQuestion: `In ${targetRole}, communication is important. How would you make sure language does not affect customer trust or clarity?`,
       delta: 1,
     };
@@ -1068,18 +2045,41 @@ function humanTransition(input: UnifiedRecruiterInput, memory: RecruiterMemoryPr
     return {
       accepted: true,
       stage: "behavioral" as const,
-      replyLead: "That is a useful example of adaptation, especially because moving countries and learning a language takes consistency.",
-      nextQuestion: "Now give me a work-related example where you had to learn a product, process, or customer issue quickly.",
+      replyLead:
+        "That is a useful example of adaptation, especially because moving countries and learning a language takes consistency.",
+      nextQuestion:
+        "Now give me a work-related example where you had to learn a product, process, or customer issue quickly.",
       delta: 2,
     };
   }
 
+  if (stage === "behavioral" && isCustomerOperationalAnswer(answer)) {
+    return {
+      accepted: true,
+      stage: "behavioral" as const,
+      replyLead:
+        "That gives me a more practical view of how you handle customers.",
+      nextQuestion: buildOperationalCustomerFollowUp(input, answer, targetRole),
+      delta: 3,
+    };
+  }
+
   if (signals.hasQualitativeResult || signals.hasQuantResult) {
-    const next = buildHumanProgressionQuestion(input, buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription)), memory, answer);
+    const next = buildHumanProgressionQuestion(
+      input,
+      buildEvidenceProfile(
+        cleanText(input.setup?.cvText),
+        cleanText(input.setup?.jobDescription),
+      ),
+      memory,
+      answer,
+    );
     return {
       accepted: true,
       stage,
-      replyLead: signals.hasQuantResult ? "That gives me a clearer outcome." : "That gives me a qualitative outcome, which is useful.",
+      replyLead: signals.hasQuantResult
+        ? "That gives me a clearer outcome."
+        : "That gives me a qualitative outcome, which is useful.",
       nextQuestion: next,
       delta: signals.hasQuantResult ? 4 : 2,
     };
@@ -1097,18 +2097,40 @@ function shouldAvoidImpactDemand(input: UnifiedRecruiterInput) {
 
 function detectCVConflict(answer: string, profile: CandidateEvidenceProfile) {
   const lower = answer.toLowerCase();
-  const companyClaims = extractMatches(answer, [
-    /\b(Zoho|Microsoft|Amazon|Google|Tesla|Apple|Meta|Facebook|eBay|Salesforce|SAP|Oracle|IBM|Infosys|TCS|Wipro|Accenture|Deloitte|Capgemini|Cognizant|Freshworks|HubSpot|ServiceNow|Zendesk|Atlassian|Adobe|Netflix|Uber|Airbnb|Stripe|Shopify)\b/gi,
-  ], 5);
+  const companyClaims = extractMatches(
+    answer,
+    [
+      /\b(Zoho|Microsoft|Amazon|Google|Tesla|Apple|Meta|Facebook|eBay|Salesforce|SAP|Oracle|IBM|Infosys|TCS|Wipro|Accenture|Deloitte|Capgemini|Cognizant|Freshworks|HubSpot|ServiceNow|Zendesk|Atlassian|Adobe|Netflix|Uber|Airbnb|Stripe|Shopify)\b/gi,
+    ],
+    5,
+  );
 
-  const profileCompaniesLower = new Set(profile.companies.map((company) => company.toLowerCase()));
-  const unsupportedCompanyClaim = companyClaims.find((company) => !profileCompaniesLower.has(company.toLowerCase()));
+  const profileCompaniesLower = new Set(
+    profile.companies.map((company) => company.toLowerCase()),
+  );
+  const unsupportedCompanyClaim = companyClaims.find(
+    (company) => !profileCompaniesLower.has(company.toLowerCase()),
+  );
 
-  const supportBackground = profile.supportSignals.length > 0 || /support|customer|helpdesk|ticket|zoho/i.test(profile.summary);
-  const engineeringClaim = /\b(designed|architected|built|implemented|developed)\b.*\b(engine|kernel|compiler|operating system|autopilot|core infrastructure|data center|chip|hardware|vehicle platform)\b/i.test(lower);
-  const executiveClaim = /\b(ceo|cto|founder|director|head of|vp of)\b/i.test(lower) && !profile.senioritySignals.some((s) => /manager|head|director|lead|senior/i.test(s));
+  const supportBackground =
+    profile.supportSignals.length > 0 ||
+    /support|customer|helpdesk|ticket|zoho/i.test(profile.summary);
+  const engineeringClaim =
+    /\b(designed|architected|built|implemented|developed)\b.*\b(engine|kernel|compiler|operating system|autopilot|core infrastructure|data center|chip|hardware|vehicle platform)\b/i.test(
+      lower,
+    );
+  const executiveClaim =
+    /\b(ceo|cto|founder|director|head of|vp of)\b/i.test(lower) &&
+    !profile.senioritySignals.some((s) =>
+      /manager|head|director|lead|senior/i.test(s),
+    );
 
-  if (unsupportedCompanyClaim && /\b(worked|employed|at|for|joined|led|designed|built|managed)\b/i.test(lower)) {
+  if (
+    unsupportedCompanyClaim &&
+    /\b(worked|employed|at|for|joined|led|designed|built|managed)\b/i.test(
+      lower,
+    )
+  ) {
     return `The CV evidence I have does not clearly show ${unsupportedCompanyClaim}.`;
   }
 
@@ -1123,17 +2145,36 @@ function detectCVConflict(answer: string, profile: CandidateEvidenceProfile) {
   return "";
 }
 
-function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDecision {
+function buildFallbackDecision(
+  input: UnifiedRecruiterInput,
+): UnifiedRecruiterDecision {
   const answer = cleanText(input.answer);
-  const currentQuestion = cleanText(input.currentQuestion) || "Tell me about yourself.";
+  const currentQuestion =
+    cleanText(input.currentQuestion) || "Tell me about yourself.";
   const jobDescription = cleanText(input.setup?.jobDescription);
   const cvText = cleanText(input.setup?.cvText);
-  const targetRole = firstNonEmpty(input.setup?.targetRole, extractRoleFromJobDescription(jobDescription), "this role");
-  const trust = clamp(typeof input.recruiterTrust === "number" ? input.recruiterTrust : 58, 12, 92);
+  const targetRole = firstNonEmpty(
+    input.setup?.targetRole,
+    extractRoleFromJobDescription(jobDescription),
+    "this role",
+  );
+  const trust = clamp(
+    typeof input.recruiterTrust === "number" ? input.recruiterTrust : 58,
+    12,
+    92,
+  );
   const intent = inferIntentHeuristically(answer);
   const cvRead = buildEvidenceProfile(cvText, jobDescription);
-  const recruiterMemory = buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
-  const memoryContradiction = detectMeaningContradiction(answer, cvRead, recruiterMemory);
+  const recruiterMemory = buildRecruiterMemoryProfile(
+    input.transcript,
+    cvRead,
+    input.setup?.recruiterMemoryProfile,
+  );
+  const memoryContradiction = detectMeaningContradiction(
+    answer,
+    cvRead,
+    recruiterMemory,
+  );
   const cvConflict = detectCVConflict(answer, cvRead) || memoryContradiction;
 
   const basePsychology: UnifiedRecruiterPsychology = {
@@ -1147,22 +2188,51 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
 
   const introQuestion = `Tell me a little about yourself and connect your recent experience to ${targetRole}.`;
 
-  const withProfile = (decision: Omit<UnifiedRecruiterDecision, "cvRead" | "recruiterMemory" | "memoryEvents">): UnifiedRecruiterDecision => {
+  const withProfile = (
+    decision: Omit<
+      UnifiedRecruiterDecision,
+      "cvRead" | "recruiterMemory" | "memoryEvents"
+    >,
+  ): UnifiedRecruiterDecision => {
     const enriched: UnifiedRecruiterDecision = {
       ...decision,
       cvRead,
       recruiterMemory,
       memoryEvents: [],
       marketExpectation: deriveMarketExpectation(input),
-      humanImperfection: deriveHumanImperfection(input, decision, recruiterMemory),
+      humanImperfection: deriveHumanImperfection(
+        input,
+        decision,
+        recruiterMemory,
+      ),
       socialSignals: deriveSocialSignals(answer, decision, recruiterMemory),
-      cinematicRealism: deriveCinematicRealism(input, decision, deriveSocialSignals(answer, decision, recruiterMemory), deriveLivePressure(decision.psychology, decision.recruiterState, decision.intent)),
+      cinematicRealism: deriveCinematicRealism(
+        input,
+        decision,
+        deriveSocialSignals(answer, decision, recruiterMemory),
+        deriveLivePressure(
+          decision.psychology,
+          decision.recruiterState,
+          decision.intent,
+        ),
+      ),
     };
-    const updated = updateMemoryAfterDecision(answer, enriched, recruiterMemory);
-    return { ...enriched, recruiterMemory: updated.memory, memoryEvents: updated.events };
+    const updated = updateMemoryAfterDecision(
+      answer,
+      enriched,
+      recruiterMemory,
+    );
+    return {
+      ...enriched,
+      recruiterMemory: updated.memory,
+      memoryEvents: updated.events,
+    };
   };
 
-  if (isIntroRapportQuestion(currentQuestion) && isCandidateRapportReply(answer)) {
+  if (
+    isIntroRapportQuestion(currentQuestion) &&
+    isCandidateRapportReply(answer)
+  ) {
     return withProfile({
       intent: "smalltalk",
       spokenReply: buildRapportReply(answer, targetRole, input),
@@ -1172,8 +2242,13 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
       shouldStayOnCurrentQuestion: true,
       trustDelta: 0,
       recruiterState: "interested",
-      feedback: "Handled intro rapport/emotional small talk without scoring or pressure.",
-      psychology: { ...basePsychology, patience: clamp(basePsychology.patience + 4, 20, 95), engagement: clamp(basePsychology.engagement + 3, 20, 95) },
+      feedback:
+        "Handled intro rapport/emotional small talk without scoring or pressure.",
+      psychology: {
+        ...basePsychology,
+        patience: clamp(basePsychology.patience + 4, 20, 95),
+        engagement: clamp(basePsychology.engagement + 3, 20, 95),
+      },
     });
   }
 
@@ -1211,16 +2286,18 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     const multi = detectCandidateMultiIntent(answer);
     return withProfile({
       intent,
-      spokenReply: multi.asksName || multi.asksHowAreYou
-        ? buildMultiIntentRapportReply(input, targetRole)
-        : `Yes — I can handle that. I’ll keep side explanations brief so this still feels like an interview. Let’s come back to your answer: ${currentQuestion}`,
+      spokenReply:
+        multi.asksName || multi.asksHowAreYou
+          ? buildMultiIntentRapportReply(input, targetRole)
+          : `Yes — I can handle that. I’ll keep side explanations brief so this still feels like an interview. Let’s come back to your answer: ${currentQuestion}`,
       displayQuestion: currentQuestion,
       shouldAdvanceQuestion: false,
       shouldCountAsAnswer: false,
       shouldStayOnCurrentQuestion: true,
       trustDelta: 0,
       recruiterState: "interested",
-      feedback: "Answered candidate question briefly and returned to interview.",
+      feedback:
+        "Answered candidate question briefly and returned to interview.",
       psychology: basePsychology,
     });
   }
@@ -1228,7 +2305,8 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
   if (intent === "nonsense") {
     return withProfile({
       intent,
-      spokenReply: "Hold on — that combination does not really make sense technically. Can you clarify what tools or systems you actually used?",
+      spokenReply:
+        "Hold on — that combination does not really make sense technically. Can you clarify what tools or systems you actually used?",
       displayQuestion: currentQuestion,
       shouldAdvanceQuestion: false,
       shouldCountAsAnswer: false,
@@ -1237,13 +2315,21 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
       recruiterState: "skeptical",
       feedback: "Technically implausible answer challenged.",
       concern: "The answer appears technically inconsistent.",
-      psychology: { ...basePsychology, trust: clamp(trust - 6, 12, 92), skepticism: clamp(basePsychology.skepticism + 10, 12, 95) },
+      psychology: {
+        ...basePsychology,
+        trust: clamp(trust - 6, 12, 92),
+        skepticism: clamp(basePsychology.skepticism + 10, 12, 95),
+      },
     });
   }
 
   if (intent === "possible_exaggeration" || cvConflict) {
     return withProfile({
-      intent: memoryContradiction ? "contradiction" : cvConflict ? "possible_exaggeration" : intent,
+      intent: memoryContradiction
+        ? "contradiction"
+        : cvConflict
+          ? "possible_exaggeration"
+          : intent,
       spokenReply: cvConflict
         ? `I need to pause on that. ${cvConflict} Help me separate the real scope: what exactly did you personally do, and what evidence would back that up?`
         : "That sounds like a very large claim. I’m not dismissing it, but I need the realistic version: what exactly was your role, what did you personally own, and who else was involved?",
@@ -1253,16 +2339,22 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
       shouldStayOnCurrentQuestion: true,
       trustDelta: -5,
       recruiterState: "skeptical",
-      feedback: "Possible exaggeration or CV conflict challenged without moving forward.",
+      feedback:
+        "Possible exaggeration or CV conflict challenged without moving forward.",
       concern: cvConflict || "The claim may be exaggerated or unsupported.",
-      psychology: { ...basePsychology, trust: clamp(trust - 5, 12, 92), skepticism: clamp(basePsychology.skepticism + 12, 12, 95) },
+      psychology: {
+        ...basePsychology,
+        trust: clamp(trust - 5, 12, 92),
+        skepticism: clamp(basePsychology.skepticism + 12, 12, 95),
+      },
     });
   }
 
   if (intent === "partial_answer") {
     return withProfile({
       intent,
-      spokenReply: "I’m following you, but I need a little more before I can judge the fit. Give me one specific situation, what you personally did, and what changed after that.",
+      spokenReply:
+        "I’m following you, but I need a little more before I can judge the fit. Give me one specific situation, what you personally did, and what changed after that.",
       displayQuestion: currentQuestion,
       shouldAdvanceQuestion: false,
       shouldCountAsAnswer: false,
@@ -1285,7 +2377,8 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
       shouldStayOnCurrentQuestion: false,
       trustDelta: stageTransition.delta,
       recruiterState: stageTransition.delta >= 3 ? "engaged" : "interested",
-      feedback: "Accepted the candidate’s answer naturally and moved to the next realistic thread.",
+      feedback:
+        "Accepted the candidate’s answer naturally and moved to the next realistic thread.",
       conversationStage: stageTransition.stage,
       psychology: {
         ...basePsychology,
@@ -1296,7 +2389,40 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     });
   }
 
-  const candidateAttemptedQuestion = answerLikelyAddressesQuestion(answer, currentQuestion);
+  // v74: If the candidate answers a role-motivation question with customer trust,
+  // rapport, convincing, or support evidence, never fall back to the opening intro.
+  // Accept the answer and continue into a concrete customer-success situation.
+  if (
+    detectQuestionKind(currentQuestion) === "role_fit" &&
+    /customer|client|trust|rapport|wrap|rapple|convinc|make them understand|explain|relationship|customer-facing|customer facing|technical support|support/i.test(answer)
+  ) {
+    const nextQuestion =
+      "Tell me about one difficult customer situation you handled. What was the problem, what did you do, and how did the customer respond?";
+    return withProfile({
+      intent: "interview_answer",
+      spokenReply: `That makes sense. I can see why Customer Success interests you: you’re talking about customer trust, explanation, and relationship-building — not only technical fixes. ${nextQuestion}`,
+      displayQuestion: nextQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: 3,
+      recruiterState: "engaged",
+      feedback:
+        "Accepted role-motivation answer and moved into a concrete customer-success example.",
+      conversationStage: "behavioral",
+      psychology: {
+        ...basePsychology,
+        trust: clamp(trust + 3, 12, 92),
+        interest: clamp(basePsychology.interest + 7, 20, 95),
+        engagement: clamp(basePsychology.engagement + 7, 20, 95),
+      },
+    });
+  }
+
+  const candidateAttemptedQuestion = answerLikelyAddressesQuestion(
+    answer,
+    currentQuestion,
+  );
   const roleEvidence = [
     targetRole,
     jobDescription,
@@ -1307,8 +2433,15 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     ...cvRead.projectSignals,
   ];
   const roleConnectionScore = overlapScore(answer, roleEvidence);
-  const hasRoleConnection = roleConnectionScore >= 2 || /customer|client|stakeholder|support|success|ticket|sla|retention|onboarding|renewal|problem|communication|data|analysis|project|team|user|business/i.test(answer);
-  const hasPersonalOwnership = /\b(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|worked|supported|coordinated|analyzed|implemented)\b/i.test(answer);
+  const hasRoleConnection =
+    roleConnectionScore >= 2 ||
+    /customer|client|stakeholder|support|success|ticket|sla|retention|onboarding|renewal|problem|communication|data|analysis|project|team|user|business/i.test(
+      answer,
+    );
+  const hasPersonalOwnership =
+    /\b(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|worked|supported|coordinated|analyzed|implemented)\b/i.test(
+      answer,
+    );
   const hasOutcome = hasAnyOutcome(answer);
   const acceptedPartialOutcome = shouldAcceptPartialOutcome(answer, input);
 
@@ -1331,7 +2464,12 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     // For customer-success/support roles, customer-facing evidence is already a role link.
     // Do not keep asking the candidate to "make the connection" when they already mentioned customers, support, satisfaction, tickets, or rapport.
     if (hasCustomerSuccessRoleFit(answer, targetRole, input)) {
-      const nextQuestion = buildNaturalNextQuestion(input, cvRead, recruiterMemory, answer);
+      const nextQuestion = buildNaturalNextQuestion(
+        input,
+        cvRead,
+        recruiterMemory,
+        answer,
+      );
       return withProfile({
         intent: "interview_answer",
         spokenReply: `I see the link: your support background gives you customer-facing experience. ${nextQuestion}`,
@@ -1341,8 +2479,13 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
         shouldStayOnCurrentQuestion: false,
         trustDelta: 2,
         recruiterState: "interested",
-        feedback: "Accepted customer-facing role connection and moved to a deeper realistic follow-up.",
-        psychology: { ...basePsychology, trust: clamp(trust + 2, 12, 92), interest: clamp(basePsychology.interest + 4, 20, 95) },
+        feedback:
+          "Accepted customer-facing role connection and moved to a deeper realistic follow-up.",
+        psychology: {
+          ...basePsychology,
+          trust: clamp(trust + 2, 12, 92),
+          interest: clamp(basePsychology.interest + 4, 20, 95),
+        },
       });
     }
 
@@ -1356,14 +2499,19 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
       trustDelta: -2,
       recruiterState: "skeptical",
       feedback: "Candidate answered but role connection is weak.",
-      psychology: { ...basePsychology, trust: clamp(trust - 2, 12, 92), skepticism: clamp(basePsychology.skepticism + 5, 5, 95) },
+      psychology: {
+        ...basePsychology,
+        trust: clamp(trust - 2, 12, 92),
+        skepticism: clamp(basePsychology.skepticism + 5, 5, 95),
+      },
     });
   }
 
   if (!hasPersonalOwnership) {
     return withProfile({
       intent: "partial_answer",
-      spokenReply: "I’m hearing the situation, but not your personal ownership yet. What part did you actually handle yourself?",
+      spokenReply:
+        "I’m hearing the situation, but not your personal ownership yet. What part did you actually handle yourself?",
       displayQuestion: currentQuestion,
       shouldAdvanceQuestion: false,
       shouldCountAsAnswer: false,
@@ -1375,14 +2523,21 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     });
   }
 
-  const impactFollowUp = "Before we move on, give me the result or impact of that work. What changed because of what you did?";
-  const canAcceptAndMove = hasOutcome || acceptedPartialOutcome || shouldAvoidImpactDemand(input);
+  const impactFollowUp =
+    "Before we move on, give me the result or impact of that work. What changed because of what you did?";
+  const canAcceptAndMove =
+    hasOutcome || acceptedPartialOutcome || shouldAvoidImpactDemand(input);
   const nextQuestion = canAcceptAndMove
     ? buildHumanProgressionQuestion(input, cvRead, recruiterMemory, answer)
     : impactFollowUp;
 
   if (!canAcceptAndMove && repeatedRecruiterLineRisk(input, impactFollowUp)) {
-    const progressionQuestion = buildHumanProgressionQuestion(input, cvRead, recruiterMemory, answer);
+    const progressionQuestion = buildHumanProgressionQuestion(
+      input,
+      cvRead,
+      recruiterMemory,
+      answer,
+    );
     return withProfile({
       intent: "interview_answer",
       spokenReply: `Okay, I’ll take that as a qualitative outcome. It sounds like the customer trusted you enough to come back. ${progressionQuestion}`,
@@ -1392,17 +2547,22 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
       shouldStayOnCurrentQuestion: false,
       trustDelta: 2,
       recruiterState: "interested",
-      feedback: "Accepted qualitative impact to avoid looping on the same follow-up.",
-      psychology: { ...basePsychology, trust: clamp(trust + 2, 12, 92), interest: clamp(basePsychology.interest + 5, 20, 95) },
+      feedback:
+        "Accepted qualitative impact to avoid looping on the same follow-up.",
+      psychology: {
+        ...basePsychology,
+        trust: clamp(trust + 2, 12, 92),
+        interest: clamp(basePsychology.interest + 5, 20, 95),
+      },
     });
   }
 
   return withProfile({
     intent: "interview_answer",
     spokenReply: canAcceptAndMove
-      ? (shouldAvoidImpactDemand(input)
-          ? `Okay, that gives me enough context to continue. ${nextQuestion}`
-          : `Okay, that helps. ${hasQuantitativeOutcome(answer) ? "The impact is clearer now." : "I’ll treat that as a qualitative outcome."} ${nextQuestion}`)
+      ? shouldAvoidImpactDemand(input)
+        ? `Okay, that gives me enough context to continue. ${nextQuestion}`
+        : `Okay, that helps. ${hasQuantitativeOutcome(answer) ? "The impact is clearer now." : "I’ll treat that as a qualitative outcome."} ${nextQuestion}`
       : `I understand the direction. Give me just one outcome before we move on — even a rough or qualitative one is fine. What changed for the customer, team, or business?`,
     displayQuestion: nextQuestion,
     shouldAdvanceQuestion: canAcceptAndMove,
@@ -1413,12 +2573,24 @@ function buildFallbackDecision(input: UnifiedRecruiterInput): UnifiedRecruiterDe
     feedback: canAcceptAndMove
       ? "Candidate answered with role connection and acceptable outcome."
       : "Candidate connected role but still needs one outcome; asked in a softer non-looping way.",
-    psychology: { ...basePsychology, trust: clamp(trust + (canAcceptAndMove ? (hasQuantitativeOutcome(answer) ? 4 : 2) : 0), 12, 92), interest: clamp(basePsychology.interest + 6, 20, 95) },
+    psychology: {
+      ...basePsychology,
+      trust: clamp(
+        trust +
+          (canAcceptAndMove ? (hasQuantitativeOutcome(answer) ? 4 : 2) : 0),
+        12,
+        92,
+      ),
+      interest: clamp(basePsychology.interest + 6, 20, 95),
+    },
   });
 }
 
-
-function deriveLivePressure(psychology: UnifiedRecruiterPsychology, state: UnifiedRecruiterDecision["recruiterState"], intent: CandidateIntent) {
+function deriveLivePressure(
+  psychology: UnifiedRecruiterPsychology,
+  state: UnifiedRecruiterDecision["recruiterState"],
+  intent: CandidateIntent,
+) {
   const base = Math.round(
     34 +
       psychology.skepticism * 0.28 +
@@ -1426,10 +2598,19 @@ function deriveLivePressure(psychology: UnifiedRecruiterPsychology, state: Unifi
       (100 - psychology.patience) * 0.2 +
       (state === "pressuring" ? 14 : 0) +
       (state === "skeptical" ? 8 : 0) +
-      (["contradiction", "possible_exaggeration", "nonsense"].includes(intent) ? 12 : 0),
+      (["contradiction", "possible_exaggeration", "nonsense"].includes(intent)
+        ? 12
+        : 0),
   );
   const level = clamp(base, 12, 96);
-  const label = level >= 78 ? "intense" : level >= 62 ? "high" : level >= 38 ? "moderate" : "low";
+  const label =
+    level >= 78
+      ? "intense"
+      : level >= 62
+        ? "high"
+        : level >= 38
+          ? "moderate"
+          : "low";
   const reason =
     intent === "contradiction"
       ? "Earlier/CV mismatch needs clarification."
@@ -1452,15 +2633,28 @@ function deriveLivePressure(psychology: UnifiedRecruiterPsychology, state: Unifi
         : label === "moderate"
           ? "Balanced probing with occasional skepticism."
           : "Warm, exploratory, and low-pressure.";
-  return { level, label: label as "low" | "moderate" | "high" | "intense", reason, behaviorShift };
+  return {
+    level,
+    label: label as "low" | "moderate" | "high" | "intense",
+    reason,
+    behaviorShift,
+  };
 }
-
 
 function deriveRecruiterMemoryInsight(
   memory: RecruiterMemoryProfile,
-  decision: Pick<UnifiedRecruiterDecision, "intent" | "recruiterState" | "trustDelta" | "shouldCountAsAnswer" | "concern" | "correction">,
+  decision: Pick<
+    UnifiedRecruiterDecision,
+    | "intent"
+    | "recruiterState"
+    | "trustDelta"
+    | "shouldCountAsAnswer"
+    | "concern"
+    | "correction"
+  >,
 ): NonNullable<UnifiedRecruiterDecision["recruiterMemoryInsight"]> {
-  const openDoubt = memory.openDoubts[0] || memory.contradictionSignals[0] || "";
+  const openDoubt =
+    memory.openDoubts[0] || memory.contradictionSignals[0] || "";
   const strongestMoment = memory.strongMoments[0] || "";
   const weakestMoment = memory.weakMoments[0] || "";
   const rememberedSignal =
@@ -1471,15 +2665,28 @@ function deriveRecruiterMemoryInsight(
     memory.companyClaims[0] ||
     "";
 
-  let recallMode: NonNullable<UnifiedRecruiterDecision["recruiterMemoryInsight"]>["recallMode"] = "none";
+  let recallMode: NonNullable<
+    UnifiedRecruiterDecision["recruiterMemoryInsight"]
+  >["recallMode"] = "none";
 
-  if (decision.intent === "contradiction" || decision.intent === "possible_exaggeration" || decision.intent === "nonsense") {
+  if (
+    decision.intent === "contradiction" ||
+    decision.intent === "possible_exaggeration" ||
+    decision.intent === "nonsense"
+  ) {
     recallMode = "credibility_watch" as any;
-  } else if (openDoubt && (decision.recruiterState === "skeptical" || decision.trustDelta < 0)) {
+  } else if (
+    openDoubt &&
+    (decision.recruiterState === "skeptical" || decision.trustDelta < 0)
+  ) {
     recallMode = "active_doubt";
   } else if (decision.trustDelta >= 4 && weakestMoment) {
     recallMode = "recovery_moment";
-  } else if (decision.shouldCountAsAnswer && memory.answerCount >= 2 && rememberedSignal) {
+  } else if (
+    decision.shouldCountAsAnswer &&
+    memory.answerCount >= 2 &&
+    rememberedSignal
+  ) {
     // Use callbacks occasionally. Deterministic but sparse: only every third accepted answer.
     recallMode = memory.answerCount % 3 === 0 ? "subtle_callback" : "none";
   }
@@ -1491,7 +2698,8 @@ function deriveRecruiterMemoryInsight(
         ? `That helps recover from the earlier unclear point around: ${compact(weakestMoment, 110)}`
         : recallMode === "subtle_callback" && rememberedSignal
           ? `I’m connecting this with something you mentioned earlier: ${compact(rememberedSignal, 110)}`
-          : recallMode === "credibility_watch" && (decision.concern || decision.correction || openDoubt)
+          : recallMode === "credibility_watch" &&
+              (decision.concern || decision.correction || openDoubt)
             ? compact(decision.concern || decision.correction || openDoubt, 140)
             : "";
 
@@ -1511,11 +2719,18 @@ function deriveLivePressureSimulation(
   intent: CandidateIntent,
   pressure: NonNullable<UnifiedRecruiterDecision["pressure"]>,
 ): NonNullable<UnifiedRecruiterDecision["livePressureSimulation"]> {
-  const credibilityIssue = intent === "contradiction" || intent === "possible_exaggeration" || intent === "nonsense";
+  const credibilityIssue =
+    intent === "contradiction" ||
+    intent === "possible_exaggeration" ||
+    intent === "nonsense";
   const lowPatience = psychology.patience < 45 || psychology.skepticism > 65;
-  const recovery = state === "recovering_trust" || (psychology.trust > 62 && pressure.level < 55);
+  const recovery =
+    state === "recovering_trust" ||
+    (psychology.trust > 62 && pressure.level < 55);
 
-  const pressureMode: NonNullable<UnifiedRecruiterDecision["livePressureSimulation"]>["pressureMode"] = credibilityIssue
+  const pressureMode: NonNullable<
+    UnifiedRecruiterDecision["livePressureSimulation"]
+  >["pressureMode"] = credibilityIssue
     ? "direct"
     : recovery
       ? "recovery"
@@ -1565,16 +2780,36 @@ function deriveLivePressureSimulation(
             ? "Ask for one concrete example, not a broad explanation."
             : "Proceed naturally unless the answer becomes vague.";
 
-  const interruptionRisk: NonNullable<UnifiedRecruiterDecision["livePressureSimulation"]>["interruptionRisk"] = credibilityIssue || pressure.label === "intense" ? "likely" : pressure.label === "high" ? "possible" : "rare";
+  const interruptionRisk: NonNullable<
+    UnifiedRecruiterDecision["livePressureSimulation"]
+  >["interruptionRisk"] =
+    credibilityIssue || pressure.label === "intense"
+      ? "likely"
+      : pressure.label === "high"
+        ? "possible"
+        : "rare";
 
-  return { pressureMode, pacingCue, warmthCue, silenceCue, nextFollowUpStyle, interruptionRisk };
+  return {
+    pressureMode,
+    pacingCue,
+    warmthCue,
+    silenceCue,
+    nextFollowUpStyle,
+    interruptionRisk,
+  };
 }
-
-
 
 function deriveSocialSignals(
   answerRaw: string,
-  decision: Pick<UnifiedRecruiterDecision, "intent" | "recruiterState" | "trustDelta" | "shouldCountAsAnswer" | "concern" | "correction">,
+  decision: Pick<
+    UnifiedRecruiterDecision,
+    | "intent"
+    | "recruiterState"
+    | "trustDelta"
+    | "shouldCountAsAnswer"
+    | "concern"
+    | "correction"
+  >,
   memory: RecruiterMemoryProfile,
 ): CandidateSocialSignals {
   const answer = cleanText(answerRaw);
@@ -1582,61 +2817,173 @@ function deriveSocialSignals(
   const words = answer.split(/\s+/).filter(Boolean);
   const wordCount = words.length;
 
-  const fillerCount = (lower.match(/\b(basically|actually|like|you know|kind of|sort of|maybe|i think|probably|honestly)\b/g) || []).length;
-  const blameSignals = /\b(not my fault|manager did not|they did not|because of them|they failed|i was not responsible|that was someone else)\b/i.test(lower);
-  const uncertaintySignals = /\b(i guess|maybe|not sure|i think|probably|kind of|sort of|i don'?t know)\b/i.test(lower);
-  const ownershipSignals = /\b(i owned|i led|i handled|i managed|i was responsible|my role was|i decided|i coordinated|i implemented|i improved|i resolved)\b/i.test(lower);
-  const vagueLeadership = /\b(i led|i managed|i owned)\b/i.test(lower) && !/\b(team of|reported to me|stakeholder|customer|metric|result|outcome|because|so i|by \d+|\d+%|sla|kpi)\b/i.test(lower);
-  const avoidanceSignals = /\b(as i said|you know|etc|and all|many things|several things|various tasks|everything|all the work)\b/i.test(lower) || (decision.shouldCountAsAnswer && wordCount < 18);
-  const rambling = wordCount > 95 && !/\b(result|outcome|impact|reduced|increased|improved|resolved|saved|converted|retained|by \d+|\d+%)\b/i.test(lower);
-  const credibilityIssue = ["nonsense", "possible_exaggeration", "contradiction"].includes(decision.intent) || Boolean(decision.concern || decision.correction);
+  const fillerCount = (
+    lower.match(
+      /\b(basically|actually|like|you know|kind of|sort of|maybe|i think|probably|honestly)\b/g,
+    ) || []
+  ).length;
+  const blameSignals =
+    /\b(not my fault|manager did not|they did not|because of them|they failed|i was not responsible|that was someone else)\b/i.test(
+      lower,
+    );
+  const uncertaintySignals =
+    /\b(i guess|maybe|not sure|i think|probably|kind of|sort of|i don'?t know)\b/i.test(
+      lower,
+    );
+  const ownershipSignals =
+    /\b(i owned|i led|i handled|i managed|i was responsible|my role was|i decided|i coordinated|i implemented|i improved|i resolved)\b/i.test(
+      lower,
+    );
+  const vagueLeadership =
+    /\b(i led|i managed|i owned)\b/i.test(lower) &&
+    !/\b(team of|reported to me|stakeholder|customer|metric|result|outcome|because|so i|by \d+|\d+%|sla|kpi)\b/i.test(
+      lower,
+    );
+  const avoidanceSignals =
+    /\b(as i said|you know|etc|and all|many things|several things|various tasks|everything|all the work)\b/i.test(
+      lower,
+    ) ||
+    (decision.shouldCountAsAnswer && wordCount < 18);
+  const rambling =
+    wordCount > 95 &&
+    !/\b(result|outcome|impact|reduced|increased|improved|resolved|saved|converted|retained|by \d+|\d+%)\b/i.test(
+      lower,
+    );
+  const credibilityIssue =
+    ["nonsense", "possible_exaggeration", "contradiction"].includes(
+      decision.intent,
+    ) || Boolean(decision.concern || decision.correction);
 
-  const nervousness = clamp(28 + fillerCount * 9 + (uncertaintySignals ? 14 : 0) + (rambling ? 14 : 0), 5, 92);
-  const defensiveness = clamp(12 + (blameSignals ? 42 : 0) + (/\b(to be honest|honestly)\b/i.test(lower) && blameSignals ? 8 : 0), 4, 90);
-  const confidence = clamp(52 + (ownershipSignals ? 16 : 0) - (uncertaintySignals ? 16 : 0) - (credibilityIssue ? 18 : 0), 8, 94);
-  const authenticity = clamp(60 + (/\b(i learned|i realized|mistake|what i would do differently|feedback|improved after)\b/i.test(lower) ? 16 : 0) - (vagueLeadership ? 20 : 0) - (credibilityIssue ? 24 : 0), 8, 96);
-  const avoidance = clamp(18 + (avoidanceSignals ? 28 : 0) + (rambling ? 16 : 0) + (memory.openDoubts.length ? 5 : 0), 4, 92);
-  const clarity = clamp(62 - fillerCount * 5 - (rambling ? 20 : 0) - (avoidanceSignals ? 12 : 0) + (/\b(first|then|because|therefore|result|outcome)\b/i.test(lower) ? 10 : 0), 8, 96);
-  const ownership = clamp(38 + (ownershipSignals ? 30 : 0) - (vagueLeadership ? 18 : 0) - (avoidanceSignals ? 8 : 0), 6, 96);
+  const nervousness = clamp(
+    28 + fillerCount * 9 + (uncertaintySignals ? 14 : 0) + (rambling ? 14 : 0),
+    5,
+    92,
+  );
+  const defensiveness = clamp(
+    12 +
+      (blameSignals ? 42 : 0) +
+      (/\b(to be honest|honestly)\b/i.test(lower) && blameSignals ? 8 : 0),
+    4,
+    90,
+  );
+  const confidence = clamp(
+    52 +
+      (ownershipSignals ? 16 : 0) -
+      (uncertaintySignals ? 16 : 0) -
+      (credibilityIssue ? 18 : 0),
+    8,
+    94,
+  );
+  const authenticity = clamp(
+    60 +
+      (/\b(i learned|i realized|mistake|what i would do differently|feedback|improved after)\b/i.test(
+        lower,
+      )
+        ? 16
+        : 0) -
+      (vagueLeadership ? 20 : 0) -
+      (credibilityIssue ? 24 : 0),
+    8,
+    96,
+  );
+  const avoidance = clamp(
+    18 +
+      (avoidanceSignals ? 28 : 0) +
+      (rambling ? 16 : 0) +
+      (memory.openDoubts.length ? 5 : 0),
+    4,
+    92,
+  );
+  const clarity = clamp(
+    62 -
+      fillerCount * 5 -
+      (rambling ? 20 : 0) -
+      (avoidanceSignals ? 12 : 0) +
+      (/\b(first|then|because|therefore|result|outcome)\b/i.test(lower)
+        ? 10
+        : 0),
+    8,
+    96,
+  );
+  const ownership = clamp(
+    38 +
+      (ownershipSignals ? 30 : 0) -
+      (vagueLeadership ? 18 : 0) -
+      (avoidanceSignals ? 8 : 0),
+    6,
+    96,
+  );
 
   let emotionalRead = "The candidate sounds reasonably steady.";
   let recruiterReaction = "Stay conversational and continue normally.";
 
   if (credibilityIssue) {
-    emotionalRead = "The candidate's credibility needs checking before moving on.";
-    recruiterReaction = "Pause briefly, challenge the scope politely, and ask for clarification.";
+    emotionalRead =
+      "The candidate's credibility needs checking before moving on.";
+    recruiterReaction =
+      "Pause briefly, challenge the scope politely, and ask for clarification.";
   } else if (defensiveness > 45) {
-    emotionalRead = "The candidate sounds defensive and may be shifting responsibility.";
-    recruiterReaction = "Bring the focus back to what the candidate personally did.";
+    emotionalRead =
+      "The candidate sounds defensive and may be shifting responsibility.";
+    recruiterReaction =
+      "Bring the focus back to what the candidate personally did.";
   } else if (avoidance > 50) {
-    emotionalRead = "The candidate may be avoiding the exact answer or outcome.";
-    recruiterReaction = "Narrow the answer to one concrete situation and outcome.";
+    emotionalRead =
+      "The candidate may be avoiding the exact answer or outcome.";
+    recruiterReaction =
+      "Narrow the answer to one concrete situation and outcome.";
   } else if (nervousness > 55) {
-    emotionalRead = "The candidate sounds slightly nervous or over-explanatory.";
+    emotionalRead =
+      "The candidate sounds slightly nervous or over-explanatory.";
     recruiterReaction = "Slow the pace and ask for the core point.";
   } else if (authenticity > 72 && ownership > 60) {
     emotionalRead = "The candidate sounds credible and personally involved.";
     recruiterReaction = "Warm slightly and ask a deeper follow-up.";
   }
 
-  return { nervousness, defensiveness, confidence, authenticity, avoidance, clarity, ownership, emotionalRead, recruiterReaction };
+  return {
+    nervousness,
+    defensiveness,
+    confidence,
+    authenticity,
+    avoidance,
+    clarity,
+    ownership,
+    emotionalRead,
+    recruiterReaction,
+  };
 }
 
 function deriveCinematicRealism(
   input: UnifiedRecruiterInput,
-  decision: Pick<UnifiedRecruiterDecision, "intent" | "recruiterState" | "trustDelta" | "shouldCountAsAnswer">,
+  decision: Pick<
+    UnifiedRecruiterDecision,
+    "intent" | "recruiterState" | "trustDelta" | "shouldCountAsAnswer"
+  >,
   socialSignals: CandidateSocialSignals,
   pressure: NonNullable<UnifiedRecruiterDecision["pressure"]>,
 ): NonNullable<UnifiedRecruiterDecision["cinematicRealism"]> {
   const turns = (input.transcript || []).length;
-  const credibilityIssue = ["nonsense", "possible_exaggeration", "contradiction"].includes(decision.intent);
-  const needsNarrowing = socialSignals.avoidance > 52 || socialSignals.clarity < 42;
-  const recovery = decision.trustDelta > 4 || decision.recruiterState === "recovering_trust";
-  const warming = socialSignals.authenticity > 72 && socialSignals.ownership > 60 && decision.shouldCountAsAnswer;
+  const credibilityIssue = [
+    "nonsense",
+    "possible_exaggeration",
+    "contradiction",
+  ].includes(decision.intent);
+  const needsNarrowing =
+    socialSignals.avoidance > 52 || socialSignals.clarity < 42;
+  const recovery =
+    decision.trustDelta > 4 || decision.recruiterState === "recovering_trust";
+  const warming =
+    socialSignals.authenticity > 72 &&
+    socialSignals.ownership > 60 &&
+    decision.shouldCountAsAnswer;
 
-  let emotionalBeat: NonNullable<UnifiedRecruiterDecision["cinematicRealism"]>["emotionalBeat"] = "neutral";
+  let emotionalBeat: NonNullable<
+    UnifiedRecruiterDecision["cinematicRealism"]
+  >["emotionalBeat"] = "neutral";
   let pauseBeforeSpeakingMs = 700;
-  let recruiterMicroBehavior = "Keeps steady eye contact and continues naturally.";
+  let recruiterMicroBehavior =
+    "Keeps steady eye contact and continues naturally.";
   let naturalTransition = "Alright, let’s continue.";
   let shouldUseSilence = false;
   let shouldSoften = false;
@@ -1644,36 +2991,47 @@ function deriveCinematicRealism(
   if (credibilityIssue) {
     emotionalBeat = "doubt";
     pauseBeforeSpeakingMs = 1600;
-    recruiterMicroBehavior = "Pauses slightly before challenging the claim, like a recruiter checking credibility.";
-    naturalTransition = "Hold on — I want to understand the scope before we move on.";
+    recruiterMicroBehavior =
+      "Pauses slightly before challenging the claim, like a recruiter checking credibility.";
+    naturalTransition =
+      "Hold on — I want to understand the scope before we move on.";
     shouldUseSilence = true;
-  } else if (pressure.label === "high" || pressure.label === "intense" || decision.recruiterState === "pressuring") {
+  } else if (
+    pressure.label === "high" ||
+    pressure.label === "intense" ||
+    decision.recruiterState === "pressuring"
+  ) {
     emotionalBeat = "tightening";
     pauseBeforeSpeakingMs = 1200;
-    recruiterMicroBehavior = "Becomes shorter and more direct; warmth drops a little.";
+    recruiterMicroBehavior =
+      "Becomes shorter and more direct; warmth drops a little.";
     naturalTransition = "Let’s make this more specific.";
     shouldUseSilence = true;
   } else if (recovery) {
     emotionalBeat = "recovery";
     pauseBeforeSpeakingMs = 850;
-    recruiterMicroBehavior = "Softens slightly because the candidate recovered credibility.";
+    recruiterMicroBehavior =
+      "Softens slightly because the candidate recovered credibility.";
     naturalTransition = "That is clearer. Let’s build on that.";
     shouldSoften = true;
   } else if (warming) {
     emotionalBeat = "warming";
     pauseBeforeSpeakingMs = 650;
-    recruiterMicroBehavior = "Leans in slightly; the answer feels more believable.";
+    recruiterMicroBehavior =
+      "Leans in slightly; the answer feels more believable.";
     naturalTransition = "Okay, that gives me something to work with.";
     shouldSoften = true;
   } else if (needsNarrowing) {
     emotionalBeat = "curiosity";
     pauseBeforeSpeakingMs = 900;
-    recruiterMicroBehavior = "Narrows the conversation instead of letting the answer stay broad.";
+    recruiterMicroBehavior =
+      "Narrows the conversation instead of letting the answer stay broad.";
     naturalTransition = "Let me narrow that down for a second.";
   } else if (turns >= 8 && turns % 6 === 0) {
     emotionalBeat = "reset";
     pauseBeforeSpeakingMs = 1000;
-    recruiterMicroBehavior = "Briefly resets the conversation angle, like a human interviewer changing focus.";
+    recruiterMicroBehavior =
+      "Briefly resets the conversation angle, like a human interviewer changing focus.";
     naturalTransition = "I want to look at this from another angle.";
   }
 
@@ -1688,7 +3046,9 @@ function deriveCinematicRealism(
   };
 }
 
-function deriveMarketExpectation(input: UnifiedRecruiterInput): NonNullable<UnifiedRecruiterDecision["marketExpectation"]> {
+function deriveMarketExpectation(
+  input: UnifiedRecruiterInput,
+): NonNullable<UnifiedRecruiterDecision["marketExpectation"]> {
   const setup = input.setup || {};
   const marketRaw = firstNonEmpty(setup.targetMarket, "Global");
   const styleRaw = firstNonEmpty(setup.companyStyle, "Realistic");
@@ -1697,57 +3057,147 @@ function deriveMarketExpectation(input: UnifiedRecruiterInput): NonNullable<Unif
 
   const evaluatesFor: string[] = [];
   const warningSignals: string[] = [];
-  let interviewerStyle = "Balanced, globally realistic recruiter: clear, conversational, and evidence-focused.";
-  let followUpBias = "Probe for relevance, ownership, impact, and credibility without becoming robotic.";
+  let interviewerStyle =
+    "Balanced, globally realistic recruiter: clear, conversational, and evidence-focused.";
+  let followUpBias =
+    "Probe for relevance, ownership, impact, and credibility without becoming robotic.";
 
   if (/germany|austria|switzerland|dach/.test(market)) {
-    interviewerStyle = "Structured, precise, and careful with exaggeration; expects clear timelines, responsibilities, and language/role fit.";
-    evaluatesFor.push("precision", "credible scope", "clear timeline", "role fit", "structured communication");
-    warningSignals.push("vague seniority", "unclear dates", "unsupported claims", "over-selling");
-    followUpBias = "Ask for exact responsibility, tools, timeline, and measurable outcome before moving on.";
+    interviewerStyle =
+      "Structured, precise, and careful with exaggeration; expects clear timelines, responsibilities, and language/role fit.";
+    evaluatesFor.push(
+      "precision",
+      "credible scope",
+      "clear timeline",
+      "role fit",
+      "structured communication",
+    );
+    warningSignals.push(
+      "vague seniority",
+      "unclear dates",
+      "unsupported claims",
+      "over-selling",
+    );
+    followUpBias =
+      "Ask for exact responsibility, tools, timeline, and measurable outcome before moving on.";
   } else if (/us|usa|united states|canada/.test(market)) {
-    interviewerStyle = "Confident, outcome-oriented, and storytelling-focused; expects ownership, impact, and concise examples.";
-    evaluatesFor.push("ownership", "business impact", "confidence", "metrics", "story clarity");
-    warningSignals.push("passive wording", "no measurable result", "unclear personal contribution");
-    followUpBias = "Push for impact, scale, and what the candidate personally drove.";
+    interviewerStyle =
+      "Confident, outcome-oriented, and storytelling-focused; expects ownership, impact, and concise examples.";
+    evaluatesFor.push(
+      "ownership",
+      "business impact",
+      "confidence",
+      "metrics",
+      "story clarity",
+    );
+    warningSignals.push(
+      "passive wording",
+      "no measurable result",
+      "unclear personal contribution",
+    );
+    followUpBias =
+      "Push for impact, scale, and what the candidate personally drove.";
   } else if (/uk|ireland/.test(market)) {
-    interviewerStyle = "Concise, practical, and evidence-led; expects calm confidence and clear relevance.";
-    evaluatesFor.push("conciseness", "practical evidence", "stakeholder handling", "role relevance");
+    interviewerStyle =
+      "Concise, practical, and evidence-led; expects calm confidence and clear relevance.";
+    evaluatesFor.push(
+      "conciseness",
+      "practical evidence",
+      "stakeholder handling",
+      "role relevance",
+    );
     warningSignals.push("overlong answers", "buzzwords", "unclear outcome");
-    followUpBias = "Narrow broad answers into one concrete example and outcome.";
+    followUpBias =
+      "Narrow broad answers into one concrete example and outcome.";
   } else if (/netherlands|dutch/.test(market)) {
-    interviewerStyle = "Direct, pragmatic, and low-fluff; expects honest self-assessment and clear examples.";
-    evaluatesFor.push("directness", "practical ownership", "team fit", "clear trade-offs");
-    warningSignals.push("over-polished answers", "avoidance", "unclear responsibility");
-    followUpBias = "Ask direct clarifying questions and avoid excessive reassurance.";
+    interviewerStyle =
+      "Direct, pragmatic, and low-fluff; expects honest self-assessment and clear examples.";
+    evaluatesFor.push(
+      "directness",
+      "practical ownership",
+      "team fit",
+      "clear trade-offs",
+    );
+    warningSignals.push(
+      "over-polished answers",
+      "avoidance",
+      "unclear responsibility",
+    );
+    followUpBias =
+      "Ask direct clarifying questions and avoid excessive reassurance.";
   } else if (/india/.test(market)) {
-    interviewerStyle = "Technical-plus-HR mix; expects skills, projects, certifications, communication, and adaptability.";
-    evaluatesFor.push("skills evidence", "project detail", "learning ability", "communication", "ownership");
-    warningSignals.push("memorized answers", "tool lists without usage", "unclear project role");
-    followUpBias = "Ask how the skill was used in a real project or customer situation.";
+    interviewerStyle =
+      "Technical-plus-HR mix; expects skills, projects, certifications, communication, and adaptability.";
+    evaluatesFor.push(
+      "skills evidence",
+      "project detail",
+      "learning ability",
+      "communication",
+      "ownership",
+    );
+    warningSignals.push(
+      "memorized answers",
+      "tool lists without usage",
+      "unclear project role",
+    );
+    followUpBias =
+      "Ask how the skill was used in a real project or customer situation.";
   } else if (/uae|dubai|singapore|middle east/.test(market)) {
-    interviewerStyle = "International and practical; expects stakeholder maturity, communication, availability, and cross-cultural fit.";
-    evaluatesFor.push("stakeholder maturity", "communication", "cross-cultural fit", "commercial awareness");
-    warningSignals.push("unclear customer exposure", "weak communication", "unclear relocation/availability context");
+    interviewerStyle =
+      "International and practical; expects stakeholder maturity, communication, availability, and cross-cultural fit.";
+    evaluatesFor.push(
+      "stakeholder maturity",
+      "communication",
+      "cross-cultural fit",
+      "commercial awareness",
+    );
+    warningSignals.push(
+      "unclear customer exposure",
+      "weak communication",
+      "unclear relocation/availability context",
+    );
     followUpBias = "Probe customer-facing maturity and practical business fit.";
   }
 
   if (/startup/.test(style)) {
-    evaluatesFor.push("speed", "ambiguity handling", "ownership without much process");
+    evaluatesFor.push(
+      "speed",
+      "ambiguity handling",
+      "ownership without much process",
+    );
     warningSignals.push("needs too much structure", "slow decision-making");
-    followUpBias = "Test ownership, speed, ambiguity, and whether they can work without perfect instructions.";
+    followUpBias =
+      "Test ownership, speed, ambiguity, and whether they can work without perfect instructions.";
   } else if (/consulting/.test(style)) {
-    evaluatesFor.push("structured thinking", "client communication", "logic", "pressure handling");
+    evaluatesFor.push(
+      "structured thinking",
+      "client communication",
+      "logic",
+      "pressure handling",
+    );
     warningSignals.push("unclear logic", "rambling", "weak prioritization");
-    followUpBias = "Ask for the structure behind the decision and the trade-off.";
+    followUpBias =
+      "Ask for the structure behind the decision and the trade-off.";
   } else if (/corporate|enterprise/.test(style)) {
-    evaluatesFor.push("process maturity", "stakeholder alignment", "reliability", "documentation");
+    evaluatesFor.push(
+      "process maturity",
+      "stakeholder alignment",
+      "reliability",
+      "documentation",
+    );
     warningSignals.push("informal ownership claims", "weak process awareness");
-    followUpBias = "Ask about process, escalation, collaboration, and consistency.";
+    followUpBias =
+      "Ask about process, escalation, collaboration, and consistency.";
   } else if (/technical|big tech/.test(style)) {
-    evaluatesFor.push("depth", "systems thinking", "problem decomposition", "technical credibility");
+    evaluatesFor.push(
+      "depth",
+      "systems thinking",
+      "problem decomposition",
+      "technical credibility",
+    );
     warningSignals.push("hand-wavy technical claims", "tool name dropping");
-    followUpBias = "Ask how it worked, what trade-off was made, and what the candidate personally built.";
+    followUpBias =
+      "Ask how it worked, what trade-off was made, and what the candidate personally built.";
   }
 
   return {
@@ -1761,15 +3211,23 @@ function deriveMarketExpectation(input: UnifiedRecruiterInput): NonNullable<Unif
 
 function deriveHumanImperfection(
   input: UnifiedRecruiterInput,
-  decision: Pick<UnifiedRecruiterDecision, "intent" | "recruiterState" | "trustDelta" | "shouldCountAsAnswer">,
+  decision: Pick<
+    UnifiedRecruiterDecision,
+    "intent" | "recruiterState" | "trustDelta" | "shouldCountAsAnswer"
+  >,
   memory: RecruiterMemoryProfile,
 ): NonNullable<UnifiedRecruiterDecision["humanImperfection"]> {
   const turns = (input.transcript || []).length;
   const answer = cleanText(input.answer);
   const words = answer.split(/\s+/).filter(Boolean).length;
-  const hasDoubt = memory.openDoubts.length > 0 || memory.contradictionSignals.length > 0;
+  const hasDoubt =
+    memory.openDoubts.length > 0 || memory.contradictionSignals.length > 0;
 
-  if (["nonsense", "possible_exaggeration", "contradiction"].includes(decision.intent)) {
+  if (
+    ["nonsense", "possible_exaggeration", "contradiction"].includes(
+      decision.intent,
+    )
+  ) {
     return {
       mode: "brief_pause",
       cue: "Use a short pause before challenging the claim.",
@@ -1787,11 +3245,17 @@ function deriveHumanImperfection(
     };
   }
 
-  if (decision.shouldCountAsAnswer && hasDoubt && turns >= 6 && turns % 5 === 0) {
+  if (
+    decision.shouldCountAsAnswer &&
+    hasDoubt &&
+    turns >= 6 &&
+    turns % 5 === 0
+  ) {
     return {
       mode: "revisit_later",
       cue: "A human recruiter briefly brings back an unresolved doubt instead of pretending every answer is isolated.",
-      naturalLine: "I may come back to one point from earlier, but let’s keep going for now.",
+      naturalLine:
+        "I may come back to one point from earlier, but let’s keep going for now.",
       shouldUse: true,
     };
   }
@@ -1805,7 +3269,10 @@ function deriveHumanImperfection(
     };
   }
 
-  if (decision.intent === "clarification" || decision.intent === "candidate_question") {
+  if (
+    decision.intent === "clarification" ||
+    decision.intent === "candidate_question"
+  ) {
     return {
       mode: "none",
       cue: "Stay helpful and brief; do not make this feel like scoring.",
@@ -1822,8 +3289,29 @@ function deriveHumanImperfection(
   };
 }
 
-function deriveHonestFeedback(decision: Pick<UnifiedRecruiterDecision, "intent" | "feedback" | "concern" | "correction" | "recruiterState" | "shouldCountAsAnswer" | "trustDelta" | "psychology" | "pressure">) {
-  if (["greeting", "smalltalk", "clarification", "candidate_question", "interruption"].includes(decision.intent)) {
+function deriveHonestFeedback(
+  decision: Pick<
+    UnifiedRecruiterDecision,
+    | "intent"
+    | "feedback"
+    | "concern"
+    | "correction"
+    | "recruiterState"
+    | "shouldCountAsAnswer"
+    | "trustDelta"
+    | "psychology"
+    | "pressure"
+  >,
+) {
+  if (
+    [
+      "greeting",
+      "smalltalk",
+      "clarification",
+      "candidate_question",
+      "interruption",
+    ].includes(decision.intent)
+  ) {
     return {
       headline: "Conversation handled, not scored",
       recruiterRead: "The candidate is orienting or asking for clarification.",
@@ -1831,37 +3319,67 @@ function deriveHonestFeedback(decision: Pick<UnifiedRecruiterDecision, "intent" 
       nextFix: "Guide briefly and return to the active question.",
     };
   }
-  if (["contradiction", "possible_exaggeration", "nonsense"].includes(decision.intent)) {
+  if (
+    ["contradiction", "possible_exaggeration", "nonsense"].includes(
+      decision.intent,
+    )
+  ) {
     return {
       headline: "Credibility check needed",
-      recruiterRead: decision.concern || decision.correction || "The answer does not fully line up yet.",
+      recruiterRead:
+        decision.concern ||
+        decision.correction ||
+        "The answer does not fully line up yet.",
       risk: "Trust drops if the candidate cannot clarify scope, ownership, or facts.",
-      nextFix: "Ask for the realistic version with exact role, tools, timeline, and result.",
+      nextFix:
+        "Ask for the realistic version with exact role, tools, timeline, and result.",
     };
   }
   if (decision.intent === "partial_answer") {
     return {
       headline: "Promising but incomplete",
-      recruiterRead: decision.feedback || "The candidate gave direction, but not enough evidence yet.",
+      recruiterRead:
+        decision.feedback ||
+        "The candidate gave direction, but not enough evidence yet.",
       risk: "The interviewer may not see ownership, impact, or role relevance.",
       nextFix: "Ask one concrete follow-up before moving forward.",
     };
   }
   return {
-    headline: decision.trustDelta >= 4 ? "Answer accepted with confidence" : "Answer accepted, but watch the proof",
-    recruiterRead: decision.feedback || "The candidate answered the question enough to continue.",
-    risk: decision.trustDelta < 2 ? "The answer may still feel light without stronger evidence." : "Low immediate risk.",
-    nextFix: "Move forward naturally, then probe deeper if the next answer weakens.",
+    headline:
+      decision.trustDelta >= 4
+        ? "Answer accepted with confidence"
+        : "Answer accepted, but watch the proof",
+    recruiterRead:
+      decision.feedback ||
+      "The candidate answered the question enough to continue.",
+    risk:
+      decision.trustDelta < 2
+        ? "The answer may still feel light without stronger evidence."
+        : "Low immediate risk.",
+    nextFix:
+      "Move forward naturally, then probe deeper if the next answer weakens.",
   };
 }
 
-function buildSystemPrompt(input: UnifiedRecruiterInput, cvRead: CandidateEvidenceProfile, recruiterMemory: RecruiterMemoryProfile) {
+function buildSystemPrompt(
+  input: UnifiedRecruiterInput,
+  cvRead: CandidateEvidenceProfile,
+  recruiterMemory: RecruiterMemoryProfile,
+) {
   const setup = input.setup || {};
   const jobDescription = cleanText(setup.jobDescription);
-  const targetRole = firstNonEmpty(setup.targetRole, extractRoleFromJobDescription(jobDescription), "the target role");
+  const targetRole = firstNonEmpty(
+    setup.targetRole,
+    extractRoleFromJobDescription(jobDescription),
+    "the target role",
+  );
   const market = firstNonEmpty(setup.targetMarket, "Global");
   const companyStyle = firstNonEmpty(setup.companyStyle, "Realistic");
-  const recruiter = firstNonEmpty(setup.recruiterPersonality, "realistic recruiter");
+  const recruiter = firstNonEmpty(
+    setup.recruiterPersonality,
+    "realistic recruiter",
+  );
   const cvText = cleanText(setup.cvText).slice(0, 5500);
   const recentTranscript = (input.transcript || [])
     .slice(-8)
@@ -2013,6 +3531,10 @@ MEMORY LINKING RULES — CRITICAL:
 - Do not forget a point after one turn. If the candidate mentioned customer satisfaction, repeat customers, language weakness, moving to Germany, quick learning, technical support, or role fit, use it naturally later.
 - Do not ask the candidate to connect technical support to Customer Success if they already mentioned customers, tickets, satisfaction, rapport, repeat customers, or support. Accept that as the connection and go deeper: difficult customer, retention, escalation, onboarding, or relationship management.
 - When a candidate gives a weak but relevant answer, do not repeat the same demand. Summarize the useful part, then ask a more specific next question.
+- If the candidate gives a short answer like “I worked with many customers and think I fit this role,” do not repeat the opener. Accept the direction and ask for a concrete customer example.
+- For Customer Success Manager, show role knowledge: distinguish reactive support from proactive relationship ownership, retention, onboarding, renewal risk, escalation handling, customer health, and long-term trust.
+- If the candidate mentions rapport/trust/customer satisfaction, ask how they would turn a one-time support interaction into ongoing customer success or retention.
+- If the candidate gives a vague customer answer, narrow it operationally: “What did you say?”, “How did you calm them?”, “When would you escalate?”, “How would you follow up after the fix?”
 - Stay on one thread for 1–2 turns before switching topics. Human recruiters do not jump strength → weakness → learning → strength without callbacks.
 - Use callbacks like: “You mentioned language as a development area…” or “Earlier you described customer satisfaction…” only when useful.
 
@@ -2141,7 +3663,10 @@ Return JSON only with this exact shape:
 `.trim();
 }
 
-function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: UnifiedRecruiterDecision): UnifiedRecruiterDecision {
+function normalizeDecision(
+  raw: Partial<UnifiedRecruiterDecision>,
+  fallback: UnifiedRecruiterDecision,
+): UnifiedRecruiterDecision {
   const intentValues: CandidateIntent[] = [
     "greeting",
     "smalltalk",
@@ -2166,50 +3691,129 @@ function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: Uni
     "losing_confidence",
   ];
 
-  let intent = intentValues.includes(raw.intent as CandidateIntent) ? (raw.intent as CandidateIntent) : fallback.intent;
+  let intent = intentValues.includes(raw.intent as CandidateIntent)
+    ? (raw.intent as CandidateIntent)
+    : fallback.intent;
 
   // Guardrail: intro/small-talk decisions are deterministic.
   // The model must not reinterpret “I’m nervous”, “I’m good”, or “can you hear me”
   // as a weak interview answer and trigger pressure follow-ups.
-  if (["greeting", "smalltalk", "clarification", "candidate_question", "interruption"].includes(fallback.intent)) {
+  if (
+    [
+      "greeting",
+      "smalltalk",
+      "clarification",
+      "candidate_question",
+      "interruption",
+    ].includes(fallback.intent)
+  ) {
     intent = fallback.intent;
   }
-  const recruiterState = stateValues.includes(raw.recruiterState as UnifiedRecruiterDecision["recruiterState"])
+  const recruiterState = stateValues.includes(
+    raw.recruiterState as UnifiedRecruiterDecision["recruiterState"],
+  )
     ? (raw.recruiterState as UnifiedRecruiterDecision["recruiterState"])
     : fallback.recruiterState;
 
-  const forceFallbackConversation = ["greeting", "smalltalk", "clarification", "candidate_question", "interruption"].includes(fallback.intent);
-  const spokenReply = forceFallbackConversation ? fallback.spokenReply : (cleanText(raw.spokenReply) || fallback.spokenReply);
-  const displayQuestion = forceFallbackConversation ? fallback.displayQuestion : (cleanText(raw.displayQuestion) || fallback.displayQuestion);
-  const trustDelta = clamp(typeof raw.trustDelta === "number" ? raw.trustDelta : fallback.trustDelta, -15, 15);
+  const forceFallbackConversation = [
+    "greeting",
+    "smalltalk",
+    "clarification",
+    "candidate_question",
+    "interruption",
+  ].includes(fallback.intent);
+  const spokenReply = forceFallbackConversation
+    ? fallback.spokenReply
+    : cleanText(raw.spokenReply) || fallback.spokenReply;
+  const displayQuestion = forceFallbackConversation
+    ? fallback.displayQuestion
+    : cleanText(raw.displayQuestion) || fallback.displayQuestion;
+  const trustDelta = clamp(
+    typeof raw.trustDelta === "number" ? raw.trustDelta : fallback.trustDelta,
+    -15,
+    15,
+  );
 
   const psychology = {
-    trust: clamp(Number(raw.psychology?.trust ?? fallback.psychology.trust), 12, 92),
-    interest: clamp(Number(raw.psychology?.interest ?? fallback.psychology.interest), 10, 95),
-    skepticism: clamp(Number(raw.psychology?.skepticism ?? fallback.psychology.skepticism), 5, 95),
-    patience: clamp(Number(raw.psychology?.patience ?? fallback.psychology.patience), 5, 95),
-    engagement: clamp(Number(raw.psychology?.engagement ?? fallback.psychology.engagement), 5, 95),
-    confidenceInCandidate: clamp(Number(raw.psychology?.confidenceInCandidate ?? fallback.psychology.confidenceInCandidate), 12, 92),
+    trust: clamp(
+      Number(raw.psychology?.trust ?? fallback.psychology.trust),
+      12,
+      92,
+    ),
+    interest: clamp(
+      Number(raw.psychology?.interest ?? fallback.psychology.interest),
+      10,
+      95,
+    ),
+    skepticism: clamp(
+      Number(raw.psychology?.skepticism ?? fallback.psychology.skepticism),
+      5,
+      95,
+    ),
+    patience: clamp(
+      Number(raw.psychology?.patience ?? fallback.psychology.patience),
+      5,
+      95,
+    ),
+    engagement: clamp(
+      Number(raw.psychology?.engagement ?? fallback.psychology.engagement),
+      5,
+      95,
+    ),
+    confidenceInCandidate: clamp(
+      Number(
+        raw.psychology?.confidenceInCandidate ??
+          fallback.psychology.confidenceInCandidate,
+      ),
+      12,
+      92,
+    ),
   };
 
-  const safeIntentDoesNotCount = ["greeting", "smalltalk", "clarification", "candidate_question", "interruption", "offtopic", "nonsense", "possible_exaggeration", "contradiction"].includes(intent);
+  const safeIntentDoesNotCount = [
+    "greeting",
+    "smalltalk",
+    "clarification",
+    "candidate_question",
+    "interruption",
+    "offtopic",
+    "nonsense",
+    "possible_exaggeration",
+    "contradiction",
+  ].includes(intent);
   const rawShouldCount = Boolean(raw.shouldCountAsAnswer);
   const shouldCountAsAnswer = safeIntentDoesNotCount ? false : rawShouldCount;
-  const shouldAdvanceQuestion = Boolean(raw.shouldAdvanceQuestion && shouldCountAsAnswer && intent === "interview_answer");
+  const shouldAdvanceQuestion = Boolean(
+    raw.shouldAdvanceQuestion &&
+    shouldCountAsAnswer &&
+    intent === "interview_answer",
+  );
 
   const feedback = cleanText(raw.feedback) || fallback.feedback;
   const correction = cleanText(raw.correction) || undefined;
   const concern = cleanText(raw.concern) || undefined;
-  const fallbackPressure = deriveLivePressure(psychology, recruiterState, intent);
+  const fallbackPressure = deriveLivePressure(
+    psychology,
+    recruiterState,
+    intent,
+  );
   const rawPressure = raw.pressure || {};
-  const pressureLabel = ["low", "moderate", "high", "intense"].includes((rawPressure as any).label)
+  const pressureLabel = ["low", "moderate", "high", "intense"].includes(
+    (rawPressure as any).label,
+  )
     ? ((rawPressure as any).label as "low" | "moderate" | "high" | "intense")
     : fallbackPressure.label;
   const pressure = {
-    level: clamp(Number((rawPressure as any).level ?? fallbackPressure.level), 12, 96),
+    level: clamp(
+      Number((rawPressure as any).level ?? fallbackPressure.level),
+      12,
+      96,
+    ),
     label: pressureLabel,
     reason: cleanText((rawPressure as any).reason) || fallbackPressure.reason,
-    behaviorShift: cleanText((rawPressure as any).behaviorShift) || fallbackPressure.behaviorShift,
+    behaviorShift:
+      cleanText((rawPressure as any).behaviorShift) ||
+      fallbackPressure.behaviorShift,
   };
   const derivedForFeedback = {
     intent,
@@ -2238,85 +3842,319 @@ function normalizeDecision(raw: Partial<UnifiedRecruiterDecision>, fallback: Uni
     psychology,
     cvRead: fallback.cvRead,
     recruiterMemory: fallback.recruiterMemory,
-    memoryEvents: Array.isArray(raw.memoryEvents) ? (raw.memoryEvents as RecruiterMemoryEvent[]).slice(0, 6) : fallback.memoryEvents || [],
+    memoryEvents: Array.isArray(raw.memoryEvents)
+      ? (raw.memoryEvents as RecruiterMemoryEvent[]).slice(0, 6)
+      : fallback.memoryEvents || [],
     pressure,
     honestFeedback: {
       ...deriveHonestFeedback(derivedForFeedback),
       ...(raw.honestFeedback && typeof raw.honestFeedback === "object"
         ? {
-            headline: cleanText((raw.honestFeedback as any).headline) || deriveHonestFeedback(derivedForFeedback).headline,
-            recruiterRead: cleanText((raw.honestFeedback as any).recruiterRead) || deriveHonestFeedback(derivedForFeedback).recruiterRead,
-            risk: cleanText((raw.honestFeedback as any).risk) || deriveHonestFeedback(derivedForFeedback).risk,
-            nextFix: cleanText((raw.honestFeedback as any).nextFix) || deriveHonestFeedback(derivedForFeedback).nextFix,
+            headline:
+              cleanText((raw.honestFeedback as any).headline) ||
+              deriveHonestFeedback(derivedForFeedback).headline,
+            recruiterRead:
+              cleanText((raw.honestFeedback as any).recruiterRead) ||
+              deriveHonestFeedback(derivedForFeedback).recruiterRead,
+            risk:
+              cleanText((raw.honestFeedback as any).risk) ||
+              deriveHonestFeedback(derivedForFeedback).risk,
+            nextFix:
+              cleanText((raw.honestFeedback as any).nextFix) ||
+              deriveHonestFeedback(derivedForFeedback).nextFix,
           }
         : {}),
     },
     recruiterMemoryInsight:
-      raw.recruiterMemoryInsight && typeof raw.recruiterMemoryInsight === "object"
+      raw.recruiterMemoryInsight &&
+      typeof raw.recruiterMemoryInsight === "object"
         ? {
-            ...deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }),
-            recallMode: ["none", "subtle_callback", "active_doubt", "recovery_moment", "credibility_watch"].includes((raw.recruiterMemoryInsight as any).recallMode)
-              ? (raw.recruiterMemoryInsight as any).recallMode
-              : deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }).recallMode,
-            callbackLine: cleanText((raw.recruiterMemoryInsight as any).callbackLine) || deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }).callbackLine,
-            rememberedSignal: cleanText((raw.recruiterMemoryInsight as any).rememberedSignal) || deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }).rememberedSignal,
-            openDoubt: cleanText((raw.recruiterMemoryInsight as any).openDoubt) || deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }).openDoubt,
-            strongestMoment: cleanText((raw.recruiterMemoryInsight as any).strongestMoment) || deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }).strongestMoment,
-            weakestMoment: cleanText((raw.recruiterMemoryInsight as any).weakestMoment) || deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }).weakestMoment,
-          }
-        : deriveRecruiterMemoryInsight(fallback.recruiterMemory!, { intent, recruiterState, trustDelta, shouldCountAsAnswer, concern, correction }),
-    livePressureSimulation:
-      raw.livePressureSimulation && typeof raw.livePressureSimulation === "object"
-        ? {
-            ...deriveLivePressureSimulation(psychology, recruiterState, intent, {
-              level: clamp(Number((rawPressure as any).level ?? fallbackPressure.level), 12, 96),
-              label: pressureLabel,
-              reason: cleanText((rawPressure as any).reason) || fallbackPressure.reason,
-              behaviorShift: cleanText((rawPressure as any).behaviorShift) || fallbackPressure.behaviorShift,
+            ...deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+              intent,
+              recruiterState,
+              trustDelta,
+              shouldCountAsAnswer,
+              concern,
+              correction,
             }),
-            pressureMode: ["calm", "focused", "tightening", "direct", "recovery"].includes((raw.livePressureSimulation as any).pressureMode)
+            recallMode: [
+              "none",
+              "subtle_callback",
+              "active_doubt",
+              "recovery_moment",
+              "credibility_watch",
+            ].includes((raw.recruiterMemoryInsight as any).recallMode)
+              ? (raw.recruiterMemoryInsight as any).recallMode
+              : deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+                  intent,
+                  recruiterState,
+                  trustDelta,
+                  shouldCountAsAnswer,
+                  concern,
+                  correction,
+                }).recallMode,
+            callbackLine:
+              cleanText((raw.recruiterMemoryInsight as any).callbackLine) ||
+              deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+                intent,
+                recruiterState,
+                trustDelta,
+                shouldCountAsAnswer,
+                concern,
+                correction,
+              }).callbackLine,
+            rememberedSignal:
+              cleanText((raw.recruiterMemoryInsight as any).rememberedSignal) ||
+              deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+                intent,
+                recruiterState,
+                trustDelta,
+                shouldCountAsAnswer,
+                concern,
+                correction,
+              }).rememberedSignal,
+            openDoubt:
+              cleanText((raw.recruiterMemoryInsight as any).openDoubt) ||
+              deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+                intent,
+                recruiterState,
+                trustDelta,
+                shouldCountAsAnswer,
+                concern,
+                correction,
+              }).openDoubt,
+            strongestMoment:
+              cleanText((raw.recruiterMemoryInsight as any).strongestMoment) ||
+              deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+                intent,
+                recruiterState,
+                trustDelta,
+                shouldCountAsAnswer,
+                concern,
+                correction,
+              }).strongestMoment,
+            weakestMoment:
+              cleanText((raw.recruiterMemoryInsight as any).weakestMoment) ||
+              deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+                intent,
+                recruiterState,
+                trustDelta,
+                shouldCountAsAnswer,
+                concern,
+                correction,
+              }).weakestMoment,
+          }
+        : deriveRecruiterMemoryInsight(fallback.recruiterMemory!, {
+            intent,
+            recruiterState,
+            trustDelta,
+            shouldCountAsAnswer,
+            concern,
+            correction,
+          }),
+    livePressureSimulation:
+      raw.livePressureSimulation &&
+      typeof raw.livePressureSimulation === "object"
+        ? {
+            ...deriveLivePressureSimulation(
+              psychology,
+              recruiterState,
+              intent,
+              {
+                level: clamp(
+                  Number((rawPressure as any).level ?? fallbackPressure.level),
+                  12,
+                  96,
+                ),
+                label: pressureLabel,
+                reason:
+                  cleanText((rawPressure as any).reason) ||
+                  fallbackPressure.reason,
+                behaviorShift:
+                  cleanText((rawPressure as any).behaviorShift) ||
+                  fallbackPressure.behaviorShift,
+              },
+            ),
+            pressureMode: [
+              "calm",
+              "focused",
+              "tightening",
+              "direct",
+              "recovery",
+            ].includes((raw.livePressureSimulation as any).pressureMode)
               ? (raw.livePressureSimulation as any).pressureMode
-              : deriveLivePressureSimulation(psychology, recruiterState, intent, fallbackPressure).pressureMode,
-            pacingCue: cleanText((raw.livePressureSimulation as any).pacingCue) || deriveLivePressureSimulation(psychology, recruiterState, intent, fallbackPressure).pacingCue,
-            warmthCue: cleanText((raw.livePressureSimulation as any).warmthCue) || deriveLivePressureSimulation(psychology, recruiterState, intent, fallbackPressure).warmthCue,
-            silenceCue: cleanText((raw.livePressureSimulation as any).silenceCue) || deriveLivePressureSimulation(psychology, recruiterState, intent, fallbackPressure).silenceCue,
-            nextFollowUpStyle: cleanText((raw.livePressureSimulation as any).nextFollowUpStyle) || deriveLivePressureSimulation(psychology, recruiterState, intent, fallbackPressure).nextFollowUpStyle,
-            interruptionRisk: ["rare", "possible", "likely"].includes((raw.livePressureSimulation as any).interruptionRisk)
+              : deriveLivePressureSimulation(
+                  psychology,
+                  recruiterState,
+                  intent,
+                  fallbackPressure,
+                ).pressureMode,
+            pacingCue:
+              cleanText((raw.livePressureSimulation as any).pacingCue) ||
+              deriveLivePressureSimulation(
+                psychology,
+                recruiterState,
+                intent,
+                fallbackPressure,
+              ).pacingCue,
+            warmthCue:
+              cleanText((raw.livePressureSimulation as any).warmthCue) ||
+              deriveLivePressureSimulation(
+                psychology,
+                recruiterState,
+                intent,
+                fallbackPressure,
+              ).warmthCue,
+            silenceCue:
+              cleanText((raw.livePressureSimulation as any).silenceCue) ||
+              deriveLivePressureSimulation(
+                psychology,
+                recruiterState,
+                intent,
+                fallbackPressure,
+              ).silenceCue,
+            nextFollowUpStyle:
+              cleanText(
+                (raw.livePressureSimulation as any).nextFollowUpStyle,
+              ) ||
+              deriveLivePressureSimulation(
+                psychology,
+                recruiterState,
+                intent,
+                fallbackPressure,
+              ).nextFollowUpStyle,
+            interruptionRisk: ["rare", "possible", "likely"].includes(
+              (raw.livePressureSimulation as any).interruptionRisk,
+            )
               ? (raw.livePressureSimulation as any).interruptionRisk
-              : deriveLivePressureSimulation(psychology, recruiterState, intent, fallbackPressure).interruptionRisk,
+              : deriveLivePressureSimulation(
+                  psychology,
+                  recruiterState,
+                  intent,
+                  fallbackPressure,
+                ).interruptionRisk,
           }
         : deriveLivePressureSimulation(psychology, recruiterState, intent, {
-            level: clamp(Number((rawPressure as any).level ?? fallbackPressure.level), 12, 96),
+            level: clamp(
+              Number((rawPressure as any).level ?? fallbackPressure.level),
+              12,
+              96,
+            ),
             label: pressureLabel,
-            reason: cleanText((rawPressure as any).reason) || fallbackPressure.reason,
-            behaviorShift: cleanText((rawPressure as any).behaviorShift) || fallbackPressure.behaviorShift,
+            reason:
+              cleanText((rawPressure as any).reason) || fallbackPressure.reason,
+            behaviorShift:
+              cleanText((rawPressure as any).behaviorShift) ||
+              fallbackPressure.behaviorShift,
           }),
     marketExpectation:
       raw.marketExpectation && typeof raw.marketExpectation === "object"
         ? {
-            ...deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }),
-            market: cleanText((raw.marketExpectation as any).market) || deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }).market,
-            interviewerStyle: cleanText((raw.marketExpectation as any).interviewerStyle) || deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }).interviewerStyle,
-            evaluatesFor: Array.isArray((raw.marketExpectation as any).evaluatesFor)
-              ? (raw.marketExpectation as any).evaluatesFor.map((item: unknown) => cleanText(item)).filter(Boolean).slice(0, 10)
-              : deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }).evaluatesFor,
-            warningSignals: Array.isArray((raw.marketExpectation as any).warningSignals)
-              ? (raw.marketExpectation as any).warningSignals.map((item: unknown) => cleanText(item)).filter(Boolean).slice(0, 10)
-              : deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }).warningSignals,
-            followUpBias: cleanText((raw.marketExpectation as any).followUpBias) || deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }).followUpBias,
+            ...deriveMarketExpectation({
+              answer: "",
+              currentQuestion: "",
+              setup: {},
+            }),
+            market:
+              cleanText((raw.marketExpectation as any).market) ||
+              deriveMarketExpectation({
+                answer: "",
+                currentQuestion: "",
+                setup: {},
+              }).market,
+            interviewerStyle:
+              cleanText((raw.marketExpectation as any).interviewerStyle) ||
+              deriveMarketExpectation({
+                answer: "",
+                currentQuestion: "",
+                setup: {},
+              }).interviewerStyle,
+            evaluatesFor: Array.isArray(
+              (raw.marketExpectation as any).evaluatesFor,
+            )
+              ? (raw.marketExpectation as any).evaluatesFor
+                  .map((item: unknown) => cleanText(item))
+                  .filter(Boolean)
+                  .slice(0, 10)
+              : deriveMarketExpectation({
+                  answer: "",
+                  currentQuestion: "",
+                  setup: {},
+                }).evaluatesFor,
+            warningSignals: Array.isArray(
+              (raw.marketExpectation as any).warningSignals,
+            )
+              ? (raw.marketExpectation as any).warningSignals
+                  .map((item: unknown) => cleanText(item))
+                  .filter(Boolean)
+                  .slice(0, 10)
+              : deriveMarketExpectation({
+                  answer: "",
+                  currentQuestion: "",
+                  setup: {},
+                }).warningSignals,
+            followUpBias:
+              cleanText((raw.marketExpectation as any).followUpBias) ||
+              deriveMarketExpectation({
+                answer: "",
+                currentQuestion: "",
+                setup: {},
+              }).followUpBias,
           }
-        : fallback.marketExpectation || deriveMarketExpectation({ answer: "", currentQuestion: "", setup: {} }),
+        : fallback.marketExpectation ||
+          deriveMarketExpectation({
+            answer: "",
+            currentQuestion: "",
+            setup: {},
+          }),
     humanImperfection:
       raw.humanImperfection && typeof raw.humanImperfection === "object"
         ? {
-            mode: ["none", "brief_pause", "misunderstanding", "topic_drift", "revisit_later", "impatient_shortening"].includes((raw.humanImperfection as any).mode)
+            mode: [
+              "none",
+              "brief_pause",
+              "misunderstanding",
+              "topic_drift",
+              "revisit_later",
+              "impatient_shortening",
+            ].includes((raw.humanImperfection as any).mode)
               ? (raw.humanImperfection as any).mode
-              : (fallback.humanImperfection || deriveHumanImperfection({ answer: "", currentQuestion: "", transcript: [] }, { intent, recruiterState, trustDelta, shouldCountAsAnswer }, fallback.recruiterMemory!)).mode,
-            cue: cleanText((raw.humanImperfection as any).cue) || (fallback.humanImperfection || deriveHumanImperfection({ answer: "", currentQuestion: "", transcript: [] }, { intent, recruiterState, trustDelta, shouldCountAsAnswer }, fallback.recruiterMemory!)).cue,
-            naturalLine: cleanText((raw.humanImperfection as any).naturalLine) || (fallback.humanImperfection || deriveHumanImperfection({ answer: "", currentQuestion: "", transcript: [] }, { intent, recruiterState, trustDelta, shouldCountAsAnswer }, fallback.recruiterMemory!)).naturalLine,
+              : (
+                  fallback.humanImperfection ||
+                  deriveHumanImperfection(
+                    { answer: "", currentQuestion: "", transcript: [] },
+                    { intent, recruiterState, trustDelta, shouldCountAsAnswer },
+                    fallback.recruiterMemory!,
+                  )
+                ).mode,
+            cue:
+              cleanText((raw.humanImperfection as any).cue) ||
+              (
+                fallback.humanImperfection ||
+                deriveHumanImperfection(
+                  { answer: "", currentQuestion: "", transcript: [] },
+                  { intent, recruiterState, trustDelta, shouldCountAsAnswer },
+                  fallback.recruiterMemory!,
+                )
+              ).cue,
+            naturalLine:
+              cleanText((raw.humanImperfection as any).naturalLine) ||
+              (
+                fallback.humanImperfection ||
+                deriveHumanImperfection(
+                  { answer: "", currentQuestion: "", transcript: [] },
+                  { intent, recruiterState, trustDelta, shouldCountAsAnswer },
+                  fallback.recruiterMemory!,
+                )
+              ).naturalLine,
             shouldUse: Boolean((raw.humanImperfection as any).shouldUse),
           }
-        : fallback.humanImperfection || deriveHumanImperfection({ answer: "", currentQuestion: "", transcript: [] }, { intent, recruiterState, trustDelta, shouldCountAsAnswer }, fallback.recruiterMemory!),
+        : fallback.humanImperfection ||
+          deriveHumanImperfection(
+            { answer: "", currentQuestion: "", transcript: [] },
+            { intent, recruiterState, trustDelta, shouldCountAsAnswer },
+            fallback.recruiterMemory!,
+          ),
   };
 }
 
@@ -2333,10 +4171,17 @@ function uniqueMemoryEvents(events: RecruiterMemoryEvent[]) {
   return out;
 }
 
-
-function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: UnifiedRecruiterDecision): UnifiedRecruiterDecision {
+function applyNaturalConversationGuard(
+  input: UnifiedRecruiterInput,
+  decision: UnifiedRecruiterDecision,
+): UnifiedRecruiterDecision {
+  decision = prependSocialAcknowledgementIfNeeded(input, decision);
   const answer = cleanText(input.answer);
-  const targetRole = firstNonEmpty(input.setup?.targetRole, extractRoleFromJobDescription(cleanText(input.setup?.jobDescription)), "this role");
+  const targetRole = firstNonEmpty(
+    input.setup?.targetRole,
+    extractRoleFromJobDescription(cleanText(input.setup?.jobDescription)),
+    "this role",
+  );
 
   // Multi-intent social turns such as "I'm good, how are you, what's your name?"
   // must be answered naturally before the interview continues. Do not score or pressure them.
@@ -2351,7 +4196,8 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
       shouldStayOnCurrentQuestion: true,
       trustDelta: 0,
       recruiterState: "interested",
-      feedback: "Handled multi-intent rapport turn without scoring or pressure.",
+      feedback:
+        "Handled multi-intent rapport turn without scoring or pressure.",
       psychology: {
         ...decision.psychology,
         patience: clamp(decision.psychology.patience + 3, 20, 95),
@@ -2361,7 +4207,10 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
   }
 
   // Never let the model score or pressure basic rapport.
-  if (isIntroRapportQuestion(input.currentQuestion || "") && isCandidateRapportReply(answer)) {
+  if (
+    isIntroRapportQuestion(input.currentQuestion || "") &&
+    isCandidateRapportReply(answer)
+  ) {
     return {
       ...decision,
       intent: "smalltalk",
@@ -2376,10 +4225,26 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
     };
   }
 
-  const guardedCvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-  const guardedMemory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, guardedCvRead, input.setup?.recruiterMemoryProfile);
+  const guardedCvRead =
+    decision.cvRead ||
+    buildEvidenceProfile(
+      cleanText(input.setup?.cvText),
+      cleanText(input.setup?.jobDescription),
+    );
+  const guardedMemory =
+    decision.recruiterMemory ||
+    buildRecruiterMemoryProfile(
+      input.transcript,
+      guardedCvRead,
+      input.setup?.recruiterMemoryProfile,
+    );
   const guardedTransition = humanTransition(input, guardedMemory, answer);
-  if (guardedTransition && /give me.*outcome|impact|don.?t yet see|make that link|specific situation/i.test(decision.spokenReply)) {
+  if (
+    guardedTransition &&
+    /give me.*outcome|impact|don.?t yet see|make that link|specific situation/i.test(
+      decision.spokenReply,
+    )
+  ) {
     return {
       ...decision,
       intent: "interview_answer",
@@ -2390,22 +4255,91 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
       shouldStayOnCurrentQuestion: false,
       trustDelta: Math.max(decision.trustDelta, guardedTransition.delta),
       recruiterState: guardedTransition.delta >= 3 ? "engaged" : "interested",
-      feedback: "Guard accepted the candidate answer and prevented an unnatural repeated probe.",
+      feedback:
+        "Guard accepted the candidate answer and prevented an unnatural repeated probe.",
       conversationStage: guardedTransition.stage,
       psychology: {
         ...decision.psychology,
-        trust: clamp(decision.psychology.trust + guardedTransition.delta, 12, 92),
+        trust: clamp(
+          decision.psychology.trust + guardedTransition.delta,
+          12,
+          92,
+        ),
         interest: clamp(decision.psychology.interest + 5, 20, 95),
+      },
+    };
+  }
+
+  // If the recruiter asked a decision/trade-off follow-up and the candidate answered it,
+  // accept the answer and move to a deeper human follow-up instead of repeating the same question.
+  if (shouldForceDecisionTopicTransition(input, answer)) {
+    const cvRead =
+      decision.cvRead ||
+      buildEvidenceProfile(
+        cleanText(input.setup?.cvText),
+        cleanText(input.setup?.jobDescription),
+      );
+    const memory =
+      decision.recruiterMemory ||
+      buildRecruiterMemoryProfile(
+        input.transcript,
+        cvRead,
+        input.setup?.recruiterMemoryProfile,
+      );
+    const nextQuestion = buildDecisionFollowupResolution(
+      input,
+      answer,
+      targetRole,
+    );
+    return {
+      ...decision,
+      intent: "interview_answer",
+      spokenReply: nextQuestion,
+      displayQuestion: nextQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: Math.max(decision.trustDelta, 3),
+      recruiterState:
+        decision.recruiterState === "skeptical" ? "interested" : "engaged",
+      feedback:
+        "Accepted the candidate's decision/trade-off answer and moved to a natural deeper follow-up.",
+      recruiterMemory: memory,
+      conversationStage: "behavioral",
+      psychology: {
+        ...decision.psychology,
+        trust: clamp(decision.psychology.trust + 3, 12, 92),
+        interest: clamp(decision.psychology.interest + 6, 20, 95),
+        skepticism: clamp(decision.psychology.skepticism - 3, 5, 95),
       },
     };
   }
 
   // If the recruiter just asked for impact and the candidate gives a qualitative outcome,
   // accept it and move on instead of repeating the same demand.
-  if (wasLastRecruiterAskingForImpact(input.transcript) && hasAnyOutcome(answer)) {
-    const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-    const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
-    const nextQuestion = buildHumanProgressionQuestion(input, cvRead, memory, answer);
+  if (
+    wasLastRecruiterAskingForImpact(input.transcript) &&
+    hasAnyOutcome(answer)
+  ) {
+    const cvRead =
+      decision.cvRead ||
+      buildEvidenceProfile(
+        cleanText(input.setup?.cvText),
+        cleanText(input.setup?.jobDescription),
+      );
+    const memory =
+      decision.recruiterMemory ||
+      buildRecruiterMemoryProfile(
+        input.transcript,
+        cvRead,
+        input.setup?.recruiterMemoryProfile,
+      );
+    const nextQuestion = buildHumanProgressionQuestion(
+      input,
+      cvRead,
+      memory,
+      answer,
+    );
     return {
       ...decision,
       intent: "interview_answer",
@@ -2414,23 +4348,108 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
       shouldAdvanceQuestion: true,
       shouldCountAsAnswer: true,
       shouldStayOnCurrentQuestion: false,
-      trustDelta: Math.max(decision.trustDelta, hasQuantitativeOutcome(answer) ? 4 : 2),
-      recruiterState: decision.recruiterState === "skeptical" ? "interested" : "engaged",
+      trustDelta: Math.max(
+        decision.trustDelta,
+        hasQuantitativeOutcome(answer) ? 4 : 2,
+      ),
+      recruiterState:
+        decision.recruiterState === "skeptical" ? "interested" : "engaged",
       feedback: "Accepted qualitative outcome and moved forward naturally.",
       psychology: {
         ...decision.psychology,
-        trust: clamp(decision.psychology.trust + (hasQuantitativeOutcome(answer) ? 3 : 1), 12, 92),
+        trust: clamp(
+          decision.psychology.trust + (hasQuantitativeOutcome(answer) ? 3 : 1),
+          12,
+          92,
+        ),
         interest: clamp(decision.psychology.interest + 4, 20, 95),
+      },
+    };
+  }
+
+  // v80: Voice-transcript tolerant recovery. If the candidate gives a fragmented but relevant
+  // customer/support/role-fit answer during the opener, never repeat the opener.
+  // Move into a concrete example probe like a real recruiter would.
+  const openerWasAskedRecently = /tell me a little about your background|what makes you interested|recent experience connects|to start/i.test(
+    `${decision.spokenReply} ${getRecentRecruiterLines(input, 4).join(" ")}`,
+  );
+  if (openerWasAskedRecently && isCustomerSuccessShortBackgroundAnswer(answer, targetRole, input)) {
+    const next = buildShortAnswerAcceptanceReply(input, answer, targetRole);
+    return {
+      ...decision,
+      intent: "interview_answer",
+      spokenReply: next.spokenReply,
+      displayQuestion: next.displayQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: Math.max(decision.trustDelta, 2),
+      recruiterState: decision.recruiterState === "skeptical" ? "interested" : "engaged",
+      feedback:
+        "Accepted a fragmented but relevant voice answer and moved forward instead of repeating the opener.",
+      conversationStage: "behavioral",
+      psychology: {
+        ...decision.psychology,
+        trust: clamp(decision.psychology.trust + 2, 12, 92),
+        interest: clamp(decision.psychology.interest + 5, 20, 95),
+        engagement: clamp(decision.psychology.engagement + 4, 20, 95),
+      },
+    };
+  }
+
+  // v78: Short but relevant Customer Success background answers should not trigger the opener again.
+  // Accept the weak-but-relevant answer and move to a concrete, knowledgeable customer-success probe.
+  if (isOpeningQuestionRepeatAfterRelevantAnswer(input, decision.spokenReply, answer, targetRole)) {
+    const next = buildShortAnswerAcceptanceReply(input, answer, targetRole);
+    return {
+      ...decision,
+      intent: "interview_answer",
+      spokenReply: next.spokenReply,
+      displayQuestion: next.displayQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: Math.max(decision.trustDelta, 2),
+      recruiterState: decision.recruiterState === "skeptical" ? "interested" : "engaged",
+      feedback:
+        "Accepted a short but relevant customer-success background answer and avoided repeating the opener.",
+      conversationStage: "behavioral",
+      psychology: {
+        ...decision.psychology,
+        trust: clamp(decision.psychology.trust + 2, 12, 92),
+        interest: clamp(decision.psychology.interest + 5, 20, 95),
+        engagement: clamp(decision.psychology.engagement + 4, 20, 95),
       },
     };
   }
 
   // If the model tries to ask for role connection after the candidate already gave customer/support evidence,
   // convert it into a realistic deeper customer-success follow-up.
-  if (/don.?t yet see the connection|make that link|connect.*role/i.test(decision.spokenReply) && hasCustomerSuccessRoleFit(answer, targetRole, input)) {
-    const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-    const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
-    const nextQuestion = buildNaturalNextQuestion(input, cvRead, memory, answer);
+  if (
+    /don.?t yet see the connection|make that link|connect.*role/i.test(
+      decision.spokenReply,
+    ) &&
+    hasCustomerSuccessRoleFit(answer, targetRole, input)
+  ) {
+    const cvRead =
+      decision.cvRead ||
+      buildEvidenceProfile(
+        cleanText(input.setup?.cvText),
+        cleanText(input.setup?.jobDescription),
+      );
+    const memory =
+      decision.recruiterMemory ||
+      buildRecruiterMemoryProfile(
+        input.transcript,
+        cvRead,
+        input.setup?.recruiterMemoryProfile,
+      );
+    const nextQuestion = buildNaturalNextQuestion(
+      input,
+      cvRead,
+      memory,
+      answer,
+    );
     return {
       ...decision,
       intent: "interview_answer",
@@ -2441,44 +4460,115 @@ function applyNaturalConversationGuard(input: UnifiedRecruiterInput, decision: U
       shouldStayOnCurrentQuestion: false,
       trustDelta: Math.max(decision.trustDelta, 2),
       recruiterState: "interested",
-      feedback: "Prevented unnecessary role-connection repeat and moved deeper.",
+      feedback:
+        "Prevented unnecessary role-connection repeat and moved deeper.",
+    };
+  }
+
+  // If the candidate gave a practical customer-handling answer, use a sharper operational probe
+  // instead of a generic customer question. This improves Customer Success realism.
+  if (isCustomerOperationalAnswer(answer) && /customer|client|support|success|unhappy|frustrated|issue/i.test(decision.spokenReply)) {
+    const nextQuestion = buildOperationalCustomerFollowUp(input, answer, targetRole);
+    return {
+      ...decision,
+      intent: "interview_answer",
+      spokenReply: `That gives me a practical view of your customer-handling style. ${nextQuestion}`,
+      displayQuestion: nextQuestion,
+      shouldAdvanceQuestion: true,
+      shouldCountAsAnswer: true,
+      shouldStayOnCurrentQuestion: false,
+      trustDelta: Math.max(decision.trustDelta, 3),
+      recruiterState: decision.recruiterState === "skeptical" ? "interested" : "engaged",
+      feedback:
+        "Detected practical customer-handling signals and moved to a sharper operational follow-up.",
+      psychology: {
+        ...decision.psychology,
+        trust: clamp(decision.psychology.trust + 2, 12, 92),
+        interest: clamp(decision.psychology.interest + 5, 20, 95),
+        skepticism: clamp(decision.psychology.skepticism - 2, 5, 95),
+      },
     };
   }
 
   // Hard anti-loop: if the model repeats the same recruiter line, force a natural progression.
-  if (repeatedRecruiterLineRisk(input, decision.spokenReply) && decision.intent !== "greeting" && decision.intent !== "smalltalk") {
-    const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-    const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
-    const nextQuestion = buildMemoryAwareCallbackQuestion(input, cvRead, targetRole);
+  if (
+    repeatedRecruiterLineRisk(input, decision.spokenReply) &&
+    decision.intent !== "greeting" &&
+    decision.intent !== "smalltalk"
+  ) {
+    const cvRead =
+      decision.cvRead ||
+      buildEvidenceProfile(
+        cleanText(input.setup?.cvText),
+        cleanText(input.setup?.jobDescription),
+      );
+    const memory =
+      decision.recruiterMemory ||
+      buildRecruiterMemoryProfile(
+        input.transcript,
+        cvRead,
+        input.setup?.recruiterMemoryProfile,
+      );
+    const nextQuestion =
+      wasLastRecruiterAskingForDecision(input) &&
+      answeredDecisionFollowUp(answer)
+        ? buildDecisionFollowupResolution(input, answer, targetRole)
+        : sameFollowupIntentRepeated(
+              input,
+              /hardest decision|difficult decision|trade[- ]?off|decision you made/i,
+              2,
+            )
+          ? buildDecisionFollowupResolution(input, answer, targetRole)
+          : buildMemoryAwareCallbackQuestion(input, cvRead, targetRole);
     return {
       ...decision,
-      spokenReply: `Okay, I have enough to continue. ${nextQuestion}`,
+      spokenReply:
+        wasLastRecruiterAskingForDecision(input) &&
+        answeredDecisionFollowUp(answer)
+          ? nextQuestion
+          : `Okay, let’s move this forward. ${nextQuestion}`,
       displayQuestion: nextQuestion,
       shouldAdvanceQuestion: true,
       shouldCountAsAnswer: true,
       shouldStayOnCurrentQuestion: false,
       recruiterState: "interested",
-      feedback: "Prevented repeated follow-up loop and progressed with memory-aware callback.",
+      feedback:
+        "Prevented repeated follow-up loop and progressed with memory-aware callback.",
     };
   }
 
   return decision;
 }
 
-
 function deriveAnswerQualitySignals(answerRaw: string) {
   const answer = cleanText(answerRaw);
   const lower = answer.toLowerCase();
   const wordCount = answer.split(/\s+/).filter(Boolean).length;
-  const hasOwnership = /(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|coordinated|supported|analyzed|implemented|decided)/i.test(answer);
+  const hasOwnership =
+    /(i|my|personally|owned|handled|managed|led|built|created|resolved|improved|coordinated|supported|analyzed|implemented|decided)/i.test(
+      answer,
+    );
   const hasOutcome = hasAnyOutcome(answer) || hasQuantitativeOutcome(answer);
-  const hasMetrics = hasQuantitativeOutcome(answer) || /(csat|nps|sla|kpi|retention|renewal|churn|tickets?|users?|customers?|percent|percentage|score|rating|reduced|increased|saved|improved)/i.test(lower);
-  const vague = /(good|nice|great job|many things|stuff|things|you know|etc|basically|i think|maybe|probably|kind of|sort of)/i.test(lower);
-  const roleBridge = /(customer|client|stakeholder|support|success|retention|renewal|onboarding|relationship|rapport|satisfaction|technical|problem|issue|communication|language|germany|learn|quick learner)/i.test(lower);
+  const hasMetrics =
+    hasQuantitativeOutcome(answer) ||
+    /(csat|nps|sla|kpi|retention|renewal|churn|tickets?|users?|customers?|percent|percentage|score|rating|reduced|increased|saved|improved)/i.test(
+      lower,
+    );
+  const vague =
+    /(good|nice|great job|many things|stuff|things|you know|etc|basically|i think|maybe|probably|kind of|sort of)/i.test(
+      lower,
+    );
+  const roleBridge =
+    /(customer|client|stakeholder|support|success|retention|renewal|onboarding|relationship|rapport|satisfaction|technical|problem|issue|communication|language|germany|learn|quick learner)/i.test(
+      lower,
+    );
   return { wordCount, hasOwnership, hasOutcome, hasMetrics, vague, roleBridge };
 }
 
-function derivePersistentMoodLine(psychology: UnifiedRecruiterPsychology, state: UnifiedRecruiterDecision["recruiterState"]) {
+function derivePersistentMoodLine(
+  psychology: UnifiedRecruiterPsychology,
+  state: UnifiedRecruiterDecision["recruiterState"],
+) {
   if (state === "losing_confidence" || psychology.trust < 38) {
     return "Recruiter is losing confidence and will require direct proof before moving deeper.";
   }
@@ -2494,41 +4584,98 @@ function derivePersistentMoodLine(psychology: UnifiedRecruiterPsychology, state:
   return "Pressure remains realistic and balanced.";
 }
 
-function applyPhase15TrustPressure(input: UnifiedRecruiterInput, decision: UnifiedRecruiterDecision): UnifiedRecruiterDecision {
+function applyPhase15TrustPressure(
+  input: UnifiedRecruiterInput,
+  decision: UnifiedRecruiterDecision,
+): UnifiedRecruiterDecision {
   // Phase 1.5 priority 3: recruiter psychology must persist beyond one answer.
   // This uses current trust + remembered weak/strong signals + answer quality to tune the next tone.
   const answer = cleanText(input.answer);
-  const cvRead = decision.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-  const memory = decision.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
+  const cvRead =
+    decision.cvRead ||
+    buildEvidenceProfile(
+      cleanText(input.setup?.cvText),
+      cleanText(input.setup?.jobDescription),
+    );
+  const memory =
+    decision.recruiterMemory ||
+    buildRecruiterMemoryProfile(
+      input.transcript,
+      cvRead,
+      input.setup?.recruiterMemoryProfile,
+    );
   const quality = deriveAnswerQualitySignals(answer);
-  const previousTrust = clamp(typeof input.recruiterTrust === "number" ? input.recruiterTrust : decision.psychology.trust, 12, 92);
-  const openDoubtPenalty = Math.min(10, memory.openDoubts.length * 3 + memory.contradictionSignals.length * 4);
+  const previousTrust = clamp(
+    typeof input.recruiterTrust === "number"
+      ? input.recruiterTrust
+      : decision.psychology.trust,
+    12,
+    92,
+  );
+  const openDoubtPenalty = Math.min(
+    10,
+    memory.openDoubts.length * 3 + memory.contradictionSignals.length * 4,
+  );
   const weakPatternPenalty = Math.min(8, memory.weakMoments.length * 2);
   const strongPatternBoost = Math.min(8, memory.strongMoments.length * 2);
 
   let persistentDelta = decision.trustDelta;
   if (decision.shouldCountAsAnswer) {
     if (!quality.hasOwnership && quality.wordCount > 10) persistentDelta -= 2;
-    if (!quality.hasOutcome && !quality.hasMetrics && quality.wordCount > 22 && !/weakness|strength|background|tell me about yourself/i.test(input.currentQuestion || "")) persistentDelta -= 2;
+    if (
+      !quality.hasOutcome &&
+      !quality.hasMetrics &&
+      quality.wordCount > 22 &&
+      !/weakness|strength|background|tell me about yourself/i.test(
+        input.currentQuestion || "",
+      )
+    )
+      persistentDelta -= 2;
     if (quality.vague && quality.wordCount > 25) persistentDelta -= 1;
     if (quality.hasOwnership && quality.hasOutcome) persistentDelta += 1;
     if (quality.roleBridge && quality.hasOutcome) persistentDelta += 1;
   }
-  if (["contradiction", "possible_exaggeration", "nonsense"].includes(decision.intent)) persistentDelta -= 3;
+  if (
+    ["contradiction", "possible_exaggeration", "nonsense"].includes(
+      decision.intent,
+    )
+  )
+    persistentDelta -= 3;
   persistentDelta = clamp(persistentDelta, -12, 12);
 
-  const nextTrust = clamp(previousTrust + persistentDelta - Math.round(openDoubtPenalty * 0.35) + Math.round(strongPatternBoost * 0.25), 12, 92);
+  const nextTrust = clamp(
+    previousTrust +
+      persistentDelta -
+      Math.round(openDoubtPenalty * 0.35) +
+      Math.round(strongPatternBoost * 0.25),
+    12,
+    92,
+  );
   const nextSkepticism = clamp(
-    decision.psychology.skepticism + openDoubtPenalty + weakPatternPenalty - strongPatternBoost + (persistentDelta < 0 ? 8 : persistentDelta > 3 ? -5 : 0),
+    decision.psychology.skepticism +
+      openDoubtPenalty +
+      weakPatternPenalty -
+      strongPatternBoost +
+      (persistentDelta < 0 ? 8 : persistentDelta > 3 ? -5 : 0),
     8,
     94,
   );
   const nextPatience = clamp(
-    decision.psychology.patience - openDoubtPenalty * 0.6 - (quality.vague ? 6 : 0) + (persistentDelta > 3 ? 5 : 0),
+    decision.psychology.patience -
+      openDoubtPenalty * 0.6 -
+      (quality.vague ? 6 : 0) +
+      (persistentDelta > 3 ? 5 : 0),
     16,
     96,
   );
-  const nextInterest = clamp(decision.psychology.interest + (quality.roleBridge ? 5 : 0) + (quality.hasOutcome ? 4 : 0) - (decision.intent === "offtopic" ? 10 : 0), 15, 96);
+  const nextInterest = clamp(
+    decision.psychology.interest +
+      (quality.roleBridge ? 5 : 0) +
+      (quality.hasOutcome ? 4 : 0) -
+      (decision.intent === "offtopic" ? 10 : 0),
+    15,
+    96,
+  );
 
   const nextState: UnifiedRecruiterDecision["recruiterState"] =
     nextTrust < 35
@@ -2548,12 +4695,30 @@ function applyPhase15TrustPressure(input: UnifiedRecruiterInput, decision: Unifi
     interest: nextInterest,
     skepticism: nextSkepticism,
     patience: nextPatience,
-    engagement: clamp(nextInterest + (quality.hasOutcome ? 4 : 0) - (nextSkepticism > 78 ? 8 : 0), 16, 96),
-    confidenceInCandidate: clamp(nextTrust + (quality.hasOwnership ? 3 : 0) + (quality.hasOutcome ? 3 : 0) - (nextSkepticism > 78 ? 8 : 0), 12, 94),
+    engagement: clamp(
+      nextInterest +
+        (quality.hasOutcome ? 4 : 0) -
+        (nextSkepticism > 78 ? 8 : 0),
+      16,
+      96,
+    ),
+    confidenceInCandidate: clamp(
+      nextTrust +
+        (quality.hasOwnership ? 3 : 0) +
+        (quality.hasOutcome ? 3 : 0) -
+        (nextSkepticism > 78 ? 8 : 0),
+      12,
+      94,
+    ),
   };
 
   const pressure = deriveLivePressure(psychology, nextState, decision.intent);
-  const livePressureSimulation = deriveLivePressureSimulation(psychology, nextState, decision.intent, pressure);
+  const livePressureSimulation = deriveLivePressureSimulation(
+    psychology,
+    nextState,
+    decision.intent,
+    pressure,
+  );
   const recruiterMemoryInsight = deriveRecruiterMemoryInsight(memory, {
     intent: decision.intent,
     recruiterState: nextState,
@@ -2562,14 +4727,28 @@ function applyPhase15TrustPressure(input: UnifiedRecruiterInput, decision: Unifi
     concern: decision.concern,
     correction: decision.correction,
   });
-  const honestFeedback = deriveHonestFeedback({ ...decision, trustDelta: persistentDelta, recruiterState: nextState, psychology, pressure });
+  const honestFeedback = deriveHonestFeedback({
+    ...decision,
+    trustDelta: persistentDelta,
+    recruiterState: nextState,
+    psychology,
+    pressure,
+  });
   const moodLine = derivePersistentMoodLine(psychology, nextState);
 
-  const shouldAddSkepticalMemory = decision.shouldCountAsAnswer && (persistentDelta < 0 || nextSkepticism > 72);
+  const shouldAddSkepticalMemory =
+    decision.shouldCountAsAnswer &&
+    (persistentDelta < 0 || nextSkepticism > 72);
   const memoryEvents = uniqueMemoryEvents([
     ...(decision.memoryEvents || []),
     ...(shouldAddSkepticalMemory
-      ? [{ type: "doubt" as const, text: moodLine, weight: nextSkepticism > 76 ? 8 : 5 }]
+      ? [
+          {
+            type: "doubt" as const,
+            text: moodLine,
+            weight: nextSkepticism > 76 ? 8 : 5,
+          },
+        ]
       : []),
   ]);
 
@@ -2587,23 +4766,154 @@ function applyPhase15TrustPressure(input: UnifiedRecruiterInput, decision: Unifi
   };
 }
 
-export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInput): Promise<UnifiedRecruiterDecision> {
+export async function decideUnifiedRecruiterResponse(
+  input: UnifiedRecruiterInput,
+): Promise<UnifiedRecruiterDecision> {
   const fallback = buildFallbackDecision(input);
-  const cvRead = fallback.cvRead || buildEvidenceProfile(cleanText(input.setup?.cvText), cleanText(input.setup?.jobDescription));
-  const recruiterMemory = fallback.recruiterMemory || buildRecruiterMemoryProfile(input.transcript, cvRead, input.setup?.recruiterMemoryProfile);
+
+  // Phase 1.5 v73: handle multi-intent rapport BEFORE the LLM or fallback analysis.
+  // This prevents turns like "can you hear me and what is your name?" from being
+  // misclassified as weak interview answers and triggering impact/STAR follow-ups.
+  if (isMostlyMultiIntentRapport(input.answer)) {
+    const targetRole = firstNonEmpty(
+      input.setup?.targetRole,
+      extractRoleFromJobDescription(cleanText(input.setup?.jobDescription)),
+      "this role",
+    );
+    const psychology: UnifiedRecruiterPsychology = {
+      ...fallback.psychology,
+      patience: clamp((fallback.psychology?.patience ?? 68) + 4, 20, 95),
+      engagement: clamp((fallback.psychology?.engagement ?? 62) + 2, 20, 95),
+      skepticism: clamp((fallback.psychology?.skepticism ?? 28) - 4, 8, 94),
+    };
+    const pressure = deriveLivePressure(psychology, "interested", "smalltalk");
+    const rapportDecision: UnifiedRecruiterDecision = {
+      ...fallback,
+      intent: "smalltalk",
+      spokenReply: buildMultiIntentRapportReply(input, targetRole),
+      displayQuestion: `Tell me a little about yourself and connect your recent experience to ${targetRole}.`,
+      shouldAdvanceQuestion: false,
+      shouldCountAsAnswer: false,
+      shouldStayOnCurrentQuestion: true,
+      trustDelta: 0,
+      recruiterState: "interested",
+      feedback: "Handled multi-intent rapport turn before interview scoring.",
+      correction: "",
+      concern: "",
+      psychology,
+      pressure,
+      honestFeedback: deriveHonestFeedback({
+        ...fallback,
+        intent: "smalltalk",
+        shouldCountAsAnswer: false,
+        trustDelta: 0,
+        recruiterState: "interested",
+        feedback: "Handled multi-intent rapport turn before interview scoring.",
+        correction: "",
+        concern: "",
+        psychology,
+        pressure,
+      }),
+      livePressureSimulation: deriveLivePressureSimulation(
+        psychology,
+        "interested",
+        "smalltalk",
+        pressure,
+      ),
+      recruiterMemoryInsight: deriveRecruiterMemoryInsight(
+        fallback.recruiterMemory ||
+          buildRecruiterMemoryProfile(
+            input.transcript,
+            fallback.cvRead ||
+              buildEvidenceProfile(
+                cleanText(input.setup?.cvText),
+                cleanText(input.setup?.jobDescription),
+              ),
+            input.setup?.recruiterMemoryProfile,
+          ),
+        fallback,
+      ),
+      conversationStage: "rapport",
+      cinematicRealism: {
+        emotionalBeat: fallback.cinematicRealism?.emotionalBeat ?? "warming",
+        pauseBeforeSpeakingMs:
+          fallback.cinematicRealism?.pauseBeforeSpeakingMs ?? 480,
+        recruiterMicroBehavior:
+          fallback.cinematicRealism?.recruiterMicroBehavior ??
+          "Recruiter acknowledges the setup question and continues naturally.",
+        naturalTransition:
+          fallback.cinematicRealism?.naturalTransition ??
+          "Let’s start naturally.",
+        shouldUseSilence: fallback.cinematicRealism?.shouldUseSilence ?? false,
+        shouldSoften: fallback.cinematicRealism?.shouldSoften ?? true,
+        shouldNarrowCandidate:
+          fallback.cinematicRealism?.shouldNarrowCandidate ?? false,
+      },
+    };
+    return rapportDecision;
+  }
+  const cvRead =
+    fallback.cvRead ||
+    buildEvidenceProfile(
+      cleanText(input.setup?.cvText),
+      cleanText(input.setup?.jobDescription),
+    );
+  const recruiterMemory =
+    fallback.recruiterMemory ||
+    buildRecruiterMemoryProfile(
+      input.transcript,
+      cvRead,
+      input.setup?.recruiterMemoryProfile,
+    );
 
   if (!process.env.OPENAI_API_KEY) {
-    return applyPhase15TrustPressure(input, applyNaturalConversationGuard(input, {
-      ...fallback,
-      pressure: deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent),
-      honestFeedback: deriveHonestFeedback(fallback),
-      recruiterMemoryInsight: deriveRecruiterMemoryInsight(recruiterMemory, fallback),
-      livePressureSimulation: deriveLivePressureSimulation(fallback.psychology, fallback.recruiterState, fallback.intent, deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent)),
-      marketExpectation: fallback.marketExpectation || deriveMarketExpectation(input),
-      humanImperfection: fallback.humanImperfection || deriveHumanImperfection(input, fallback, recruiterMemory),
-      socialSignals: fallback.socialSignals || deriveSocialSignals(input.answer, fallback, recruiterMemory),
-      cinematicRealism: fallback.cinematicRealism || deriveCinematicRealism(input, fallback, fallback.socialSignals || deriveSocialSignals(input.answer, fallback, recruiterMemory), deriveLivePressure(fallback.psychology, fallback.recruiterState, fallback.intent)),
-    }));
+    return applyPhase15TrustPressure(
+      input,
+      applyNaturalConversationGuard(input, {
+        ...fallback,
+        pressure: deriveLivePressure(
+          fallback.psychology,
+          fallback.recruiterState,
+          fallback.intent,
+        ),
+        honestFeedback: deriveHonestFeedback(fallback),
+        recruiterMemoryInsight: deriveRecruiterMemoryInsight(
+          recruiterMemory,
+          fallback,
+        ),
+        livePressureSimulation: deriveLivePressureSimulation(
+          fallback.psychology,
+          fallback.recruiterState,
+          fallback.intent,
+          deriveLivePressure(
+            fallback.psychology,
+            fallback.recruiterState,
+            fallback.intent,
+          ),
+        ),
+        marketExpectation:
+          fallback.marketExpectation || deriveMarketExpectation(input),
+        humanImperfection:
+          fallback.humanImperfection ||
+          deriveHumanImperfection(input, fallback, recruiterMemory),
+        socialSignals:
+          fallback.socialSignals ||
+          deriveSocialSignals(input.answer, fallback, recruiterMemory),
+        cinematicRealism:
+          fallback.cinematicRealism ||
+          deriveCinematicRealism(
+            input,
+            fallback,
+            fallback.socialSignals ||
+              deriveSocialSignals(input.answer, fallback, recruiterMemory),
+            deriveLivePressure(
+              fallback.psychology,
+              fallback.recruiterState,
+              fallback.intent,
+            ),
+          ),
+      }),
+    );
   }
 
   try {
@@ -2614,7 +4924,10 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
       max_tokens: 760,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: buildSystemPrompt(input, cvRead, recruiterMemory) },
+        {
+          role: "system",
+          content: buildSystemPrompt(input, cvRead, recruiterMemory),
+        },
         {
           role: "user",
           content: JSON.stringify(
@@ -2635,20 +4948,61 @@ export async function decideUnifiedRecruiterResponse(input: UnifiedRecruiterInpu
     const raw = completion.choices[0]?.message?.content || "{}";
     const parsed = JSON.parse(raw) as Partial<UnifiedRecruiterDecision>;
     const normalized = normalizeDecision(parsed, fallback);
-    const updated = updateMemoryAfterDecision(cleanText(input.answer), normalized, recruiterMemory);
-    const finalPressure = normalized.pressure || deriveLivePressure(normalized.psychology, normalized.recruiterState, normalized.intent);
-    return applyPhase15TrustPressure(input, applyNaturalConversationGuard(input, {
-      ...normalized,
-      recruiterMemory: updated.memory,
-      memoryEvents: uniqueMemoryEvents([...(normalized.memoryEvents || []), ...updated.events]),
-      recruiterMemoryInsight: normalized.recruiterMemoryInsight || deriveRecruiterMemoryInsight(updated.memory, normalized),
-      livePressureSimulation: normalized.livePressureSimulation || deriveLivePressureSimulation(normalized.psychology, normalized.recruiterState, normalized.intent, finalPressure),
-      marketExpectation: normalized.marketExpectation || deriveMarketExpectation(input),
-      humanImperfection: normalized.humanImperfection || deriveHumanImperfection(input, normalized, updated.memory),
-      socialSignals: normalized.socialSignals || deriveSocialSignals(input.answer, normalized, updated.memory),
-      cinematicRealism: normalized.cinematicRealism || deriveCinematicRealism(input, normalized, normalized.socialSignals || deriveSocialSignals(input.answer, normalized, updated.memory), finalPressure),
-    }));
+    const updated = updateMemoryAfterDecision(
+      cleanText(input.answer),
+      normalized,
+      recruiterMemory,
+    );
+    const finalPressure =
+      normalized.pressure ||
+      deriveLivePressure(
+        normalized.psychology,
+        normalized.recruiterState,
+        normalized.intent,
+      );
+    return applyPhase15TrustPressure(
+      input,
+      applyNaturalConversationGuard(input, {
+        ...normalized,
+        recruiterMemory: updated.memory,
+        memoryEvents: uniqueMemoryEvents([
+          ...(normalized.memoryEvents || []),
+          ...updated.events,
+        ]),
+        recruiterMemoryInsight:
+          normalized.recruiterMemoryInsight ||
+          deriveRecruiterMemoryInsight(updated.memory, normalized),
+        livePressureSimulation:
+          normalized.livePressureSimulation ||
+          deriveLivePressureSimulation(
+            normalized.psychology,
+            normalized.recruiterState,
+            normalized.intent,
+            finalPressure,
+          ),
+        marketExpectation:
+          normalized.marketExpectation || deriveMarketExpectation(input),
+        humanImperfection:
+          normalized.humanImperfection ||
+          deriveHumanImperfection(input, normalized, updated.memory),
+        socialSignals:
+          normalized.socialSignals ||
+          deriveSocialSignals(input.answer, normalized, updated.memory),
+        cinematicRealism:
+          normalized.cinematicRealism ||
+          deriveCinematicRealism(
+            input,
+            normalized,
+            normalized.socialSignals ||
+              deriveSocialSignals(input.answer, normalized, updated.memory),
+            finalPressure,
+          ),
+      }),
+    );
   } catch {
-    return applyPhase15TrustPressure(input, applyNaturalConversationGuard(input, fallback));
+    return applyPhase15TrustPressure(
+      input,
+      applyNaturalConversationGuard(input, fallback),
+    );
   }
 }

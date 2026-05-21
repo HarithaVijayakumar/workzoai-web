@@ -1,184 +1,242 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
-type AnalyticsEvent = {
-  id?: number;
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+type AnalyticsRow = {
+  id?: number | string;
   session_id?: string | null;
+  sessionId?: string | null;
   event?: string | null;
   path?: string | null;
   source?: string | null;
   device?: string | null;
   recruiter?: string | null;
-  metadata?: Record<string, unknown> | null;
+  mode?: string | null;
+  role?: string | null;
+  market?: string | null;
   created_at?: string | null;
+  timestamp?: string | null;
+  metadata?: Record<string, unknown> | null;
+  details?: Record<string, unknown> | null;
+};
+
+type AnalyticsPayload = {
+  sessionId?: string;
+  session_id?: string;
+  event?: string;
+  path?: string;
+  source?: string;
+  device?: string;
+  recruiter?: string;
+  mode?: string;
+  role?: string;
+  market?: string;
+  metadata?: Record<string, unknown>;
+  details?: Record<string, unknown>;
+};
+
+type FounderSummary = {
+  totalEvents: number;
+  uniqueSessions: number;
+  interviewStarts: number;
+  interviewCompleted: number;
+  completionRate: number;
+  mobileEvents: number;
+  desktopEvents: number;
+  tabletEvents: number;
+  unknownDeviceEvents: number;
+  recruiterCounts: Record<string, number>;
+  eventCounts: Record<string, number>;
+  errors: AnalyticsRow[];
+  dropOffSignals: AnalyticsRow[];
 };
 
 const TABLE_NAME = "workzo_analytics_events";
 
-function getSupabase(): SupabaseClient | null {
+function getSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!url || !serviceKey) return null;
 
   return createClient(url, serviceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
+    auth: { persistSession: false, autoRefreshToken: false },
   });
 }
 
-function cleanText(value: unknown, fallback = "") {
-  return typeof value === "string" && value.trim() ? value.trim() : fallback;
-}
-
-function normalizeDevice(value: unknown, userAgent = "") {
-  const raw = `${typeof value === "string" ? value : ""} ${userAgent}`.toLowerCase();
-
-  if (/ipad|tablet/.test(raw)) return "tablet";
-  if (/iphone|android|mobile|ios/.test(raw)) return "mobile";
-  if (/windows|macintosh|linux|desktop|chrome/.test(raw)) return "desktop";
+function normalizeDevice(value?: string | null) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("tablet") || text.includes("ipad")) return "tablet";
+  if (
+    text.includes("mobile") ||
+    text.includes("iphone") ||
+    text.includes("android") ||
+    text.includes("safari mobile")
+  ) {
+    return "mobile";
+  }
+  if (text.includes("desktop") || text.includes("windows") || text.includes("mac") || text.includes("linux")) {
+    return "desktop";
+  }
   return "unknown";
 }
 
-function isErrorEvent(eventName: string) {
-  return /error|failed|failure|interrupted|voice_failed|audio_failed|timeout|crash/i.test(eventName);
+function normalizeEvent(row: AnalyticsRow): AnalyticsRow {
+  return {
+    ...row,
+    session_id: row.session_id || row.sessionId || "unknown-session",
+    event: row.event || "unknown_event",
+    path: row.path || "/",
+    source: row.source || "Direct / unknown",
+    device: normalizeDevice(row.device),
+    recruiter: row.recruiter || null,
+    mode: row.mode || null,
+    role: row.role || null,
+    market: row.market || null,
+    created_at: row.created_at || row.timestamp || null,
+    metadata: row.metadata || row.details || {},
+  };
 }
 
-function buildSummary(events: AnalyticsEvent[]) {
-  const totalEvents = events.length;
-  const sessions = new Set<string>();
+function increment(map: Record<string, number>, key?: string | null) {
+  const clean = (key || "Unknown").trim() || "Unknown";
+  map[clean] = (map[clean] || 0) + 1;
+}
+
+function buildSummary(rows: AnalyticsRow[]): FounderSummary {
+  const normalized = rows.map(normalizeEvent);
+  const eventCounts: Record<string, number> = {};
   const recruiterCounts: Record<string, number> = {};
-  const dropOffSignals: Record<string, number> = {};
-  const sessionEvents = new Map<string, Set<string>>();
+  const sessions = new Set<string>();
 
-  let mobileUsers = 0;
-  let desktopUsers = 0;
-  let tabletUsers = 0;
-  let unknownDeviceUsers = 0;
+  let mobileEvents = 0;
+  let desktopEvents = 0;
+  let tabletEvents = 0;
+  let unknownDeviceEvents = 0;
 
-  const funnel = {
-    landingViewed: 0,
-    onboardingStarted: 0,
-    cvUploaded: 0,
-    interviewStarted: 0,
-    interviewCompleted: 0,
-    resultsViewed: 0,
-  };
+  for (const row of normalized) {
+    increment(eventCounts, row.event);
+    if (row.recruiter) increment(recruiterCounts, row.recruiter);
+    if (row.session_id) sessions.add(row.session_id);
 
-  for (const item of events) {
-    const event = cleanText(item.event, "unknown_event");
-    const sessionId = cleanText(item.session_id, "unknown_session");
-    const device = normalizeDevice(item.device);
-
-    sessions.add(sessionId);
-
-    if (!sessionEvents.has(sessionId)) sessionEvents.set(sessionId, new Set<string>());
-    sessionEvents.get(sessionId)?.add(event);
-
-    if (device === "mobile") mobileUsers += 1;
-    else if (device === "desktop") desktopUsers += 1;
-    else if (device === "tablet") tabletUsers += 1;
-    else unknownDeviceUsers += 1;
-
-    const recruiter = cleanText(item.recruiter);
-    if (recruiter) recruiterCounts[recruiter] = (recruiterCounts[recruiter] || 0) + 1;
-
-    if (event === "landing_viewed" || event === "page_viewed") funnel.landingViewed += 1;
-    if (event === "onboarding_started") funnel.onboardingStarted += 1;
-    if (event === "cv_uploaded") funnel.cvUploaded += 1;
-    if (event === "interview_started") funnel.interviewStarted += 1;
-    if (event === "interview_completed") funnel.interviewCompleted += 1;
-    if (event === "results_viewed") funnel.resultsViewed += 1;
+    const device = normalizeDevice(row.device);
+    if (device === "mobile") mobileEvents += 1;
+    else if (device === "desktop") desktopEvents += 1;
+    else if (device === "tablet") tabletEvents += 1;
+    else unknownDeviceEvents += 1;
   }
 
-  for (const [, names] of sessionEvents) {
-    if (names.has("interview_started") && !names.has("interview_completed")) {
-      dropOffSignals.interview_started_not_completed = (dropOffSignals.interview_started_not_completed || 0) + 1;
-    }
-    if (names.has("onboarding_started") && !names.has("interview_started")) {
-      dropOffSignals.onboarding_not_started_interview = (dropOffSignals.onboarding_not_started_interview || 0) + 1;
-    }
-    if (names.has("cv_uploaded") && !names.has("interview_started")) {
-      dropOffSignals.cv_uploaded_not_started_interview = (dropOffSignals.cv_uploaded_not_started_interview || 0) + 1;
-    }
-  }
+  const interviewStarts =
+    (eventCounts.interview_started || 0) +
+    (eventCounts.start_interview || 0) +
+    (eventCounts.voice_interview_started || 0);
 
-  const interviewStarts = funnel.interviewStarted;
-  const interviewCompleted = funnel.interviewCompleted;
+  const interviewCompleted =
+    (eventCounts.interview_completed || 0) +
+    (eventCounts.interview_ended || 0) +
+    (eventCounts.results_viewed || 0);
+
   const completionRate = interviewStarts > 0 ? Math.round((interviewCompleted / interviewStarts) * 100) : 0;
 
-  const recentErrors = events.filter((event) => isErrorEvent(cleanText(event.event))).slice(0, 20);
+  const errors = normalized.filter((row) => {
+    const event = String(row.event || "").toLowerCase();
+    return event.includes("error") || event.includes("failed") || event.includes("voice_error");
+  });
+
+  const dropOffSignals = normalized.filter((row) => {
+    const event = String(row.event || "").toLowerCase();
+    return event.includes("drop") || event.includes("abandon") || event.includes("interrupted") || event.includes("fallback");
+  });
 
   return {
-    totalEvents,
+    totalEvents: normalized.length,
     uniqueSessions: sessions.size,
     interviewStarts,
     interviewCompleted,
     completionRate,
-    mobileUsers,
-    desktopUsers,
-    tabletUsers,
-    unknownDeviceUsers,
+    mobileEvents,
+    desktopEvents,
+    tabletEvents,
+    unknownDeviceEvents,
     recruiterCounts,
-    recentErrors,
-    dropOffSignals,
-    funnel,
+    eventCounts,
+    errors: errors.slice(0, 25),
+    dropOffSignals: dropOffSignals.slice(0, 25),
   };
+}
+
+function detectDeviceFromRequest(req: NextRequest, explicit?: string) {
+  if (explicit) return normalizeDevice(explicit);
+  const ua = req.headers.get("user-agent") || "";
+  return normalizeDevice(ua);
+}
+
+function getSource(req: NextRequest, explicit?: string) {
+  if (explicit) return explicit;
+  const ref = req.headers.get("referer") || "";
+  if (ref.includes("producthunt")) return "Product Hunt";
+  if (ref.includes("linkedin")) return "LinkedIn";
+  if (ref.includes("instagram")) return "Instagram";
+  if (ref.includes("google")) return "Google";
+  return "Direct / unknown";
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const supabase = getSupabase();
-
+    const supabase = getSupabaseClient();
     if (!supabase) {
-      return NextResponse.json(
-        { success: false, error: "Missing Supabase environment variables" },
-        { status: 500 }
-      );
+      return NextResponse.json({ success: false, error: "Supabase env vars missing" }, { status: 500 });
     }
 
-    const body = await req.json().catch(() => ({}));
-    const userAgent = req.headers.get("user-agent") || "";
+    const body = (await req.json().catch(() => ({}))) as AnalyticsPayload;
+    const metadata = body.metadata || body.details || {};
 
     const payload = {
-      session_id: cleanText(body.sessionId || body.session_id, crypto.randomUUID()),
-      event: cleanText(body.event, "unknown_event"),
-      path: cleanText(body.path, "/"),
-      source: cleanText(body.source, "Direct / unknown"),
-      device: normalizeDevice(body.device, userAgent),
-      recruiter: cleanText(body.recruiter) || null,
-      metadata: typeof body.metadata === "object" && body.metadata !== null ? body.metadata : {},
+      session_id: body.session_id || body.sessionId || crypto.randomUUID(),
+      event: body.event || "unknown_event",
+      path: body.path || req.nextUrl.pathname || "/",
+      source: getSource(req, body.source),
+      device: detectDeviceFromRequest(req, body.device),
+      recruiter: body.recruiter || null,
+      mode: body.mode || null,
+      role: body.role || null,
+      market: body.market || null,
+      metadata,
       created_at: new Date().toISOString(),
     };
 
     const { error } = await supabase.from(TABLE_NAME).insert(payload);
 
     if (error) {
-      console.error("Analytics insert failed:", error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      console.error("WorkZo analytics insert failed:", error);
+      return NextResponse.json(
+        { success: false, error: error.message, details: error.details, hint: error.hint },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Analytics POST failed:", error);
-    return NextResponse.json({ success: false, error: "Analytics POST failed" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown analytics POST error";
+    console.error("WorkZo analytics POST crashed:", error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }
 
 export async function GET() {
   try {
-    const supabase = getSupabase();
-
+    const supabase = getSupabaseClient();
     if (!supabase) {
       const emptySummary = buildSummary([]);
       return NextResponse.json({
-        success: true,
+        success: false,
+        error: "Supabase env vars missing",
         summary: emptySummary,
         stats: emptySummary,
         recentEvents: [],
-        warning: "Missing Supabase environment variables",
+        events: [],
       });
     }
 
@@ -189,21 +247,48 @@ export async function GET() {
       .limit(1000);
 
     if (error) {
-      console.error("Analytics read failed:", error);
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      console.error("WorkZo analytics fetch failed:", error);
+      const emptySummary = buildSummary([]);
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          details: error.details,
+          hint: error.hint,
+          summary: emptySummary,
+          stats: emptySummary,
+          recentEvents: [],
+          events: [],
+        },
+        { status: 200 }
+      );
     }
 
-    const events = (Array.isArray(data) ? data : []) as AnalyticsEvent[];
-    const summary = buildSummary(events);
+    const rows = Array.isArray(data) ? (data as AnalyticsRow[]) : [];
+    const summary = buildSummary(rows);
 
     return NextResponse.json({
       success: true,
       summary,
       stats: summary,
-      recentEvents: events.slice(0, 50),
+      recentEvents: rows.slice(0, 50).map(normalizeEvent),
+      events: rows.map(normalizeEvent),
+      generatedAt: new Date().toISOString(),
     });
   } catch (error) {
-    console.error("Analytics GET failed:", error);
-    return NextResponse.json({ success: false, error: "Analytics GET failed" }, { status: 500 });
+    const message = error instanceof Error ? error.message : "Unknown analytics GET error";
+    console.error("WorkZo analytics GET crashed:", error);
+    const emptySummary = buildSummary([]);
+    return NextResponse.json(
+      {
+        success: false,
+        error: message,
+        summary: emptySummary,
+        stats: emptySummary,
+        recentEvents: [],
+        events: [],
+      },
+      { status: 200 }
+    );
   }
 }
