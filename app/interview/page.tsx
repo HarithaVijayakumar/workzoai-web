@@ -46,13 +46,7 @@ import {
   clearExpiredInterviewState,
   touchWorkZoSession,
 } from "@/lib/workzoStorage";
-import {
-  buildWorkZoVapiVariableValues,
-  createWorkZoVapiClient,
-  getWorkZoVapiConfig,
-  normalizeVapiTranscriptMessage,
-  type WorkZoVapiClient,
-} from "@/lib/workzoVapiVoice";
+import type { WorkZoVapiClient } from "@/lib/workzoVapiVoice";
 import {
   calculateWorkZoThinkingPauseMs,
   getBrowserSpeechPitch,
@@ -276,6 +270,88 @@ function isRapportSmallTalkText(answer: string) {
   if (/\b(nervous|anxious|excited|fine|good|okay|ok|ready|doing well|all good|can hear you|i can hear you|yes i can hear|yeah i can hear)\b/.test(lower) && words.length <= 18) return true;
   if (/\b(no,?\s*)?i just said\b/.test(lower)) return true;
   return false;
+}
+
+function getWorkZoVapiErrorMessage(error: unknown): string {
+  if (!error) return "";
+
+  if (typeof error === "string") return error;
+
+  if (error instanceof Error) {
+    return [error.name, error.message, error.stack].filter(Boolean).join(" ");
+  }
+
+  if (typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const parts: string[] = [];
+
+    for (const key of [
+      "message",
+      "reason",
+      "type",
+      "stage",
+      "status",
+      "statusText",
+      "error",
+    ]) {
+      const value = record[key];
+      if (typeof value === "string") parts.push(value);
+      else if (value && typeof value === "object") {
+        const nested = value as Record<string, unknown>;
+        for (const nestedKey of ["message", "reason", "type", "name"]) {
+          const nestedValue = nested[nestedKey];
+          if (typeof nestedValue === "string") parts.push(nestedValue);
+        }
+      }
+    }
+
+    try {
+      parts.push(JSON.stringify(error));
+    } catch {}
+
+    return parts.filter(Boolean).join(" ");
+  }
+
+  return String(error);
+}
+
+function isBenignVapiEndedError(error: unknown): boolean {
+  const message = getWorkZoVapiErrorMessage(error).toLowerCase();
+
+  return /meeting has ended|meeting ended|call has ended|call ended|ended due to ejection|due to ejection|ejection|participant.*ejected|room.*not.*found|no-room|no room|room lookup|daily.*meeting/i.test(
+    message,
+  );
+}
+
+function isVapiStartNetworkError(error: unknown): boolean {
+  const message = getWorkZoVapiErrorMessage(error).toLowerCase();
+  return /failed to fetch|cors|networkerror|network error|load failed|timeout|timed out/i.test(
+    message,
+  );
+}
+
+function safeLogVapiIssue(label: string, error: unknown) {
+  const message = getWorkZoVapiErrorMessage(error);
+  if (isBenignVapiEndedError(error)) {
+    console.info(label, message || error);
+    return;
+  }
+
+  console.warn(label, message || error);
+}
+
+function createVapiStartTimeout(ms = 14000) {
+  return new Promise<never>((_, reject) => {
+    window.setTimeout(() => {
+      reject(
+        new Error(
+          `Vapi did not connect within ${Math.round(
+            ms / 1000,
+          )} seconds. Falling back to browser TTS.`,
+        ),
+      );
+    }, ms);
+  });
 }
 
 
@@ -2518,6 +2594,77 @@ export default function InterviewPage() {
   const vapiTranscriptKeysRef = useRef<Set<string>>(new Set());
   const [voiceProvider, setVoiceProvider] = useState<"vapi" | "tts-fallback">("tts-fallback");
 
+  useEffect(() => {
+    const originalConsoleError = console.error;
+    const originalConsoleWarn = console.warn;
+
+    const shouldSuppressVapiConsoleNoise = (args: unknown[]) =>
+      args.some((arg) => {
+        if (isBenignVapiEndedError(arg)) return true;
+        if (typeof arg === "string") {
+          return /meeting ended due to ejection|meeting has ended|daily-js.*meeting|call ended|room.*not.*found|no-room/i.test(
+            arg,
+          );
+        }
+        return false;
+      });
+
+    console.error = (...args: unknown[]) => {
+      if (shouldSuppressVapiConsoleNoise(args)) {
+        console.info("Suppressed benign Vapi/Daily end log", ...args);
+        return;
+      }
+      originalConsoleError(...args);
+    };
+
+    console.warn = (...args: unknown[]) => {
+      if (shouldSuppressVapiConsoleNoise(args)) {
+        console.info("Suppressed benign Vapi/Daily warning", ...args);
+        return;
+      }
+      originalConsoleWarn(...args);
+    };
+
+    const suppressBenignVapiRejection = (event: PromiseRejectionEvent) => {
+      if (!isBenignVapiEndedError(event.reason)) return;
+
+      event.preventDefault();
+      safeLogVapiIssue("Suppressed benign Vapi end event", event.reason);
+
+      if (vapiStartingRef.current && !vapiCallActiveRef.current) {
+        vapiStartingRef.current = false;
+        vapiFallbackActivatedRef.current = true;
+        setVoiceProvider("tts-fallback");
+        setVoiceStatus("Vapi ended before connecting. Using reliable fallback voice...");
+      }
+    };
+
+    const suppressBenignVapiWindowError = (event: ErrorEvent) => {
+      const error = event.error || event.message;
+      if (!isBenignVapiEndedError(error)) return;
+
+      event.preventDefault();
+      safeLogVapiIssue("Suppressed benign Vapi window error", error);
+
+      if (vapiStartingRef.current && !vapiCallActiveRef.current) {
+        vapiStartingRef.current = false;
+        vapiFallbackActivatedRef.current = true;
+        setVoiceProvider("tts-fallback");
+        setVoiceStatus("Vapi ended before connecting. Using reliable fallback voice...");
+      }
+    };
+
+    window.addEventListener("unhandledrejection", suppressBenignVapiRejection);
+    window.addEventListener("error", suppressBenignVapiWindowError);
+
+    return () => {
+      console.error = originalConsoleError;
+      console.warn = originalConsoleWarn;
+      window.removeEventListener("unhandledrejection", suppressBenignVapiRejection);
+      window.removeEventListener("error", suppressBenignVapiWindowError);
+    };
+  }, []);
+
   const cleanupMobileTtsUrl = useCallback(() => {
     if (mobileTtsObjectUrlRef.current) {
       try {
@@ -2780,7 +2927,7 @@ export default function InterviewPage() {
 
         finishTimer = window.setTimeout(
           finish,
-          Math.min(26000, Math.max(6500, spokenText.split(/\s+/).length * 430)),
+          Math.min(18000, Math.max(2600, spokenText.split(/\s+/).length * 260)),
         );
 
         await audio.play();
@@ -2796,6 +2943,13 @@ export default function InterviewPage() {
 
   const speakRecruiter = useCallback(
     (text: string, afterSpeak?: () => void) => {
+      // When Vapi is active, Vapi owns the recruiter voice. Never also speak
+      // with browser/server TTS, because that creates slow duplicated turns.
+      if (vapiCallActiveRef.current || voiceProvider === "vapi") {
+        afterSpeak?.();
+        return;
+      }
+
       if (
         typeof window === "undefined" ||
         !window.speechSynthesis ||
@@ -2846,7 +3000,7 @@ export default function InterviewPage() {
         isSpeakingRef.current = false;
         setIsSpeaking(false);
         setIsListening(false);
-        setVoiceStatus("Your turn — tap mic when you are ready");
+        setVoiceStatus("Your turn — answer naturally");
         afterSpeak?.();
       };
 
@@ -2890,7 +3044,7 @@ export default function InterviewPage() {
               return;
             }
             finishSpeech();
-          }, 950);
+          }, 350);
           return;
         }
 
@@ -2927,9 +3081,9 @@ export default function InterviewPage() {
 
         const estimatedMs = Math.min(
           22000,
-          Math.max(3600, spokenText.split(/\s+/).length * 360),
+          Math.max(2200, spokenText.split(/\s+/).length * 240),
         );
-        finishTimer = window.setTimeout(finishSpeech, estimatedMs + 1500);
+        finishTimer = window.setTimeout(finishSpeech, estimatedMs + 500);
 
         utterance.onstart = () => {
           isSpeakingRef.current = true;
@@ -2999,13 +3153,13 @@ export default function InterviewPage() {
         };
 
         window.speechSynthesis.addEventListener("voiceschanged", speakOnce);
-        window.setTimeout(speakOnce, 1400);
+        window.setTimeout(speakOnce, 500);
         return;
       }
 
       speakNow(true);
     },
-    [getLockedBrowserVoice, playRecruiterMobileTts, recruiterId, speakerOn],
+    [getLockedBrowserVoice, playRecruiterMobileTts, recruiterId, speakerOn, voiceProvider],
   );
 
   const listenForAnswer = useCallback(() => {
@@ -3014,10 +3168,13 @@ export default function InterviewPage() {
     // Standard mode stays intentional: recruiter speaks → user taps mic.
     // Cinematic Live is pseudo-live: after recruiter speech, listening opens automatically
     // so the candidate can respond naturally without clicking the mic every turn.
-    const autoListenEnabled = modeRef.current === "video" && mobileAudioUnlockedRef.current;
+    const autoListenEnabled =
+      modeRef.current === "video" ||
+      !isMobileBrowserRuntime() ||
+      mobileAudioUnlockedRef.current;
     if (!manualListenRequestedRef.current && !autoListenEnabled) {
       setIsListening(false);
-      setVoiceStatus("Your turn — tap mic when you are ready");
+      setVoiceStatus("Your turn — answer naturally");
       return;
     }
     manualListenRequestedRef.current = false;
@@ -3072,7 +3229,7 @@ export default function InterviewPage() {
         if (listenSessionIdRef.current !== listenSessionId) return;
         if (!isLiveRef.current || isSpeakingRef.current || isProcessingAnswerRef.current) return;
         setVoiceStatus("Take your time — answer naturally");
-      }, 9000);
+      }, 5000);
     };
 
     recognition.onerror = (event) => {
@@ -3153,7 +3310,7 @@ export default function InterviewPage() {
 
         setIsListening(false);
         handleCandidateAnswerRef.current(finalAnswer);
-      }, 2800);
+      }, 750);
     };
 
     recognitionRef.current = recognition;
@@ -3167,7 +3324,7 @@ export default function InterviewPage() {
       } catch {
         setVoiceStatus("Listening paused. Tap mic to continue.");
       }
-    }, 250);
+    }, 50);
   }, [activeSetup.language]);
 
   const handleCandidateAnswer = useCallback(
@@ -3245,7 +3402,7 @@ export default function InterviewPage() {
       const previousTrust = trustRef.current;
       const currentMemory = memoryRef.current;
 
-      setVoiceStatus("Recruiter is thinking...");
+      setVoiceStatus("Recruiter is preparing a reply...");
 
       let intelligence: UnifiedRecruiterApiResponse | null = null;
 
@@ -3458,13 +3615,18 @@ export default function InterviewPage() {
           ? intelligence.cinematicRealism.pauseBeforeSpeakingMs
           : null;
 
-      const thinkingDelay = calculateWorkZoThinkingPauseMs({
+      const baseThinkingDelay = calculateWorkZoThinkingPauseMs({
         text: spokenReply,
         recruiterId,
         recruiterState: nextState,
         isFollowUp: shouldCountAsAnswer,
         apiPauseMs: apiPause,
       });
+
+      const thinkingDelay =
+        modeRef.current === "video"
+          ? Math.min(baseThinkingDelay, 420)
+          : Math.min(baseThinkingDelay, 650);
 
       pendingRecruiterReplyTimerRef.current = window.setTimeout(() => {
         if (!isLiveRef.current) {
@@ -3486,7 +3648,7 @@ export default function InterviewPage() {
             answerProcessingUnlockTimerRef.current = null;
           }
           isProcessingAnswerRef.current = false;
-          window.setTimeout(() => listenForAnswer(), 350);
+          window.setTimeout(() => listenForAnswer(), 120);
         });
       }, thinkingDelay);
 
@@ -3544,6 +3706,13 @@ export default function InterviewPage() {
 
   const startVapiInterview = useCallback(async () => {
     if (typeof window === "undefined") return false;
+
+    const {
+      buildWorkZoVapiVariableValues,
+      createWorkZoVapiClient,
+      getWorkZoVapiConfig,
+      normalizeVapiTranscriptMessage,
+    } = await import("@/lib/workzoVapiVoice");
 
     const config = getWorkZoVapiConfig(recruiterId, recruiterProfile.name);
     if (!config.enabled) return false;
@@ -3671,7 +3840,7 @@ export default function InterviewPage() {
         addTranscript(item);
 
         if (role === "candidate") {
-          setVoiceStatus("Recruiter is thinking...");
+          setVoiceStatus("Recruiter is preparing a reply...");
         } else {
           setQuestion(normalized.text);
           setVoiceStatus("Recruiter speaking...");
@@ -3679,23 +3848,22 @@ export default function InterviewPage() {
       };
 
       const onError = (error: unknown) => {
-        const message = String(
-          error && typeof error === "object" && "message" in error
-            ? (error as { message?: unknown }).message
-            : error || "",
-        );
-        const isEndedNoise = /meeting has ended|call ended|meeting ended/i.test(message);
+        const message = getWorkZoVapiErrorMessage(error);
+        const isEndedNoise = isBenignVapiEndedError(error);
 
-        if (isEndedNoise) {
-          console.warn("WorkZo Vapi ended; using fallback voice", error);
-        } else {
-          console.warn("WorkZo Vapi voice failed, fallback available", error);
-        }
+        safeLogVapiIssue(
+          isEndedNoise
+            ? "WorkZo Vapi session ended; fallback remains available"
+            : "WorkZo Vapi voice failed; fallback available",
+          error,
+        );
 
         activateTtsFallback(
           isEndedNoise
             ? "Vapi session ended. Continuing with reliable fallback voice."
-            : "Vapi voice unavailable. Continuing with fallback voice.",
+            : isVapiStartNetworkError(error)
+              ? "Vapi network issue. Continuing with reliable fallback voice."
+              : "Vapi voice unavailable. Continuing with reliable fallback voice.",
         );
 
         trackWorkZoLaunchEvent({
@@ -3745,39 +3913,51 @@ export default function InterviewPage() {
         metadata: { provider: "vapi", fallbackAvailable: true, assistantId: config.assistantId, recruiterKey: config.recruiterKey },
       });
 
-      try {
-        await client.start(config.assistantId, { variableValues });
-      } catch (firstStartError) {
-        console.warn(
-          "WorkZo Vapi primary start signature failed; retrying with assistant overrides",
-          firstStartError,
-        );
-        await client.start(config.assistantId, {
-          assistantOverrides: { variableValues },
-        });
-      }
+      const vapiStarter = client as {
+        start: (
+          assistantId: string,
+          options?: {
+            variableValues?: Record<string, string>;
+            assistantOverrides?: { variableValues?: Record<string, string> };
+          },
+        ) => Promise<unknown>;
+      };
+
+      await vapiStarter.start(config.assistantId, { variableValues });
 
       window.setTimeout(() => {
         if (!isLiveRef.current) return;
         if (!vapiCallActiveRef.current && vapiStartingRef.current) {
-          activateTtsFallback("Vapi is taking too long. Continuing with fallback voice.");
+          setVoiceStatus("Still connecting to Vapi recruiter voice...");
         }
-      }, 9000);
+      }, 12000);
 
       return true;
     } catch (error) {
-      console.warn("WorkZo Vapi start failed; using TTS fallback", error);
+      safeLogVapiIssue("WorkZo Vapi start failed; using TTS fallback", error);
       try {
         vapiClientRef.current?.removeAllListeners?.();
       } catch {}
       try {
-        vapiClientRef.current?.stop?.();
+        if (!isBenignVapiEndedError(error)) {
+          vapiClientRef.current?.stop?.();
+        }
       } catch {}
       vapiCallActiveRef.current = false;
       vapiStartingRef.current = false;
       vapiFallbackActivatedRef.current = true;
+      isLiveRef.current = false;
+      setIsLive(false);
+      setIsSpeaking(false);
+      setIsListening(false);
       setVoiceProvider("tts-fallback");
-      setVoiceStatus("Using reliable fallback voice...");
+      setVoiceStatus(
+        isBenignVapiEndedError(error)
+          ? "Vapi meeting ended before connecting. Starting reliable fallback voice..."
+          : isVapiStartNetworkError(error)
+            ? "Vapi network issue. Starting reliable fallback voice..."
+            : "Using reliable fallback voice...",
+      );
       return false;
     }
   }, [addTranscript, cleanupMobileTtsUrl, recruiterId, recruiterProfile.name]);

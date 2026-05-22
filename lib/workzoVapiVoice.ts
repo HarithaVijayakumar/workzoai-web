@@ -1,4 +1,3 @@
-import Vapi from "@vapi-ai/web";
 import { getOpenAiTtsInstructions } from "@/lib/workzoVoiceHumanizer";
 
 export type WorkZoVapiTranscriptMessage = {
@@ -65,8 +64,14 @@ export function getWorkZoVapiConfig(recruiterId?: WorkZoRecruiterId, recruiterNa
 }
 
 
-export function createWorkZoVapiClient(publicKey: string): WorkZoVapiClient {
-  return new Vapi(publicKey) as unknown as WorkZoVapiClient;
+export async function createWorkZoVapiClient(publicKey: string): Promise<WorkZoVapiClient> {
+  // Lazy-load the Vapi SDK only after the user taps Start/Mic.
+  // A static top-level import can cause the SDK/Daily layer to warm device APIs
+  // during the heavy /interview page load, which leads to repeated
+  // enumerateDevices delays before the user even starts voice.
+  const mod = await import("@vapi-ai/web");
+  const VapiConstructor = (mod.default || mod) as unknown as new (key: string) => WorkZoVapiClient;
+  return new VapiConstructor(publicKey);
 }
 
 export function normalizeVapiTranscriptMessage(message: any): WorkZoVapiTranscriptMessage | null {
