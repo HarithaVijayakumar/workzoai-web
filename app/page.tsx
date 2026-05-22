@@ -37,34 +37,85 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden overflow-y-auto bg-[#020617] pb-[calc(env(safe-area-inset-bottom)+96px)] text-white">
+    <main className="relative min-h-screen overflow-x-hidden overflow-y-auto bg-[#020617] pb-[calc(env(safe-area-inset-bottom)+42px)] text-white sm:pb-[calc(env(safe-area-inset-bottom)+72px)]">
+      <style jsx global>{`
+        @keyframes wzHeroSlowZoom {
+          0%, 100% { transform: scale(1.02); }
+          50% { transform: scale(1.07); }
+        }
+
+        @keyframes wzWave {
+          0%, 100% { transform: scaleY(.52); opacity: .58; }
+          45% { transform: scaleY(1.18); opacity: 1; }
+        }
+
+        @keyframes wzPressurePulse {
+          0%, 100% { opacity: .72; transform: scaleX(.92); }
+          50% { opacity: 1; transform: scaleX(1); }
+        }
+
+        @keyframes wzThinkingDots {
+          0%, 20% { opacity: .2; }
+          50% { opacity: 1; }
+          100% { opacity: .2; }
+        }
+
+        @keyframes wzMobileCardFloat {
+          0%, 100% { transform: translateY(0) scale(1); }
+          50% { transform: translateY(-5px) scale(1.01); }
+        }
+
+        @keyframes wzMobileGlow {
+          0%, 100% { opacity: .42; transform: scale(.95); }
+          50% { opacity: .82; transform: scale(1.05); }
+        }
+
+        .wz-hero-slow-zoom { animation: wzHeroSlowZoom 16s ease-in-out infinite; }
+        .wz-wave { animation: wzWave 1.12s ease-in-out infinite; transform-origin: bottom; }
+        .wz-pressure-pulse { animation: wzPressurePulse 2.2s ease-in-out infinite; transform-origin: left; }
+        .wz-thinking-dots { animation: wzThinkingDots 1.2s ease-in-out infinite; }
+        .wz-mobile-card-float { animation: wzMobileCardFloat 5.8s ease-in-out infinite; }
+        .wz-mobile-glow { animation: wzMobileGlow 3.6s ease-in-out infinite; }
+
+        @media (prefers-reduced-motion: reduce) {
+          .wz-hero-slow-zoom,
+          .wz-wave,
+          .wz-pressure-pulse,
+          .wz-thinking-dots,
+          .wz-mobile-card-float,
+          .wz-mobile-glow {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
       <Image
         src="/hero-room-v2.png"
         alt="Cinematic AI interview room"
         fill
         priority
         sizes="100vw"
-        className="object-cover object-[72%_50%] opacity-70 wz-hero-slow-zoom"
+        className="object-cover object-[72%_50%] opacity-45 wz-hero-slow-zoom sm:opacity-60 lg:opacity-70"
       />
 
-      <div className="absolute inset-0 bg-black/42" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_24%,rgba(34,211,238,0.16),transparent_28%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.97)_0%,rgba(2,6,23,0.82)_33%,rgba(2,6,23,0.32)_62%,rgba(2,6,23,0.64)_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,23,0.38)_0%,rgba(2,6,23,0.12)_45%,rgba(2,6,23,0.92)_100%)]" />
+      <div className="absolute inset-0 bg-black/54 sm:bg-black/42" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(34,211,238,0.18),transparent_32%)] sm:bg-[radial-gradient(circle_at_72%_24%,rgba(34,211,238,0.16),transparent_28%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,23,0.88)_0%,rgba(2,6,23,0.45)_36%,rgba(2,6,23,0.96)_100%)] lg:bg-[linear-gradient(90deg,rgba(2,6,23,0.97)_0%,rgba(2,6,23,0.82)_33%,rgba(2,6,23,0.32)_62%,rgba(2,6,23,0.64)_100%)]" />
+      <div className="absolute inset-0 hidden bg-[linear-gradient(180deg,rgba(2,6,23,0.38)_0%,rgba(2,6,23,0.12)_45%,rgba(2,6,23,0.92)_100%)] lg:block" />
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_22%,rgba(56,189,248,0.20),transparent_30%)]" />
 
-      <div className="relative z-10 mx-auto max-w-[1500px] px-5 py-5 lg:px-10">
-        <header className="flex h-[78px] items-center justify-between rounded-[30px] border border-white/10 bg-[#050b18]/70 px-5 shadow-[0_22px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl lg:px-7">
-          <Link href="/" className="flex items-center gap-3">
+      <div className="relative z-10 mx-auto max-w-[1500px] px-4 py-4 sm:px-5 sm:py-5 lg:px-10">
+        <header className="flex min-h-[64px] items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-[#050b18]/76 px-4 shadow-[0_22px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:h-[78px] sm:rounded-[30px] sm:px-5 lg:px-7">
+          <Link href="/" className="flex min-w-0 items-center gap-2.5 sm:gap-3">
             <Image
               src="/workzo_icon.png"
               alt="WorkZo AI"
               width={46}
               height={46}
-              className="rounded-2xl"
+              className="h-10 w-10 rounded-2xl sm:h-[46px] sm:w-[46px]"
               priority
             />
-            <span className="text-[30px] font-black tracking-tight">
+            <span className="truncate text-[24px] font-black tracking-tight sm:text-[30px]">
               WorkZo <span className="text-blue-400">AI</span>
             </span>
           </Link>
@@ -87,7 +138,7 @@ export default function LandingPage() {
             </a>
           </nav>
 
-          <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-3">
             <Link
               href="/dashboard"
               className="hidden h-12 items-center rounded-2xl border border-white/10 bg-white/[0.05] px-6 text-sm font-black text-white sm:inline-flex"
@@ -96,27 +147,27 @@ export default function LandingPage() {
             </Link>
             <Link
               href="/onboarding"
-              className="inline-flex h-12 items-center rounded-2xl bg-gradient-to-r from-blue-500 to-violet-600 px-7 text-sm font-black text-white"
+              className="inline-flex h-11 items-center rounded-2xl bg-gradient-to-r from-blue-500 to-violet-600 px-4 text-sm font-black text-white shadow-[0_0_30px_rgba(59,130,246,0.28)] sm:h-12 sm:px-7"
             >
               Get Started
             </Link>
           </div>
         </header>
 
-        <section className="relative min-h-[calc(100dvh-118px)] overflow-visible py-8 pb-[calc(env(safe-area-inset-bottom)+120px)] lg:h-[calc(100vh-118px)] lg:overflow-hidden lg:pb-0">
-          <div className="max-w-[650px] pt-0">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-white/[0.05] px-4 py-2 text-sm font-black backdrop-blur-xl">
+        <section className="relative min-h-[calc(100dvh-96px)] overflow-visible py-7 pb-[calc(env(safe-area-inset-bottom)+44px)] sm:min-h-[calc(100dvh-118px)] sm:py-8 sm:pb-[calc(env(safe-area-inset-bottom)+80px)] lg:h-[calc(100vh-118px)] lg:overflow-hidden lg:pb-0">
+          <div className="max-w-[650px] pt-0 text-center sm:text-left">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-white/[0.06] px-3.5 py-2 text-xs font-black backdrop-blur-xl sm:px-4 sm:text-sm">
               ✨ AI interviewer that feels real
             </div>
 
-            <h1 className="mt-7 text-[clamp(44px,4.6vw,72px)] font-black leading-[0.9] tracking-[-0.05em]">
+            <h1 className="mt-6 text-[clamp(40px,12vw,58px)] font-black leading-[0.92] tracking-[-0.055em] sm:mt-7 sm:text-[clamp(44px,4.6vw,72px)] sm:leading-[0.9]">
               Face a real interview{" "}
               <span className="bg-gradient-to-r from-cyan-300 via-blue-500 to-violet-500 bg-clip-text text-transparent">
                 before the real one.
               </span>
             </h1>
 
-            <p className="mt-6 max-w-[610px] text-[19px] leading-8 text-slate-300">
+            <p className="mx-auto mt-5 max-w-[610px] text-[16px] leading-7 text-slate-300 sm:mx-0 sm:mt-6 sm:text-[19px] sm:leading-8">
               Practice with an AI recruiter that reads your CV, asks follow-up
               questions, interrupts vague answers, applies pressure, detects
               contradictions, and gives honest feedback.
@@ -124,7 +175,7 @@ export default function LandingPage() {
 
             <div
               id="features"
-              className="mt-8 grid max-w-[640px] grid-cols-2 gap-4 text-sm font-bold text-slate-200 sm:grid-cols-4"
+              className="mx-auto mt-6 grid max-w-[640px] grid-cols-2 gap-3 text-left text-[13px] font-bold text-slate-200 sm:mx-0 sm:mt-8 sm:grid-cols-4 sm:gap-4 sm:text-sm"
             >
               {[
                 "Realistic AI Interviewer",
@@ -132,17 +183,22 @@ export default function LandingPage() {
                 "Pressure Simulation",
                 "Honest Feedback",
               ].map((item) => (
-                <div key={item} className="flex items-center gap-2">
-                  <CheckCircle2 className="h-5 w-5 shrink-0 text-cyan-300" />
-                  <span>{item}</span>
+                <div
+                  key={item}
+                  className="rounded-2xl border border-white/[0.07] bg-white/[0.045] p-3 backdrop-blur-xl sm:border-none sm:bg-transparent sm:p-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5 shrink-0 text-cyan-300" />
+                    <span>{item}</span>
+                  </div>
                 </div>
               ))}
             </div>
 
-            <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+            <div className="mt-7 flex flex-col gap-3 sm:mt-9 sm:flex-row sm:gap-4">
               <Link
                 href="/onboarding"
-                className="inline-flex h-16 items-center justify-center gap-3 rounded-[24px] bg-gradient-to-r from-blue-500 to-violet-600 px-8 text-base font-black text-white shadow-[0_0_46px_rgba(59,130,246,0.35)]"
+                className="inline-flex h-15 min-h-[58px] items-center justify-center gap-3 rounded-[22px] bg-gradient-to-r from-blue-500 to-violet-600 px-7 text-base font-black text-white shadow-[0_0_46px_rgba(59,130,246,0.35)] transition active:scale-[0.98] sm:h-16 sm:rounded-[24px] sm:px-8"
               >
                 Start Real Interview
                 <ArrowRight className="h-5 w-5" />
@@ -150,11 +206,64 @@ export default function LandingPage() {
 
               <Link
                 href="/onboarding"
-                className="inline-flex h-16 items-center justify-center gap-3 rounded-[24px] border border-white/10 bg-white/[0.04] px-8 text-base font-black text-white backdrop-blur-xl"
+                className="inline-flex h-15 min-h-[58px] items-center justify-center gap-3 rounded-[22px] border border-white/10 bg-white/[0.045] px-7 text-base font-black text-white backdrop-blur-xl transition active:scale-[0.98] sm:h-16 sm:rounded-[24px] sm:px-8"
               >
                 <Upload className="h-5 w-5" />
                 Upload CV
               </Link>
+            </div>
+          </div>
+
+          <div className="pointer-events-none relative mx-auto mt-8 block w-full max-w-[430px] rounded-[32px] border border-white/[0.09] bg-[#061225]/72 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl wz-mobile-card-float lg:hidden">
+            <div className="absolute -inset-4 rounded-[38px] bg-cyan-400/10 blur-3xl wz-mobile-glow" />
+            <div className="relative overflow-hidden rounded-[26px] border border-white/[0.08] bg-black/24 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <span className="h-3 w-3 rounded-full bg-emerald-300 shadow-[0_0_18px_rgba(52,211,153,0.85)]" />
+                  <span className="text-[11px] font-black uppercase tracking-[0.22em] text-emerald-200">
+                    Live Interview
+                  </span>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1 text-[11px] font-black text-slate-200">
+                  Trust {trust}
+                </span>
+              </div>
+
+              <div className="mt-5 flex h-10 items-end justify-center gap-[6px]">
+                {waveform.slice(0, 10).map((height, index) => (
+                  <span
+                    key={index}
+                    className="w-[5px] rounded-full bg-gradient-to-t from-blue-500 via-cyan-300 to-violet-400 wz-wave"
+                    style={{
+                      height: Math.max(14, height * 0.82),
+                      animationDelay: `${index * 80}ms`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              <div className="mt-5 space-y-3">
+                {transcript.map((line) => (
+                  <div
+                    key={line.role + line.text}
+                    className="rounded-2xl border border-white/[0.06] bg-white/[0.04] p-3 text-left"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-400">
+                      {line.role}
+                    </p>
+                    <p className="mt-1 text-[13px] leading-5 text-white/88">
+                      {line.text}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/[0.07] bg-black/20 px-4 py-3 text-xs font-bold text-slate-300">
+                <span className="flex items-center gap-2">
+                  <Mic className="h-4 w-4 text-cyan-300" /> Mic On
+                </span>
+                <span className="text-red-300">Pressure High</span>
+              </div>
             </div>
           </div>
 
@@ -180,12 +289,12 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="pointer-events-none absolute right-6 top-[96px] hidden w-[170px] rotate-[2deg] rounded-[26px] border border-white/[0.08] bg-[rgba(7,12,24,0.62)] backdrop-blur-[24px] p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] backdrop-blur-2xl lg:block">
+          <div className="pointer-events-none absolute right-6 top-[96px] hidden w-[170px] rotate-[2deg] rounded-[26px] border border-white/[0.08] bg-[rgba(7,12,24,0.62)] p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] backdrop-blur-2xl lg:block">
             <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-300">
               Trust Score
             </p>
 
-            <div className="mt-5 flex h-24 items-center justify-center rounded-full border-[7px] shadow-[0_0_35px_rgba(56,189,248,0.12)] border-cyan-300/80 border-b-amber-300 border-r-violet-400 bg-black/20">
+            <div className="mt-5 flex h-24 items-center justify-center rounded-full border-[7px] border-cyan-300/80 border-b-amber-300 border-r-violet-400 bg-black/20 shadow-[0_0_35px_rgba(56,189,248,0.12)]">
               <div className="text-center">
                 <p className="text-3xl font-black">{trust}</p>
                 <p className="text-xs text-slate-300">/100</p>

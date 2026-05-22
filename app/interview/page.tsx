@@ -2601,12 +2601,23 @@ export default function InterviewPage() {
     const shouldSuppressVapiConsoleNoise = (args: unknown[]) =>
       args.some((arg) => {
         if (isBenignVapiEndedError(arg)) return true;
-        if (typeof arg === "string") {
-          return /meeting ended due to ejection|meeting has ended|daily-js.*meeting|call ended|room.*not.*found|no-room/i.test(
-            arg,
-          );
-        }
-        return false;
+
+        const text =
+          typeof arg === "string"
+            ? arg
+            : arg instanceof Error
+              ? `${arg.name} ${arg.message} ${arg.stack || ""}`
+              : (() => {
+                  try {
+                    return JSON.stringify(arg);
+                  } catch {
+                    return String(arg || "");
+                  }
+                })();
+
+        return /meeting ended due to ejection|meeting has ended|daily-js.*meeting|call ended|room.*not.*found|no-room|krisp processor|wasm_or_worker_not_ready|error unloading krisp/i.test(
+          text,
+        );
       });
 
     console.error = (...args: unknown[]) => {
@@ -2626,10 +2637,14 @@ export default function InterviewPage() {
     };
 
     const suppressBenignVapiRejection = (event: PromiseRejectionEvent) => {
-      if (!isBenignVapiEndedError(event.reason)) return;
+      const shouldSuppress =
+        isBenignVapiEndedError(event.reason) ||
+        shouldSuppressVapiConsoleNoise([event.reason]);
+
+      if (!shouldSuppress) return;
 
       event.preventDefault();
-      safeLogVapiIssue("Suppressed benign Vapi end event", event.reason);
+      safeLogVapiIssue("Suppressed benign Vapi/Daily audio cleanup event", event.reason);
 
       if (vapiStartingRef.current && !vapiCallActiveRef.current) {
         vapiStartingRef.current = false;
@@ -2641,10 +2656,14 @@ export default function InterviewPage() {
 
     const suppressBenignVapiWindowError = (event: ErrorEvent) => {
       const error = event.error || event.message;
-      if (!isBenignVapiEndedError(error)) return;
+      const shouldSuppress =
+        isBenignVapiEndedError(error) ||
+        shouldSuppressVapiConsoleNoise([error, event.message]);
+
+      if (!shouldSuppress) return;
 
       event.preventDefault();
-      safeLogVapiIssue("Suppressed benign Vapi window error", error);
+      safeLogVapiIssue("Suppressed benign Vapi/Daily audio cleanup window error", error);
 
       if (vapiStartingRef.current && !vapiCallActiveRef.current) {
         vapiStartingRef.current = false;
@@ -3782,7 +3801,15 @@ export default function InterviewPage() {
       } catch {}
       vapiClientRef.current = client;
 
-      const activateTtsFallback = (reason: string) => {
+      const markVapiEnded = (reason: string) => {
+        vapiCallActiveRef.current = false;
+        vapiStartingRef.current = false;
+        setIsSpeaking(false);
+        setIsListening(false);
+        setVoiceStatus(reason);
+      };
+
+      const activateStartFallback = (reason: string) => {
         if (vapiFallbackActivatedRef.current) return;
         vapiFallbackActivatedRef.current = true;
         vapiCallActiveRef.current = false;
@@ -3804,11 +3831,10 @@ export default function InterviewPage() {
       };
 
       const onCallEnd = () => {
-        activateTtsFallback(
-          isLiveRef.current
-            ? "Vapi session ended. Continuing with reliable fallback voice."
-            : "Voice session ended",
-        );
+        // Normal Vapi/Daily call-end should not trigger browser TTS takeover.
+        // If the user selected Vapi mode, keep the modes separated and simply
+        // mark the live voice session as ended.
+        markVapiEnded("Vapi voice session ended");
       };
 
       const onSpeechStart = () => {
@@ -3842,7 +3868,7 @@ export default function InterviewPage() {
         if (role === "candidate") {
           setVoiceStatus("Recruiter is preparing a reply...");
         } else {
-          setQuestion(normalized.text);
+            setQuestion(normalized.text);
           setVoiceStatus("Recruiter speaking...");
         }
       };
@@ -3858,13 +3884,19 @@ export default function InterviewPage() {
           error,
         );
 
-        activateTtsFallback(
-          isEndedNoise
-            ? "Vapi session ended. Continuing with reliable fallback voice."
-            : isVapiStartNetworkError(error)
-              ? "Vapi network issue. Continuing with reliable fallback voice."
-              : "Vapi voice unavailable. Continuing with reliable fallback voice.",
-        );
+        if (vapiStartingRef.current && !vapiCallActiveRef.current) {
+          activateStartFallback(
+            isEndedNoise
+              ? "Vapi session ended before connecting. Using reliable fallback voice."
+              : isVapiStartNetworkError(error)
+                ? "Vapi network issue. Using reliable fallback voice."
+                : "Vapi voice unavailable before connecting. Using reliable fallback voice.",
+          );
+        } else {
+          markVapiEnded(
+            isEndedNoise ? "Vapi voice session ended" : "Vapi voice disconnected",
+          );
+        }
 
         trackWorkZoLaunchEvent({
           event: "voice_error",
@@ -3924,11 +3956,13 @@ export default function InterviewPage() {
       };
 
       await vapiStarter.start(config.assistantId, { variableValues });
+      setVoiceProvider("vapi");
+      setVoiceStatus("Vapi connected. Waiting for recruiter...");
 
       window.setTimeout(() => {
         if (!isLiveRef.current) return;
         if (!vapiCallActiveRef.current && vapiStartingRef.current) {
-          setVoiceStatus("Still connecting to Vapi recruiter voice...");
+          setVoiceStatus("Vapi connected. Waiting for recruiter...");
         }
       }, 12000);
 
