@@ -104,6 +104,13 @@ export function runRecruiterRuntime({
     turnIndex,
   });
 
+  const recoveryLine = buildRuntimeRecoveryLine({
+    previousMemory: memory,
+    answerSignals,
+    score,
+    turnIndex,
+  });
+
   const interruption = buildMemoryEscalatedInterruption({
     baseInterruption,
     previousMemory: memory,
@@ -137,11 +144,13 @@ export function runRecruiterRuntime({
     vague: answerSignals.vague,
     weakClarity: answerSignals.weakClarity,
     tooLong: answerSignals.tooLong,
+    recoveringStrongly: Boolean(recoveryLine),
   });
 
   const runtimeDecision = determineRuntimeDecision({
     interruption,
     memoryLine,
+    recoveryLine,
     mood,
     score,
     answerSignals,
@@ -166,6 +175,7 @@ export function runRecruiterRuntime({
     runtimeDecision,
     interruption,
     memoryLine,
+    recoveryLine,
     reactionLines,
     mood,
     answerSignals,
@@ -384,6 +394,38 @@ function buildRuntimeMemoryLine({
   return getMemoryBasedRecruiterLine(updatedMemory);
 }
 
+function buildRuntimeRecoveryLine({
+  previousMemory,
+  answerSignals,
+  score,
+  turnIndex,
+}: {
+  previousMemory: EmotionalMemoryState;
+  answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
+  score: number;
+  turnIndex: number;
+}) {
+  if (turnIndex < 2) return null;
+
+  const hadWeakPattern =
+    hasPreviousWeakness(previousMemory, "vague_answer") ||
+    hasPreviousWeakness(previousMemory, "missing_metrics") ||
+    hasPreviousWeakness(previousMemory, "weak_clarity") ||
+    previousMemory.trust < 60 ||
+    previousMemory.confidence < 60;
+
+  const recoveredWithEvidence =
+    hadWeakPattern &&
+    (answerSignals.strong || score >= 82) &&
+    answerSignals.hasOwnership &&
+    answerSignals.hasMetrics &&
+    !answerSignals.vague;
+
+  if (!recoveredWithEvidence) return null;
+
+  return "That is stronger. This is the kind of evidence I was looking for.";
+}
+
 function buildContextAwareReactionLines({
   baseReactionLines,
   answerSignals,
@@ -471,6 +513,7 @@ function buildPressureAwareReactionLines({
 function determineRuntimeDecision({
   interruption,
   memoryLine,
+  recoveryLine,
   mood,
   score,
   answerSignals,
@@ -478,6 +521,7 @@ function determineRuntimeDecision({
 }: {
   interruption: InterruptionResult;
   memoryLine: string | null;
+  recoveryLine: string | null;
   mood: RecruiterRuntimeMood;
   score: number;
   answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
@@ -485,6 +529,8 @@ function determineRuntimeDecision({
 }): RecruiterRuntimeDecision {
   // Strict priority order. This prevents engines from competing.
   if (interruption.shouldInterrupt) return "interrupt";
+
+  if (recoveryLine) return "recover";
 
   // Do not overuse memory callbacks in the first 1–2 turns.
   if (memoryLine && turnIndex >= 2) return "memory_callback";
@@ -512,6 +558,7 @@ function determineMood({
   vague,
   weakClarity,
   tooLong,
+  recoveringStrongly,
 }: {
   score: number;
   interruption: InterruptionResult;
@@ -520,7 +567,9 @@ function determineMood({
   vague: boolean;
   weakClarity: boolean;
   tooLong: boolean;
+  recoveringStrongly: boolean;
 }): RecruiterRuntimeMood {
+  if (recoveringStrongly) return "interested";
   if (score >= 85 && memory.trust >= 75) return "impressed";
 
   if (interruption.shouldInterrupt && interruption.severity === "high") {
@@ -597,6 +646,7 @@ function chooseSuggestedLine({
   runtimeDecision,
   interruption,
   memoryLine,
+  recoveryLine,
   reactionLines,
   mood,
   answerSignals,
@@ -604,6 +654,7 @@ function chooseSuggestedLine({
   runtimeDecision: RecruiterRuntimeDecision;
   interruption: InterruptionResult;
   memoryLine: string | null;
+  recoveryLine: string | null;
   reactionLines: string[];
   mood: RecruiterRuntimeMood;
   answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
@@ -614,6 +665,10 @@ function chooseSuggestedLine({
 
   if (runtimeDecision === "memory_callback" && memoryLine) {
     return memoryLine;
+  }
+
+  if (runtimeDecision === "recover" && recoveryLine) {
+    return recoveryLine;
   }
 
   if (runtimeDecision === "challenge") {

@@ -60,6 +60,27 @@ function runRuntimeTests() {
     ],
   };
 
+
+  const recoveryMemory = {
+    ...initialEmotionalMemory,
+    trust: 52,
+    confidence: 54,
+    interest: 62,
+    repeatedWeaknesses: ["vague_answer", "missing_metrics"],
+    memories: [
+      {
+        signal: "vague_answer" as const,
+        message: "The earlier answer was broad and did not give a clear situation.",
+        timestamp: Date.now() - 120_000,
+      },
+      {
+        signal: "missing_metrics" as const,
+        message: "The earlier answer avoided measurable impact.",
+        timestamp: Date.now() - 90_000,
+      },
+    ],
+  };
+
   const scenarios: RuntimeScenario[] = [
     {
       label: "Vague answer without metrics",
@@ -96,6 +117,20 @@ function runRuntimeTests() {
         score: 74,
         pressureLevel: 45,
         memory: baseMemory,
+      },
+    },
+
+    {
+      label: "Strong recovery after previous vague answers",
+      expectedDecisionHint:
+        "Recruiter should soften and acknowledge recovery after a stronger, measurable answer.",
+      input: {
+        answer:
+          "I owned the follow-up process after repeated customer setup issues. I documented the fix, shared it with the team, and reduced repeat troubleshooting time by about 20 percent within a few weeks.",
+        score: 88,
+        pressureLevel: 68,
+        memory: recoveryMemory,
+        turnIndex: 4,
       },
     },
     {
