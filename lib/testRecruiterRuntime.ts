@@ -40,6 +40,25 @@ function printRuntimeResult(
 
 function runRuntimeTests() {
   const baseMemory = initialEmotionalMemory;
+  const repeatedWeaknessMemory = {
+    ...initialEmotionalMemory,
+    trust: 58,
+    confidence: 58,
+    interest: 64,
+    repeatedWeaknesses: ["vague_answer", "missing_metrics"],
+    memories: [
+      {
+        signal: "vague_answer" as const,
+        message: "The previous answer was broad and did not show clear ownership.",
+        timestamp: Date.now() - 90_000,
+      },
+      {
+        signal: "missing_metrics" as const,
+        message: "The previous answer did not include measurable impact.",
+        timestamp: Date.now() - 60_000,
+      },
+    ],
+  };
 
   const scenarios: RuntimeScenario[] = [
     {
@@ -52,6 +71,19 @@ function runRuntimeTests() {
         score: 42,
         pressureLevel: 62,
         memory: baseMemory,
+      },
+    },
+    {
+      label: "Repeated vague answer with previous memory",
+      expectedDecisionHint:
+        "Recruiter should call back the repeated weakness instead of treating it like a fresh answer.",
+      input: {
+        answer:
+          "I worked on many different things and helped with customer problems. I am good at handling people and I always try my best.",
+        score: 44,
+        pressureLevel: 64,
+        memory: repeatedWeaknessMemory,
+        turnIndex: 3,
       },
     },
     {

@@ -97,7 +97,12 @@ export function runRecruiterRuntime({
 
   const interruption = evaluateInterruption(safeAnswer, pressureLevel);
   const updatedMemory = updateEmotionalMemory(memory, safeAnswer);
-  const memoryLine = getMemoryBasedRecruiterLine(updatedMemory);
+  const memoryLine = buildRuntimeMemoryLine({
+    previousMemory: memory,
+    updatedMemory,
+    answerSignals,
+    turnIndex,
+  });
 
   const baseReactionLines = getRecruiterReaction({
     score,
@@ -255,6 +260,52 @@ function detectConcreteTechnicalExample(answer: string) {
   const userContext = /\b(customer|client|user|non[- ]technical|old|older|scared|confused|not tech savvy)\b/i.test(text);
 
   return productOrTechContext && stepContext && userContext;
+}
+
+
+function buildRuntimeMemoryLine({
+  previousMemory,
+  updatedMemory,
+  answerSignals,
+  turnIndex,
+}: {
+  previousMemory: EmotionalMemoryState;
+  updatedMemory: EmotionalMemoryState;
+  answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
+  turnIndex: number;
+}) {
+  if (turnIndex < 2) return null;
+
+  const previousWeaknesses = new Set(previousMemory.repeatedWeaknesses || []);
+  const updatedWeaknesses = new Set(updatedMemory.repeatedWeaknesses || []);
+  const previousSignals = new Set(
+    (previousMemory.memories || [])
+      .map((item) => item.signal)
+      .filter((signal) =>
+        signal === "vague_answer" ||
+        signal === "missing_metrics" ||
+        signal === "weak_clarity",
+      ),
+  );
+
+  const hasPreviousPattern = (signal: "vague_answer" | "missing_metrics" | "weak_clarity") =>
+    previousWeaknesses.has(signal) ||
+    updatedWeaknesses.has(signal) ||
+    previousSignals.has(signal);
+
+  if (answerSignals.vague && hasPreviousPattern("vague_answer")) {
+    return "I’m noticing the same pattern again — this is still too general. Give me one specific situation and what you personally did.";
+  }
+
+  if (answerSignals.missingMetrics && hasPreviousPattern("missing_metrics")) {
+    return "Earlier you also avoided measurable impact. What changed because of your work? A rough number is fine.";
+  }
+
+  if (answerSignals.weakClarity && hasPreviousPattern("weak_clarity")) {
+    return "This still feels incomplete. Walk me through the situation, your action, and the result in order.";
+  }
+
+  return getMemoryBasedRecruiterLine(updatedMemory);
 }
 
 function buildContextAwareReactionLines({
