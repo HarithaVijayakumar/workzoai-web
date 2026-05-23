@@ -37,8 +37,15 @@ export type RecruiterRuntimeDecision =
   | "continue"
   | "recover";
 
+export type RecruiterRuntimePersonality =
+  | "analytical_hiring_manager"
+  | "friendly_hr"
+  | "startup_recruiter"
+  | "german_corporate";
+
 export type RecruiterRuntimeInput = {
   answer: string;
+  recruiterId?: RecruiterRuntimePersonality;
   score?: number;
   pressureLevel?: number;
   memory?: EmotionalMemoryState;
@@ -90,6 +97,7 @@ export type RecruiterRuntimeOutput = {
 
 export function runRecruiterRuntime({
   answer,
+  recruiterId = "analytical_hiring_manager",
   score = 70,
   pressureLevel = 50,
   memory = initialEmotionalMemory,
@@ -175,6 +183,7 @@ export function runRecruiterRuntime({
   });
 
   const microReaction = chooseMicroReaction({
+    recruiterId,
     runtimeDecision,
     interruption,
     memoryLine,
@@ -725,6 +734,7 @@ function chooseSuggestedLine({
 
 
 function chooseMicroReaction({
+  recruiterId,
   runtimeDecision,
   interruption,
   memoryLine,
@@ -733,6 +743,7 @@ function chooseMicroReaction({
   answerSignals,
   score,
 }: {
+  recruiterId: RecruiterRuntimePersonality;
   runtimeDecision: RecruiterRuntimeDecision;
   interruption: InterruptionResult;
   memoryLine: string | null;
@@ -741,41 +752,75 @@ function chooseMicroReaction({
   answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
   score: number;
 }) {
+  const family = recruiterId;
+
   if (runtimeDecision === "interrupt" && interruption.severity === "high") {
-    if (memoryLine) return "Hold on.";
-    return "Let me stop you there.";
+    if (family === "friendly_hr") return memoryLine ? "Let me pause you there." : "Can I stop you for a second?";
+    if (family === "startup_recruiter") return "Hold on.";
+    if (family === "german_corporate") return "Please be precise.";
+    return memoryLine ? "Hold on." : "Let me stop you there.";
   }
 
   if (runtimeDecision === "interrupt") {
+    if (family === "friendly_hr") return "Let me pause you there.";
+    if (family === "startup_recruiter") return "Wait.";
+    if (family === "german_corporate") return "One moment.";
     return "Wait.";
   }
 
   if (runtimeDecision === "recover" || recoveryLine) {
+    if (family === "friendly_hr") return "That’s better.";
+    if (family === "startup_recruiter") return "Better.";
+    if (family === "german_corporate") return "That is clearer.";
     return "That’s stronger.";
   }
 
   if (runtimeDecision === "memory_callback") {
+    if (family === "friendly_hr") return "I’m noticing this again.";
+    if (family === "startup_recruiter") return "Same pattern.";
+    if (family === "german_corporate") return "This pattern is repeating.";
     return "I’m noticing a pattern.";
   }
 
   if (answerSignals.concreteExample && answerSignals.hasOwnership) {
+    if (family === "friendly_hr") return "Good, I’m with you.";
+    if (family === "startup_recruiter") return "Good.";
+    if (family === "german_corporate") return "Good. That is specific.";
     return "Good.";
   }
 
   if (answerSignals.strong || score >= 85 || mood === "impressed") {
+    if (family === "friendly_hr") return "That’s a strong example.";
+    if (family === "startup_recruiter") return "Strong.";
+    if (family === "german_corporate") return "That is a solid answer.";
     return "Strong.";
   }
 
   if (mood === "skeptical" || runtimeDecision === "challenge") {
-    if (answerSignals.vague || answerSignals.missingMetrics) return "Hmm.";
+    if (answerSignals.vague || answerSignals.missingMetrics) {
+      if (family === "friendly_hr") return "Okay, let’s make that clearer.";
+      if (family === "startup_recruiter") return "Get to the impact.";
+      if (family === "german_corporate") return "Please be precise.";
+      return "Hmm.";
+    }
+
+    if (family === "friendly_hr") return "I need a little more clarity.";
+    if (family === "startup_recruiter") return "Not enough yet.";
+    if (family === "german_corporate") return "That is not precise enough.";
     return "I’m not convinced yet.";
   }
 
   if (runtimeDecision === "probe") {
+    if (family === "friendly_hr") return "Okay, let’s go deeper.";
+    if (family === "startup_recruiter") return "Go deeper.";
+    if (family === "german_corporate") return "Let’s structure this.";
     return "Okay.";
   }
 
   if (mood === "interested") {
+    if (family === "friendly_hr") return "Interesting.";
+    if (family === "startup_recruiter") return "Right.";
+    if (family === "german_corporate") return "Understood.";
     return "Interesting.";
   }
 

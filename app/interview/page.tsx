@@ -4193,7 +4193,7 @@ export default function InterviewPage() {
     // Phase 2: persist completed interviews to Supabase through a server route.
     // This is intentionally fire-and-forget so ending the interview never feels slow
     // and never blocks users from seeing their results.
-    void fetch("/api/interviews", {
+    void fetch("/api/interview", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(completedSessionPayload),
