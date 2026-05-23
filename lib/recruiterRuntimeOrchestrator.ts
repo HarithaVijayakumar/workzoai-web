@@ -184,9 +184,16 @@ function analyzeRuntimeAnswer(answer: string) {
   );
 
   const vague = detectVagueAnswer(answer);
-  const missingMetrics = !hasMetrics;
   const weakClarity = wordCount > 0 && wordCount < 14;
   const tooLong = wordCount > 120;
+
+  const concreteCustomerExample = detectConcreteCustomerExample(answer);
+  const concreteTechnicalExample = detectConcreteTechnicalExample(answer);
+  const concreteExample = concreteCustomerExample || concreteTechnicalExample;
+
+  // Spoken interview answers often do not include metrics, especially early in the call.
+  // A concrete customer/story example should not be treated the same as a vague answer.
+  const missingMetrics = !hasMetrics && !concreteExample;
   const strong = hasMetrics && hasOwnership && !vague && wordCount >= 25;
 
   return {
@@ -198,6 +205,9 @@ function analyzeRuntimeAnswer(answer: string) {
     weakClarity,
     tooLong,
     strong,
+    concreteExample,
+    concreteCustomerExample,
+    concreteTechnicalExample,
   };
 }
 
@@ -218,6 +228,27 @@ function detectVagueAnswer(answer: string) {
     "a lot of things",
     "various tasks",
   ].some((phrase) => text.includes(phrase));
+}
+
+function detectConcreteCustomerExample(answer: string) {
+  const text = answer.toLowerCase();
+
+  const hasCustomer = /\b(customer|client|user|stakeholder|account|caller|person|old lady|older customer|non[- ]technical)\b/i.test(text);
+  const hasSituation = /\b(issue|problem|case|ticket|complaint|request|could not|couldn't|unable|failed|not working|down|stuck|confused|scared|urgent)\b/i.test(text);
+  const hasAction = /\b(i|my|personally|handled|resolved|fixed|guided|explained|walked|checked|updated|documented|followed up|calmed|listened|asked|showed|gave|took)\b/i.test(text);
+  const hasOutcome = /\b(resolved|fixed|worked|happy|satisfied|closed|completed|successful|connected|restored|updated|documented)\b/i.test(text);
+
+  return hasCustomer && hasSituation && hasAction && hasOutcome;
+}
+
+function detectConcreteTechnicalExample(answer: string) {
+  const text = answer.toLowerCase();
+
+  const productOrTechContext = /\b(router|wifi|wi-fi|internet|firmware|ip address|browser|chrome|belkin|linksys|ticket|crm|dashboard|software|hardware|login|setup|configuration)\b/i.test(text);
+  const stepContext = /\b(step by step|walked|guided|checked|updated|opened|connected|documented|troubleshot|diagnosed|verified|configured)\b/i.test(text);
+  const userContext = /\b(customer|client|user|non[- ]technical|old|older|scared|confused|not tech savvy)\b/i.test(text);
+
+  return productOrTechContext && stepContext && userContext;
 }
 
 function determineRuntimeDecision({
@@ -244,6 +275,10 @@ function determineRuntimeDecision({
   if (mood === "pressuring" || mood === "skeptical") return "challenge";
   if (mood === "recovering") return "recover";
   if (mood === "impressed" || answerSignals.strong || score >= 85) return "react";
+
+  // Concrete spoken examples deserve a human acknowledgement and a deeper follow-up,
+  // even when they do not include metrics yet. This prevents flat lines like "Okay, continue."
+  if (answerSignals.concreteExample && answerSignals.hasOwnership) return "react";
 
   if (answerSignals.weakClarity || answerSignals.missingMetrics || answerSignals.vague) {
     return "probe";
@@ -273,6 +308,10 @@ function determineMood({
 
   if (interruption.shouldInterrupt && interruption.severity === "high") {
     return "pressuring";
+  }
+
+  if (!tooLong && !vague && !weakClarity && memory.trust >= 55 && !missingMetrics) {
+    return score >= 78 || memory.interest >= 72 ? "interested" : "neutral";
   }
 
   if (tooLong || missingMetrics || vague || weakClarity || memory.trust < 55) {
@@ -330,6 +369,7 @@ function calculateNextPressureLevel({
   if (memory.repeatedWeaknesses.length > 0) next += 5;
   if (answerSignals.vague || answerSignals.missingMetrics) next += 4;
   if (answerSignals.tooLong) next += 3;
+  if (answerSignals.concreteExample && answerSignals.hasOwnership) next -= 5;
   if (score >= 85 || answerSignals.strong) next -= 8;
   if (memory.trust < 45) next += 7;
 
@@ -371,6 +411,14 @@ function chooseSuggestedLine({
   }
 
   if (runtimeDecision === "react") {
+    if (answerSignals.concreteCustomerExample) {
+      return "Good, that is a real customer example. Now connect it to Customer Success: what would you do after the fix to prevent the same issue later?";
+    }
+
+    if (answerSignals.concreteTechnicalExample) {
+      return "That is more concrete. You translated something technical for the customer. What did you do after resolving it?";
+    }
+
     return reactionLines[0] ?? "That is stronger.";
   }
 
@@ -414,6 +462,7 @@ function getPrimarySignal(
   score: number,
 ): RecruiterRuntimeOutput["signal"] {
   if (score >= 85 || answerSignals.strong) return "strong_answer";
+  if (answerSignals.concreteExample && answerSignals.hasOwnership) return "neutral_answer";
   if (answerSignals.tooLong) return "too_long";
   if (answerSignals.weakClarity) return "weak_clarity";
   if (answerSignals.vague) return "vague_answer";
