@@ -168,15 +168,29 @@ export function runRecruiterRuntime({
     turnIndex,
   });
 
+  // If the candidate genuinely recovers with evidence after earlier weak turns,
+  // do not let an older/high-pressure interruption decision overpower the
+  // recovery arc. This keeps the recruiter emotionally realistic: tough when
+  // needed, but able to soften when the candidate improves.
+  const effectiveInterruption =
+    runtimeDecision === "recover" && recoveryLine
+      ? {
+          ...interruption,
+          shouldInterrupt: false,
+          severity: "low" as const,
+          interruptionMessage: "",
+        }
+      : interruption;
+
   const visualState = determineState({
-    interruption,
+    interruption: effectiveInterruption,
     mood,
     runtimeDecision,
   });
 
   const nextPressureLevel = calculateNextPressureLevel({
     currentPressure: pressureLevel,
-    interruption,
+    interruption: effectiveInterruption,
     memory: updatedMemory,
     score,
     answerSignals,
@@ -185,7 +199,7 @@ export function runRecruiterRuntime({
   const microReaction = chooseMicroReaction({
     recruiterId,
     runtimeDecision,
-    interruption,
+    interruption: effectiveInterruption,
     memoryLine,
     recoveryLine,
     mood,
@@ -195,7 +209,7 @@ export function runRecruiterRuntime({
 
   const suggestedLine = chooseSuggestedLine({
     runtimeDecision,
-    interruption,
+    interruption: effectiveInterruption,
     memoryLine,
     recoveryLine,
     reactionLines,
@@ -209,7 +223,7 @@ export function runRecruiterRuntime({
     visualState,
     mood,
     pressureLevel: nextPressureLevel,
-    interruption,
+    interruption: effectiveInterruption,
     reactionLines,
     memory: updatedMemory,
     memoryLine,
@@ -550,7 +564,18 @@ function determineRuntimeDecision({
   answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
   turnIndex: number;
 }): RecruiterRuntimeDecision {
-  // Strict priority order. This prevents engines from competing.
+  // Strong recovery must override interruption.
+  // If the candidate finally gives ownership + measurable evidence after a weak pattern,
+  // the recruiter should acknowledge recovery instead of continuing to attack.
+  const strongRecovery =
+    Boolean(recoveryLine) &&
+    answerSignals.strong &&
+    answerSignals.hasMetrics &&
+    answerSignals.hasOwnership;
+
+  if (strongRecovery) return "recover";
+
+  // Strict priority order after recovery. This prevents engines from competing.
   if (interruption.shouldInterrupt) return "interrupt";
 
   if (recoveryLine) return "recover";
