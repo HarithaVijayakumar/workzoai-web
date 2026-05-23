@@ -99,10 +99,16 @@ export function runRecruiterRuntime({
   const updatedMemory = updateEmotionalMemory(memory, safeAnswer);
   const memoryLine = getMemoryBasedRecruiterLine(updatedMemory);
 
-  const reactionLines = getRecruiterReaction({
+  const baseReactionLines = getRecruiterReaction({
     score,
     missingMetrics: answerSignals.missingMetrics,
     vague: answerSignals.vague,
+  });
+
+  const reactionLines = buildContextAwareReactionLines({
+    baseReactionLines,
+    answerSignals,
+    score,
   });
 
   const mood = determineMood({
@@ -249,6 +255,42 @@ function detectConcreteTechnicalExample(answer: string) {
   const userContext = /\b(customer|client|user|non[- ]technical|old|older|scared|confused|not tech savvy)\b/i.test(text);
 
   return productOrTechContext && stepContext && userContext;
+}
+
+function buildContextAwareReactionLines({
+  baseReactionLines,
+  answerSignals,
+  score,
+}: {
+  baseReactionLines: string[];
+  answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
+  score: number;
+}) {
+  if (answerSignals.concreteCustomerExample) {
+    return [
+      "Good, that is a real example.",
+      "That shows patience and clear communication with a non-technical person.",
+      "Now connect it to the role: how would you create longer-term impact after solving it?",
+    ];
+  }
+
+  if (answerSignals.concreteTechnicalExample) {
+    return [
+      "That is more concrete.",
+      "You translated a technical issue into simple steps for the customer.",
+      "What did you do after resolving it so the learning was not lost?",
+    ];
+  }
+
+  if (answerSignals.strong || score >= 85) {
+    return [
+      baseReactionLines[0] || "That is a strong example.",
+      baseReactionLines[1] || "Good. That shows ownership.",
+      baseReactionLines[2] || "That answer feels credible.",
+    ];
+  }
+
+  return baseReactionLines;
 }
 
 function determineRuntimeDecision({
@@ -412,7 +454,7 @@ function chooseSuggestedLine({
 
   if (runtimeDecision === "react") {
     if (answerSignals.concreteCustomerExample) {
-      return "Good, that is a real customer example. Now connect it to Customer Success: what would you do after the fix to prevent the same issue later?";
+      return "Good, that is a real example. Now connect it to the role: what would you do after the fix to create longer-term impact?";
     }
 
     if (answerSignals.concreteTechnicalExample) {
