@@ -28,6 +28,7 @@ function printRuntimeResult(
   console.log(`Should interrupt: ${result.interruption.shouldInterrupt}`);
   console.log(`Interruption severity: ${result.interruption.severity ?? "none"}`);
   console.log(`Memory line: ${result.memoryLine ?? "none"}`);
+  console.log(`Micro reaction: ${result.microReaction ?? "none"}`);
   console.log(`Suggested line: ${result.suggestedLine}`);
 
   if (result.reactionLines.length > 0) {

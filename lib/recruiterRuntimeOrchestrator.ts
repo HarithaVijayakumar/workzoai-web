@@ -65,6 +65,9 @@ export type RecruiterRuntimeOutput = {
   memory: EmotionalMemoryState;
   memoryLine: string | null;
 
+  /** Short human reaction before the main recruiter line. Keep it tiny. */
+  microReaction: string | null;
+
   /** The single best recruiter micro-line for this turn. */
   suggestedLine: string;
 
@@ -171,6 +174,16 @@ export function runRecruiterRuntime({
     answerSignals,
   });
 
+  const microReaction = chooseMicroReaction({
+    runtimeDecision,
+    interruption,
+    memoryLine,
+    recoveryLine,
+    mood,
+    answerSignals,
+    score,
+  });
+
   const suggestedLine = chooseSuggestedLine({
     runtimeDecision,
     interruption,
@@ -191,6 +204,7 @@ export function runRecruiterRuntime({
     reactionLines,
     memory: updatedMemory,
     memoryLine,
+    microReaction,
     suggestedLine,
     nextAction: determineNextAction(runtimeDecision, mood, updatedMemory),
     signal: getPrimarySignal(answerSignals, score),
@@ -707,6 +721,65 @@ function chooseSuggestedLine({
   }
 
   return "Okay, continue.";
+}
+
+
+function chooseMicroReaction({
+  runtimeDecision,
+  interruption,
+  memoryLine,
+  recoveryLine,
+  mood,
+  answerSignals,
+  score,
+}: {
+  runtimeDecision: RecruiterRuntimeDecision;
+  interruption: InterruptionResult;
+  memoryLine: string | null;
+  recoveryLine: string | null;
+  mood: RecruiterRuntimeMood;
+  answerSignals: ReturnType<typeof analyzeRuntimeAnswer>;
+  score: number;
+}) {
+  if (runtimeDecision === "interrupt" && interruption.severity === "high") {
+    if (memoryLine) return "Hold on.";
+    return "Let me stop you there.";
+  }
+
+  if (runtimeDecision === "interrupt") {
+    return "Wait.";
+  }
+
+  if (runtimeDecision === "recover" || recoveryLine) {
+    return "That’s stronger.";
+  }
+
+  if (runtimeDecision === "memory_callback") {
+    return "I’m noticing a pattern.";
+  }
+
+  if (answerSignals.concreteExample && answerSignals.hasOwnership) {
+    return "Good.";
+  }
+
+  if (answerSignals.strong || score >= 85 || mood === "impressed") {
+    return "Strong.";
+  }
+
+  if (mood === "skeptical" || runtimeDecision === "challenge") {
+    if (answerSignals.vague || answerSignals.missingMetrics) return "Hmm.";
+    return "I’m not convinced yet.";
+  }
+
+  if (runtimeDecision === "probe") {
+    return "Okay.";
+  }
+
+  if (mood === "interested") {
+    return "Interesting.";
+  }
+
+  return null;
 }
 
 function determineNextAction(
