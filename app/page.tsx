@@ -206,12 +206,16 @@ export default function LandingPage() {
 
               <Link
                 href="/onboarding"
-                className="inline-flex h-15 min-h-[58px] items-center justify-center gap-3 rounded-[22px] border border-white/10 bg-white/[0.045] px-7 text-base font-black text-white backdrop-blur-xl transition active:scale-[0.98] sm:h-16 sm:rounded-[24px] sm:px-8"
+                className="inline-flex h-15 min-h-[58px] items-center justify-center gap-3 rounded-[22px] border border-white/[0.08] bg-white/[0.025] px-7 text-base font-black text-slate-100 backdrop-blur-xl transition hover:bg-white/[0.045] active:scale-[0.98] sm:h-16 sm:rounded-[24px] sm:px-8"
               >
                 <Upload className="h-5 w-5" />
                 Upload CV
               </Link>
             </div>
+
+            <p className="mx-auto mt-4 max-w-[520px] text-center text-xs font-semibold leading-5 text-slate-500 sm:mx-0 sm:text-left">
+              Beta product · validate AI feedback before real applications · your setup can be edited anytime.
+            </p>
           </div>
 
           <div className="pointer-events-none relative mx-auto mt-8 block w-full max-w-[430px] rounded-[32px] border border-white/[0.09] bg-[#061225]/72 p-4 shadow-[0_24px_90px_rgba(0,0,0,0.36),inset_0_1px_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl wz-mobile-card-float lg:hidden">
@@ -289,30 +293,38 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <div className="pointer-events-none absolute right-6 top-[96px] hidden w-[170px] rotate-[2deg] rounded-[26px] border border-white/[0.08] bg-[rgba(7,12,24,0.50)] p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] backdrop-blur-2xl lg:block">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-300">
-              Trust Score
+          <div className="pointer-events-none absolute right-6 top-[132px] hidden w-[188px] rounded-[26px] border border-white/[0.055] bg-black/14 p-3.5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.04)] backdrop-blur-2xl lg:block">
+            <p className="text-[10px] font-black uppercase tracking-[0.24em] text-cyan-100/65">
+              Recruiter signal
             </p>
 
-            <div className="mt-5 flex h-24 items-center justify-center rounded-full border-[7px] border-cyan-300/80 border-b-amber-300 border-r-violet-400 bg-black/20 shadow-[0_0_35px_rgba(56,189,248,0.12)]">
-              <div className="text-center">
-                <p className="text-3xl font-black">{trust}</p>
-                <p className="text-xs text-slate-300">/100</p>
+            <div className="mt-3 space-y-3 text-xs font-bold text-slate-300">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span>Trust</span>
+                  <span className="text-lg font-black text-white">{trust}</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-blue-400 to-violet-400 transition-all duration-700"
+                    style={{ width: `${trust}%` }}
+                  />
+                </div>
               </div>
-            </div>
 
-            <p className="mt-4 text-center text-xs font-black text-red-300">
-              {trust < 70 ? "Trust dropping... ↓" : "Good start"}
-            </p>
-          </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <span>Pressure</span>
+                  <span className="text-rose-200">High</span>
+                </div>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full w-[72%] rounded-full bg-gradient-to-r from-rose-400 to-red-500 wz-pressure-pulse" />
+                </div>
+              </div>
 
-          <div className="pointer-events-none absolute right-8 top-[292px] hidden w-[170px] rounded-[24px] border border-white/[0.08] bg-black/20 p-5 shadow-[inset_0_1px_1px_rgba(255,255,255,0.06)] backdrop-blur-2xl lg:block">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-300">
-              Pressure Level
-            </p>
-            <p className="mt-3 text-lg font-black text-red-300">High</p>
-            <div className="mt-4 overflow-hidden rounded-xl border border-red-400/10 bg-black/20 p-1">
-              <div className="h-8 w-[72%] rounded-lg bg-[linear-gradient(90deg,#ef4444,#dc2626,#7f1d1d)] shadow-[0_0_24px_rgba(239,68,68,0.28)] wz-pressure-pulse" />
+              <p className="rounded-2xl border border-white/[0.045] bg-white/[0.025] px-3 py-2 leading-5 text-slate-400">
+                Asking for proof, ownership, and measurable impact.
+              </p>
             </div>
           </div>
 

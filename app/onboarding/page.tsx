@@ -882,36 +882,36 @@ export default function OnboardingPage() {
             </div>
           </div>
 
-          <aside className="hidden min-h-0 rounded-[26px] border border-white/10 bg-white/[0.032] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.28)] backdrop-blur-2xl lg:block">
-            <div className="relative flex min-h-[520px] flex-col overflow-visible rounded-[24px] border border-white/10 bg-[#050b16] p-5">
+          <aside className="hidden min-h-0 rounded-[26px] border border-white/10 bg-white/[0.028] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.24)] backdrop-blur-2xl lg:block">
+            <div className="relative flex min-h-[500px] flex-col overflow-hidden rounded-[24px] border border-white/[0.08] bg-[#050b16] p-5">
               <div className="pointer-events-none absolute inset-0">
-                <div className="absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-500/12 blur-[90px]" />
-                <div className="absolute bottom-[-90px] right-[-80px] h-64 w-64 rounded-full bg-cyan-400/10 blur-[90px]" />
+                <div className="absolute left-1/2 top-20 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-500/10 blur-[95px]" />
+                <div className="absolute bottom-[-120px] right-[-100px] h-72 w-72 rounded-full bg-cyan-400/8 blur-[95px]" />
               </div>
 
               <div className="relative z-10 flex items-start justify-between gap-4">
                 <div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/18 bg-cyan-400/8 px-3 py-1.5 text-xs font-black uppercase tracking-[0.22em] text-cyan-200">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/16 bg-cyan-400/7 px-3 py-1.5 text-xs font-black uppercase tracking-[0.22em] text-cyan-200">
                     <Wand2 className="h-3.5 w-3.5" />
                     Guided setup
                   </div>
-                  <h2 className="mt-4 text-2xl font-black tracking-tight">
-                    Build a realistic interview in 5 calm steps.
+                  <h2 className="mt-4 max-w-sm text-2xl font-black leading-tight tracking-tight">
+                    One calm setup before the interview starts.
                   </h2>
                   <p className="mt-3 max-w-md text-sm leading-6 text-slate-400">
-                    Add only what you know. WorkZo saves the setup quickly and enriches the recruiter context in the background.
+                    Add your CV, role, market, and recruiter style. WorkZo saves instantly and prepares context in the background.
                   </p>
                 </div>
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06]">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.055]">
                   <Image src="/workzo_icon.png" alt="WorkZo" width={30} height={30} className="rounded-lg" />
                 </div>
               </div>
 
-              <div className="relative z-10 mt-6 rounded-[26px] border border-white/10 bg-black/22 p-4">
+              <div className="relative z-10 mt-6 rounded-[26px] border border-white/[0.08] bg-black/18 p-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/14 text-blue-200">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/12 text-blue-200">
                       <Radar className="h-6 w-6" />
                     </div>
                     <div>
@@ -930,50 +930,61 @@ export default function OnboardingPage() {
                     style={{ width: `${readiness}%` }}
                   />
                 </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {analysisSignals.slice(0, 4).map((signal, index) => {
+                    const active = index === 0 || readiness >= 50 || (readiness >= 25 && index < 3) || (readiness >= 75 && index < 4);
+
+                    return (
+                      <span
+                        key={signal}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold",
+                          active
+                            ? "border-emerald-300/12 bg-emerald-400/8 text-emerald-100"
+                            : "border-white/[0.06] bg-white/[0.03] text-slate-500"
+                        )}
+                      >
+                        <span className={cn("h-2 w-2 rounded-full", active ? "bg-emerald-300" : "bg-slate-600")} />
+                        {signal}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="relative z-10 mt-4 grid gap-2">
-                {analysisSignals.slice(0, 4).map((signal, index) => {
-                  const active = index === 0 || readiness >= 50 || (readiness >= 25 && index < 3) || (readiness >= 75 && index < 4);
-
-                  return (
-                    <div
-                      key={signal}
-                      className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span
-                          className={cn(
-                            "h-2.5 w-2.5 rounded-full",
-                            active ? "bg-emerald-300 shadow-[0_0_14px_rgba(52,211,153,.42)]" : "bg-slate-600"
-                          )}
-                        />
-                        <span className={cn("text-sm font-bold", active ? "text-white" : "text-slate-500")}>
-                          {signal}
-                        </span>
-                      </div>
-                      {active ? <Check className="h-4 w-4 text-emerald-300" /> : <span className="text-xs font-bold text-slate-600">waiting</span>}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="relative z-10 mt-auto grid gap-2 pt-4">
-                {([
-                  { label: "Current step", value: currentStepLabel, Icon: Sparkles },
-                  { label: "Recruiter", value: recruiterLabel(recruiter), Icon: UserRound },
-                  { label: "Privacy", value: "Your setup stays private.", Icon: Lock },
-                ] satisfies PreviewCard[]).map(({ label, value, Icon }) => (
-                  <div key={label} className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.035] px-4 py-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-500/12 text-blue-200">
-                      <Icon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-500">{label}</p>
-                      <p className="mt-0.5 truncate text-sm font-bold text-white">{value}</p>
-                    </div>
+              <div className="relative z-10 mt-4 rounded-[26px] border border-white/[0.08] bg-white/[0.03] p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-blue-500/12 text-blue-200">
+                    <Sparkles className="h-5 w-5" />
                   </div>
-                ))}
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black uppercase tracking-[0.22em] text-slate-500">
+                      Setup summary
+                    </p>
+                    <p className="mt-1 truncate text-sm font-black text-white">
+                      {currentStepLabel} · {recruiterLabel(recruiter)}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid gap-2 text-xs font-bold text-slate-300">
+                  <div className="flex items-center justify-between rounded-2xl bg-black/18 px-3 py-2">
+                    <span className="text-slate-500">Current step</span>
+                    <span className="truncate text-white">{currentStepLabel}</span>
+                  </div>
+                  <div className="flex items-center justify-between rounded-2xl bg-black/18 px-3 py-2">
+                    <span className="text-slate-500">Recruiter</span>
+                    <span className="truncate text-white">{recruiterLabel(recruiter)}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative z-10 mt-auto pt-4">
+                <div className="flex items-start gap-3 rounded-[22px] border border-emerald-300/10 bg-emerald-400/[0.06] px-4 py-3 text-xs font-bold leading-5 text-emerald-100/90">
+                  <Lock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-200" />
+                  <span>Your setup stays private and can be edited before the interview.</span>
+                </div>
               </div>
             </div>
           </aside>

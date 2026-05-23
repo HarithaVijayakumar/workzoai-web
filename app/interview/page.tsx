@@ -2591,8 +2591,6 @@ export default function InterviewPage() {
   const vapiStartingRef = useRef(false);
   const vapiFallbackActivatedRef = useRef(false);
   const lastVapiStartRef = useRef(0);
-  const vapiRuntimeSessionIdRef = useRef(0);
-  const vapiEndedRecentlyAtRef = useRef(0);
   const vapiTranscriptKeysRef = useRef<Set<string>>(new Set());
   const [voiceProvider, setVoiceProvider] = useState<"vapi" | "tts-fallback">("tts-fallback");
 
@@ -2617,7 +2615,7 @@ export default function InterviewPage() {
                   }
                 })();
 
-        return /meeting ended due to ejection|meeting has ended|daily-js.*meeting|call ended|room.*not.*found|no-room|krisp processor|wasm_or_worker_not_ready|error unloading krisp|signaling connection interrupted|meeting because room was deleted/i.test(
+        return /meeting ended due to ejection|meeting has ended|daily-js.*meeting|call ended|room.*not.*found|no-room|krisp processor|krispiniterror|error applying mic processor|audioworkletnode|no execution context available|wasm_or_worker_not_ready|error unloading krisp/i.test(
           text,
         );
       });
@@ -2648,11 +2646,11 @@ export default function InterviewPage() {
       event.preventDefault();
       safeLogVapiIssue("Suppressed benign Vapi/Daily audio cleanup event", event.reason);
 
-      // Daily/Vapi can emit stale cleanup errors after a room has already ended.
-      // Do not flip the whole interview into TTS from this global handler; the
-      // scoped Vapi session handlers below decide whether fallback is needed.
       if (vapiStartingRef.current && !vapiCallActiveRef.current) {
-        setVoiceStatus("Vapi voice is still connecting...");
+        vapiStartingRef.current = false;
+        vapiFallbackActivatedRef.current = true;
+        setVoiceProvider("tts-fallback");
+        setVoiceStatus("Vapi ended before connecting. Using reliable fallback voice...");
       }
     };
 
@@ -2667,11 +2665,11 @@ export default function InterviewPage() {
       event.preventDefault();
       safeLogVapiIssue("Suppressed benign Vapi/Daily audio cleanup window error", error);
 
-      // Daily/Vapi can emit stale cleanup errors after a room has already ended.
-      // Do not flip the whole interview into TTS from this global handler; the
-      // scoped Vapi session handlers below decide whether fallback is needed.
       if (vapiStartingRef.current && !vapiCallActiveRef.current) {
-        setVoiceStatus("Vapi voice is still connecting...");
+        vapiStartingRef.current = false;
+        vapiFallbackActivatedRef.current = true;
+        setVoiceProvider("tts-fallback");
+        setVoiceStatus("Vapi ended before connecting. Using reliable fallback voice...");
       }
     };
 
@@ -2828,8 +2826,6 @@ export default function InterviewPage() {
         mobileTtsAudioRef.current?.pause();
       } catch {}
       cleanupMobileTtsUrl();
-      vapiRuntimeSessionIdRef.current += 1;
-      vapiEndedRecentlyAtRef.current = Date.now();
       try {
         vapiClientRef.current?.stop?.();
       } catch {}
@@ -3715,8 +3711,6 @@ export default function InterviewPage() {
 
 
   const stopVapiCall = useCallback(() => {
-    vapiRuntimeSessionIdRef.current += 1;
-    vapiEndedRecentlyAtRef.current = Date.now();
     try {
       vapiClientRef.current?.removeAllListeners?.();
     } catch {}
@@ -3749,14 +3743,12 @@ export default function InterviewPage() {
 
     const now = Date.now();
     if (now - lastVapiStartRef.current < 4000) {
-      setVoiceProvider("vapi");
-      setVoiceStatus("Vapi recruiter voice is already starting...");
-      return true;
+      setVoiceProvider("tts-fallback");
+      setVoiceStatus("Using reliable fallback voice while Vapi resets...");
+      return false;
     }
 
     lastVapiStartRef.current = now;
-    const sessionId = vapiRuntimeSessionIdRef.current + 1;
-    vapiRuntimeSessionIdRef.current = sessionId;
     vapiStartingRef.current = true;
     vapiFallbackActivatedRef.current = false;
 
@@ -3809,12 +3801,7 @@ export default function InterviewPage() {
       } catch {}
       vapiClientRef.current = client;
 
-      const isCurrentVapiSession = () =>
-        vapiRuntimeSessionIdRef.current === sessionId && vapiClientRef.current === client;
-
       const markVapiEnded = (reason: string) => {
-        if (!isCurrentVapiSession()) return;
-        vapiEndedRecentlyAtRef.current = Date.now();
         vapiCallActiveRef.current = false;
         vapiStartingRef.current = false;
         setIsSpeaking(false);
@@ -3823,7 +3810,6 @@ export default function InterviewPage() {
       };
 
       const activateStartFallback = (reason: string) => {
-        if (!isCurrentVapiSession()) return;
         if (vapiFallbackActivatedRef.current) return;
         vapiFallbackActivatedRef.current = true;
         vapiCallActiveRef.current = false;
@@ -3835,7 +3821,6 @@ export default function InterviewPage() {
       };
 
       const onCallStart = () => {
-        if (!isCurrentVapiSession()) return;
         vapiStartingRef.current = false;
         vapiCallActiveRef.current = true;
         vapiFallbackActivatedRef.current = false;
@@ -3853,21 +3838,18 @@ export default function InterviewPage() {
       };
 
       const onSpeechStart = () => {
-        if (!isCurrentVapiSession()) return;
         setIsSpeaking(true);
         setIsListening(false);
         setVoiceStatus("Recruiter speaking...");
       };
 
       const onSpeechEnd = () => {
-        if (!isCurrentVapiSession()) return;
         setIsSpeaking(false);
         setIsListening(true);
         setVoiceStatus("Listening to your answer");
       };
 
       const onMessage = (message: unknown) => {
-        if (!isCurrentVapiSession()) return;
         const normalized = normalizeVapiTranscriptMessage(message);
         if (!normalized || !normalized.isFinal) return;
 
@@ -3892,7 +3874,6 @@ export default function InterviewPage() {
       };
 
       const onError = (error: unknown) => {
-        if (!isCurrentVapiSession()) return;
         const message = getWorkZoVapiErrorMessage(error);
         const isEndedNoise = isBenignVapiEndedError(error);
 
@@ -3902,11 +3883,6 @@ export default function InterviewPage() {
             : "WorkZo Vapi voice failed; fallback available",
           error,
         );
-
-        if (isEndedNoise && Date.now() - vapiEndedRecentlyAtRef.current < 6000) {
-          markVapiEnded("Vapi voice session ended");
-          return;
-        }
 
         if (vapiStartingRef.current && !vapiCallActiveRef.current) {
           activateStartFallback(
@@ -3972,14 +3948,38 @@ export default function InterviewPage() {
       const vapiStarter = client as {
         start: (
           assistantId: string,
-          options?: {
+          assistantOverrides?: {
             variableValues?: Record<string, string>;
-            assistantOverrides?: { variableValues?: Record<string, string> };
+            recordingEnabled?: boolean;
+            artifactPlan?: { videoRecordingEnabled?: boolean };
+            backgroundSpeechDenoisingPlan?: {
+              smartDenoisingPlan?: { enabled?: boolean };
+              fourierDenoisingPlan?: {
+                enabled?: boolean;
+                mediaDetectionEnabled?: boolean;
+              };
+            };
           },
         ) => Promise<unknown>;
       };
 
-      await vapiStarter.start(config.assistantId, { variableValues });
+      await vapiStarter.start(config.assistantId, {
+        variableValues,
+        recordingEnabled: false,
+        artifactPlan: { videoRecordingEnabled: false },
+        // WorkZo disables Vapi/Daily Krisp processing from the client override.
+        // Krisp can fail in Chrome/Next dev/prod hydration with
+        // "AudioWorkletNode cannot be created: No execution context available",
+        // which then destabilizes the call. The assistant should use raw mic
+        // audio + Vapi endpointing instead of client-side noise processing.
+        backgroundSpeechDenoisingPlan: {
+          smartDenoisingPlan: { enabled: false },
+          fourierDenoisingPlan: {
+            enabled: false,
+            mediaDetectionEnabled: false,
+          },
+        },
+      });
       setVoiceProvider("vapi");
       setVoiceStatus("Vapi connected. Waiting for recruiter...");
 
@@ -4320,8 +4320,6 @@ export default function InterviewPage() {
       try {
         mobileTtsAudioRef.current?.pause();
       } catch {}
-      vapiRuntimeSessionIdRef.current += 1;
-      vapiEndedRecentlyAtRef.current = Date.now();
       try {
         vapiClientRef.current?.stop?.();
       } catch {}
