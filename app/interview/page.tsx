@@ -3520,7 +3520,7 @@ export default function InterviewPage() {
       }
       answerProcessingUnlockTimerRef.current = window.setTimeout(() => {
         isProcessingAnswerRef.current = false;
-      }, 45000);
+      }, 26000);
 
       try {
         recognitionRef.current?.abort?.();
@@ -3546,7 +3546,7 @@ export default function InterviewPage() {
       const previousTrust = trustRef.current;
       const currentMemory = memoryRef.current;
 
-      setVoiceStatus("Recruiter is preparing a reply...");
+      setVoiceStatus("Recruiter is thinking...");
 
       let intelligence: UnifiedRecruiterApiResponse | null = null;
 
@@ -3574,9 +3574,15 @@ export default function InterviewPage() {
 
       if (!intelligence)
         try {
+          const interviewApiController = new AbortController();
+          const interviewApiTimeout = window.setTimeout(() => {
+            interviewApiController.abort();
+          }, 7000);
+
           const response = await fetch("/api/interview", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: interviewApiController.signal,
             body: JSON.stringify({
               answer: cleanAnswer,
               currentQuestion,
@@ -3594,11 +3600,18 @@ export default function InterviewPage() {
             }),
           });
 
+          window.clearTimeout(interviewApiTimeout);
+
           if (response.ok) {
             intelligence =
               (await response.json()) as UnifiedRecruiterApiResponse;
           }
-        } catch {
+        } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            console.warn(
+              "WorkZo interview AI response was slow; using local recruiter fallback for this turn.",
+            );
+          }
           intelligence = null;
         }
 
@@ -3781,8 +3794,8 @@ export default function InterviewPage() {
 
       const thinkingDelay =
         modeRef.current === "video"
-          ? Math.min(baseThinkingDelay, 420)
-          : Math.min(baseThinkingDelay, 650);
+          ? Math.min(baseThinkingDelay, 220)
+          : Math.min(baseThinkingDelay, 340);
 
       pendingRecruiterReplyTimerRef.current = window.setTimeout(() => {
         if (!isLiveRef.current) {
