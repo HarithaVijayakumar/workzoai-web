@@ -363,10 +363,11 @@ function isVapiStartNetworkError(error: unknown): boolean {
 
 function safeLogVapiIssue(label: string, error: unknown) {
   const message = getWorkZoVapiErrorMessage(error);
-  if (isBenignVapiEndedError(error)) {
-    console.info(label, message || error);
-    return;
-  }
+
+  // Daily/Vapi can emit harmless room cleanup / meeting-ended events during
+  // normal call lifecycle. Keep those out of the console so QA focuses only on
+  // real failures. Hard failures are still logged below.
+  if (isBenignVapiEndedError(error)) return;
 
   console.warn(label, message || error);
 }
@@ -2719,18 +2720,12 @@ export default function InterviewPage() {
       });
 
     console.error = (...args: unknown[]) => {
-      if (shouldSuppressVapiConsoleNoise(args)) {
-        console.info("Suppressed benign Vapi/Daily end log", ...args);
-        return;
-      }
+      if (shouldSuppressVapiConsoleNoise(args)) return;
       originalConsoleError(...args);
     };
 
     console.warn = (...args: unknown[]) => {
-      if (shouldSuppressVapiConsoleNoise(args)) {
-        console.info("Suppressed benign Vapi/Daily warning", ...args);
-        return;
-      }
+      if (shouldSuppressVapiConsoleNoise(args)) return;
       originalConsoleWarn(...args);
     };
 
