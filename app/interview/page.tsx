@@ -54,6 +54,12 @@ import {
   getBrowserSpeechRate,
   humanizeRecruiterSpokenText,
 } from "@/lib/workzoVoiceHumanizer";
+import { saveCompletedInterviewHistory } from "@/lib/workzoInterviewHistory";
+import {
+  incrementFounderTelemetryCounter,
+  recordFounderTelemetryEvent,
+  recordFounderTelemetryRuntimeIssue,
+} from "@/lib/workzoFounderTelemetry";
 
 type TranscriptItem = {
   role: "recruiter" | "candidate" | "system";
@@ -2648,6 +2654,10 @@ export default function InterviewPage() {
   const lastVapiStartRef = useRef(0);
   const vapiTranscriptKeysRef = useRef<Set<string>>(new Set());
   const [voiceProvider, setVoiceProvider] = useState<"vapi" | "tts-fallback">("tts-fallback");
+  const interviewSessionStartedAtRef = useRef<number | null>(null);
+  const interviewCompletionTrackedRef = useRef(false);
+  const fallbackActivationTrackedRef = useRef(false);
+
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -2758,6 +2768,45 @@ export default function InterviewPage() {
   const company = getCompany(activeSetup);
   const market = activeSetup.targetMarket || "Global";
   const candidateName = getCandidateName(activeSetup);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const recordAbandonment = () => {
+      if (!isLiveRef.current || interviewCompletionTrackedRef.current) return;
+
+      const startedAt = interviewSessionStartedAtRef.current;
+      const durationSeconds = startedAt
+        ? Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+        : elapsed;
+
+      incrementFounderTelemetryCounter("interviewsAbandoned");
+      recordFounderTelemetryEvent("interview_abandoned", {
+        setupId: activeSetup.setupId || "local-session",
+        role,
+        market,
+        recruiter: recruiterProfile.name,
+        mode: modeRef.current,
+        voiceProvider,
+        durationSeconds,
+        answeredQuestionCount,
+      });
+    };
+
+    window.addEventListener("beforeunload", recordAbandonment);
+    return () => {
+      recordAbandonment();
+      window.removeEventListener("beforeunload", recordAbandonment);
+    };
+  }, [
+    activeSetup.setupId,
+    answeredQuestionCount,
+    elapsed,
+    market,
+    recruiterProfile.name,
+    role,
+    voiceProvider,
+  ]);
 
   const getLockedBrowserVoice = useCallback(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return null;
@@ -3906,6 +3955,14 @@ export default function InterviewPage() {
         setIsSpeaking(false);
         setIsListening(false);
         setVoiceStatus(reason);
+        incrementFounderTelemetryCounter("fallbackActivated");
+        recordFounderTelemetryEvent("fallback_activated", {
+          setupId: activeSetup.setupId || "local-session",
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          reason,
+        });
       };
 
       const onCallStart = () => {
@@ -3916,6 +3973,12 @@ export default function InterviewPage() {
         setVoiceStatus("Vapi recruiter voice connected");
         setIsLive(true);
         isLiveRef.current = true;
+        recordFounderTelemetryEvent("vapi_connected", {
+          setupId: activeSetup.setupId || "local-session",
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+        });
       };
 
       const onCallEnd = () => {
@@ -4081,6 +4144,13 @@ export default function InterviewPage() {
       return true;
     } catch (error) {
       safeLogVapiIssue("WorkZo Vapi start failed; using TTS fallback", error);
+      recordFounderTelemetryRuntimeIssue("vapi_failed", error, {
+        setupId: activeSetup.setupId || "local-session",
+        role,
+        market,
+        recruiter: recruiterProfile.name,
+        voiceProvider: "vapi",
+      });
       try {
         vapiClientRef.current?.removeAllListeners?.();
       } catch {}
@@ -4106,12 +4176,24 @@ export default function InterviewPage() {
       );
       return false;
     }
-  }, [addTranscript, cleanupMobileTtsUrl, recruiterId, recruiterProfile.name]);
+  }, [activeSetup.setupId, addTranscript, cleanupMobileTtsUrl, market, recruiterId, recruiterProfile.name, role]);
 
   const startStandardInterview = useCallback(async () => {
     if (!isLiveRef.current && modeRef.current === "video") {
       const startedWithVapi = await startVapiInterview();
       if (startedWithVapi) return;
+
+      if (!fallbackActivationTrackedRef.current) {
+        fallbackActivationTrackedRef.current = true;
+        incrementFounderTelemetryCounter("fallbackActivated");
+        recordFounderTelemetryEvent("fallback_activated", {
+          setupId: activeSetup.setupId || "local-session",
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          reason: "vapi_start_failed",
+        });
+      }
     }
 
     if (isMobileBrowserRuntime() && !mobileAudioUnlockedRef.current) {
@@ -4199,10 +4281,23 @@ export default function InterviewPage() {
       mode: "voice",
     });
 
+    interviewSessionStartedAtRef.current = Date.now();
+    interviewCompletionTrackedRef.current = false;
+    fallbackActivationTrackedRef.current = false;
+    incrementFounderTelemetryCounter("interviewsStarted");
+    recordFounderTelemetryEvent("interview_started", {
+      setupId: setup.setupId || "local-session",
+      role: getRole(setup),
+      market: setup.targetMarket || "Global",
+      recruiter: profile.name,
+      mode: modeRef.current,
+      voiceProvider: voiceProvider,
+    });
+
     speakRecruiter(spokenOpening, () => {
       window.setTimeout(() => listenForAnswer(), 400);
     });
-  }, [addTranscript, listenForAnswer, speakRecruiter, startVapiInterview]);
+  }, [activeSetup.setupId, addTranscript, listenForAnswer, market, recruiterProfile.name, role, speakRecruiter, startVapiInterview, voiceProvider]);
 
   const stopInterview = useCallback(() => {
     isLiveRef.current = false;
@@ -4277,6 +4372,27 @@ export default function InterviewPage() {
         }),
       );
     } catch {}
+
+    try {
+      saveCompletedInterviewHistory(completedSessionPayload);
+    } catch (error) {
+      console.warn("WorkZo local interview history save failed", error);
+    }
+
+    interviewCompletionTrackedRef.current = true;
+    incrementFounderTelemetryCounter("interviewsCompleted");
+    recordFounderTelemetryEvent("interview_completed", {
+      setupId: activeSetup.setupId || "local-session",
+      role,
+      market,
+      recruiter: recruiterProfile.name,
+      mode: modeRef.current,
+      voiceProvider,
+      durationSeconds: elapsed,
+      answeredQuestionCount,
+      recruiterTrust,
+      completed: true,
+    });
 
     // Phase 2: persist completed interviews to Supabase through a server route.
     // This is intentionally fire-and-forget so ending the interview never feels slow
