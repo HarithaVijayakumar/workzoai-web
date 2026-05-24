@@ -55,6 +55,11 @@ import {
   humanizeRecruiterSpokenText,
 } from "@/lib/workzoVoiceHumanizer";
 import { saveCompletedInterviewHistory } from "@/lib/workzoInterviewHistory";
+import {
+  incrementFounderTelemetryCounter,
+  recordFounderTelemetryEvent,
+  recordFounderTelemetryRuntimeIssue,
+} from "@/lib/workzoFounderTelemetry";
 
 type TranscriptItem = {
   role: "recruiter" | "candidate" | "system";
@@ -641,6 +646,60 @@ function buildHumanPauseMs(analysis: AnswerAnalysis) {
   if (analysis.state === "engaged" || analysis.state === "interested")
     return 650;
   return 1050;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getRecruiterThinkingStatus({
+  recruiterName,
+  state,
+  elapsedMs = 0,
+}: {
+  recruiterName: string;
+  state: RecruiterState;
+  elapsedMs?: number;
+}) {
+  const firstName = getFirstName(recruiterName) || "Recruiter";
+
+  if (elapsedMs > 2600) return `${firstName} is preparing the next follow-up...`;
+  if (elapsedMs > 1200) return `${firstName} is checking your answer against the role...`;
+
+  if (state === "pressuring" || state === "skeptical" || state === "losing_confidence") {
+    return `${firstName} is deciding whether to challenge that answer...`;
+  }
+
+  if (state === "recovering_trust") {
+    return `${firstName} is noticing your recovery...`;
+  }
+
+  return `${firstName} is thinking...`;
+}
+
+function buildNaturalRecruiterDelay({
+  baseDelay,
+  mode,
+  state,
+  processingElapsedMs,
+}: {
+  baseDelay: number;
+  mode: InterviewMode;
+  state: RecruiterState;
+  processingElapsedMs: number;
+}) {
+  const apiWasSlow = processingElapsedMs > 1800;
+  const isPressureState =
+    state === "pressuring" || state === "skeptical" || state === "losing_confidence";
+
+  if (apiWasSlow) {
+    return clampNumber(baseDelay, 280, mode === "video" ? 560 : 680);
+  }
+
+  const minDelay = isPressureState ? 680 : mode === "video" ? 480 : 620;
+  const maxDelay = isPressureState ? 1050 : mode === "video" ? 900 : 1150;
+
+  return clampNumber(baseDelay, minDelay, maxDelay);
 }
 
 function softenRecruiterSpeech(text: string) {
@@ -2595,6 +2654,10 @@ export default function InterviewPage() {
   const lastVapiStartRef = useRef(0);
   const vapiTranscriptKeysRef = useRef<Set<string>>(new Set());
   const [voiceProvider, setVoiceProvider] = useState<"vapi" | "tts-fallback">("tts-fallback");
+  const interviewSessionStartedAtRef = useRef<number | null>(null);
+  const interviewCompletionTrackedRef = useRef(false);
+  const fallbackActivationTrackedRef = useRef(false);
+
 
   useEffect(() => {
     const originalConsoleError = console.error;
@@ -2705,6 +2768,45 @@ export default function InterviewPage() {
   const company = getCompany(activeSetup);
   const market = activeSetup.targetMarket || "Global";
   const candidateName = getCandidateName(activeSetup);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const recordAbandonment = () => {
+      if (!isLiveRef.current || interviewCompletionTrackedRef.current) return;
+
+      const startedAt = interviewSessionStartedAtRef.current;
+      const durationSeconds = startedAt
+        ? Math.max(0, Math.round((Date.now() - startedAt) / 1000))
+        : elapsed;
+
+      incrementFounderTelemetryCounter("interviewsAbandoned");
+      recordFounderTelemetryEvent("interview_abandoned", {
+        setupId: activeSetup.setupId || "local-session",
+        role,
+        market,
+        recruiter: recruiterProfile.name,
+        mode: modeRef.current,
+        voiceProvider,
+        durationSeconds,
+        answeredQuestionCount,
+      });
+    };
+
+    window.addEventListener("beforeunload", recordAbandonment);
+    return () => {
+      recordAbandonment();
+      window.removeEventListener("beforeunload", recordAbandonment);
+    };
+  }, [
+    activeSetup.setupId,
+    answeredQuestionCount,
+    elapsed,
+    market,
+    recruiterProfile.name,
+    role,
+    voiceProvider,
+  ]);
 
   const getLockedBrowserVoice = useCallback(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return null;
@@ -3422,8 +3524,47 @@ export default function InterviewPage() {
       const currentTranscript = [...transcriptRef.current, candidateItem];
       const previousTrust = trustRef.current;
       const currentMemory = memoryRef.current;
+      const processingStartedAt = Date.now();
+      const thinkingCueTimers: number[] = [];
+      const clearThinkingCueTimers = () => {
+        while (thinkingCueTimers.length) {
+          const timer = thinkingCueTimers.pop();
+          if (timer) window.clearTimeout(timer);
+        }
+      };
 
-      setVoiceStatus("Recruiter is preparing a reply...");
+      setVoiceStatus(
+        getRecruiterThinkingStatus({
+          recruiterName: recruiterProfile.name,
+          state: recruiterStateRef.current,
+        }),
+      );
+
+      thinkingCueTimers.push(
+        window.setTimeout(() => {
+          if (!isLiveRef.current || !isProcessingAnswerRef.current) return;
+          setVoiceStatus(
+            getRecruiterThinkingStatus({
+              recruiterName: recruiterProfile.name,
+              state: recruiterStateRef.current,
+              elapsedMs: Date.now() - processingStartedAt,
+            }),
+          );
+        }, 900),
+      );
+
+      thinkingCueTimers.push(
+        window.setTimeout(() => {
+          if (!isLiveRef.current || !isProcessingAnswerRef.current) return;
+          setVoiceStatus(
+            getRecruiterThinkingStatus({
+              recruiterName: recruiterProfile.name,
+              state: recruiterStateRef.current,
+              elapsedMs: Date.now() - processingStartedAt,
+            }),
+          );
+        }, 2200),
+      );
 
       let intelligence: UnifiedRecruiterApiResponse | null = null;
 
@@ -3613,22 +3754,13 @@ export default function InterviewPage() {
       setRecruiterState(nextState);
       setRecruiterMemory(nextMemory);
       saveRecruiterMemory(nextMemory);
+      clearThinkingCueTimers();
       setVoiceStatus(
-        intelligence?.intent === "candidate_question"
-          ? "Recruiter is answering briefly..."
-          : intelligence?.intent === "clarification" ||
-              intelligence?.intent === "smalltalk" ||
-              intelligence?.intent === "greeting"
-            ? "Recruiter is guiding the conversation..."
-            : intelligence?.intent === "possible_exaggeration" ||
-                intelligence?.intent === "nonsense" ||
-                intelligence?.intent === "contradiction"
-              ? "Recruiter is checking realism..."
-              : shouldCountAsAnswer
-                ? intelligence?.conversationStage === "background" || intelligence?.conversationStage === "role_fit"
-                  ? "Recruiter is building the conversation..."
-                  : "Recruiter accepted the answer..."
-                : "Recruiter is staying on this question...",
+        getRecruiterThinkingStatus({
+          recruiterName: recruiterProfile.name,
+          state: nextState,
+          elapsedMs: Date.now() - processingStartedAt,
+        }),
       );
 
       const apiPause =
@@ -3644,10 +3776,12 @@ export default function InterviewPage() {
         apiPauseMs: apiPause,
       });
 
-      const thinkingDelay =
-        modeRef.current === "video"
-          ? Math.min(baseThinkingDelay, 420)
-          : Math.min(baseThinkingDelay, 650);
+      const thinkingDelay = buildNaturalRecruiterDelay({
+        baseDelay: baseThinkingDelay,
+        mode: modeRef.current,
+        state: nextState,
+        processingElapsedMs: Date.now() - processingStartedAt,
+      });
 
       pendingRecruiterReplyTimerRef.current = window.setTimeout(() => {
         if (!isLiveRef.current) {
@@ -3661,6 +3795,7 @@ export default function InterviewPage() {
           time: timeLabel(),
         };
 
+        setVoiceStatus(`${getFirstName(recruiterProfile.name) || "Recruiter"} is responding...`);
         addTranscript(recruiterReply);
         setQuestion(displayQuestion);
         speakRecruiter(spokenReply, () => {
@@ -3820,6 +3955,14 @@ export default function InterviewPage() {
         setIsSpeaking(false);
         setIsListening(false);
         setVoiceStatus(reason);
+        incrementFounderTelemetryCounter("fallbackActivated");
+        recordFounderTelemetryEvent("fallback_activated", {
+          setupId: activeSetup.setupId || "local-session",
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          reason,
+        });
       };
 
       const onCallStart = () => {
@@ -3830,6 +3973,12 @@ export default function InterviewPage() {
         setVoiceStatus("Vapi recruiter voice connected");
         setIsLive(true);
         isLiveRef.current = true;
+        recordFounderTelemetryEvent("vapi_connected", {
+          setupId: activeSetup.setupId || "local-session",
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+        });
       };
 
       const onCallEnd = () => {
@@ -3995,6 +4144,13 @@ export default function InterviewPage() {
       return true;
     } catch (error) {
       safeLogVapiIssue("WorkZo Vapi start failed; using TTS fallback", error);
+      recordFounderTelemetryRuntimeIssue("vapi_failed", error, {
+        setupId: activeSetup.setupId || "local-session",
+        role,
+        market,
+        recruiter: recruiterProfile.name,
+        voiceProvider: "vapi",
+      });
       try {
         vapiClientRef.current?.removeAllListeners?.();
       } catch {}
@@ -4020,12 +4176,24 @@ export default function InterviewPage() {
       );
       return false;
     }
-  }, [addTranscript, cleanupMobileTtsUrl, recruiterId, recruiterProfile.name]);
+  }, [activeSetup.setupId, addTranscript, cleanupMobileTtsUrl, market, recruiterId, recruiterProfile.name, role]);
 
   const startStandardInterview = useCallback(async () => {
     if (!isLiveRef.current && modeRef.current === "video") {
       const startedWithVapi = await startVapiInterview();
       if (startedWithVapi) return;
+
+      if (!fallbackActivationTrackedRef.current) {
+        fallbackActivationTrackedRef.current = true;
+        incrementFounderTelemetryCounter("fallbackActivated");
+        recordFounderTelemetryEvent("fallback_activated", {
+          setupId: activeSetup.setupId || "local-session",
+          role,
+          market,
+          recruiter: recruiterProfile.name,
+          reason: "vapi_start_failed",
+        });
+      }
     }
 
     if (isMobileBrowserRuntime() && !mobileAudioUnlockedRef.current) {
@@ -4113,10 +4281,23 @@ export default function InterviewPage() {
       mode: "voice",
     });
 
+    interviewSessionStartedAtRef.current = Date.now();
+    interviewCompletionTrackedRef.current = false;
+    fallbackActivationTrackedRef.current = false;
+    incrementFounderTelemetryCounter("interviewsStarted");
+    recordFounderTelemetryEvent("interview_started", {
+      setupId: setup.setupId || "local-session",
+      role: getRole(setup),
+      market: setup.targetMarket || "Global",
+      recruiter: profile.name,
+      mode: modeRef.current,
+      voiceProvider: voiceProvider,
+    });
+
     speakRecruiter(spokenOpening, () => {
       window.setTimeout(() => listenForAnswer(), 400);
     });
-  }, [addTranscript, listenForAnswer, speakRecruiter, startVapiInterview]);
+  }, [activeSetup.setupId, addTranscript, listenForAnswer, market, recruiterProfile.name, role, speakRecruiter, startVapiInterview, voiceProvider]);
 
   const stopInterview = useCallback(() => {
     isLiveRef.current = false;
@@ -4197,6 +4378,21 @@ export default function InterviewPage() {
     } catch (error) {
       console.warn("WorkZo local interview history save failed", error);
     }
+
+    interviewCompletionTrackedRef.current = true;
+    incrementFounderTelemetryCounter("interviewsCompleted");
+    recordFounderTelemetryEvent("interview_completed", {
+      setupId: activeSetup.setupId || "local-session",
+      role,
+      market,
+      recruiter: recruiterProfile.name,
+      mode: modeRef.current,
+      voiceProvider,
+      durationSeconds: elapsed,
+      answeredQuestionCount,
+      recruiterTrust,
+      completed: true,
+    });
 
     // Phase 2: persist completed interviews to Supabase through a server route.
     // This is intentionally fire-and-forget so ending the interview never feels slow
