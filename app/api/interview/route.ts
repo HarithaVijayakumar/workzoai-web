@@ -113,10 +113,11 @@ function uniqueCompanies(values: string[], limit = 24) {
       .replace(/\s+/g, " ")
       .replace(/^[•\-–—|:]+|[•\-–—|:]+$/g, "")
       .trim();
-    if (!cleaned || cleaned.length < 2 || cleaned.length > 90) continue;
+    if (!cleaned || cleaned.length < 2 || cleaned.length > 80) continue;
+    if (cleaned.split(/[,;|]/).length > 2) continue;
+    if (/\b(?:data analyst|software engineer|technical support|product design|project manager|sales executive|customer success|candidate|recruiter|company|role|team|english|german|global|remote|hybrid|fluent|conversational|python|sql|tableau|excel|power bi|skills?|language|programming|machine learning|visualization|contact|summary|profile)\b/i.test(cleaned)) continue;
     const key = normalizeCompany(cleaned);
     if (!key || key.length < 2 || seen.has(key)) continue;
-    if (/\b(?:data analyst|software engineer|technical support|product design|project manager|sales executive|customer success|candidate|recruiter|company|role|team|english|german|global|remote|hybrid)\b/i.test(cleaned)) continue;
     seen.add(key);
     out.push(cleaned);
     if (out.length >= limit) break;
@@ -133,8 +134,9 @@ function uniqueTitleFacts(values: string[], limit = 24) {
       .replace(/\s+/g, " ")
       .replace(/^[•\-–—|:]+|[•\-–—|:]+$/g, "")
       .trim();
-    if (!cleaned || cleaned.length < 2 || cleaned.length > 90) continue;
-    if (/\b(?:candidate|recruiter|company|english|german|global|remote|hybrid|resume|cv|email|phone|linkedin)\b/i.test(cleaned)) continue;
+    if (!cleaned || cleaned.length < 2 || cleaned.length > 80) continue;
+    if (cleaned.split(/[,;|]/).length > 2) continue;
+    if (/\b(?:candidate|recruiter|company|english|german|global|remote|hybrid|resume|cv|email|phone|linkedin|fluent|conversational|skills?|language|programming|python|sql|tableau|excel|power bi|machine learning|visualization|contact|summary|profile)\b/i.test(cleaned)) continue;
     const key = normalizeRoleTitle(cleaned);
     if (!key || key.length < 2 || seen.has(key)) continue;
     seen.add(key);
@@ -325,6 +327,10 @@ function estimateYearsFromEvidence(text: string) {
   const explicit = source.match(/(?:over|more than|around|about|nearly)?\s*(\d{1,2})\+?\s+years?\s+of\s+experience/i);
   const explicitYears = explicit ? Number(explicit[1]) : 0;
 
+  // Trust explicit CV summary experience before summed ranges. Summing duplicated
+  // PDF extraction, education, and projects can create impossible values.
+  if (explicitYears > 0 && explicitYears <= 20) return explicitYears;
+
   const currentYear = new Date().getFullYear();
   const ranges: Array<[number, number]> = [];
   const patterns = [
@@ -337,12 +343,14 @@ function estimateYearsFromEvidence(text: string) {
     while ((match = pattern.exec(source))) {
       const start = Number(match[1]);
       const end = match[2] ? Number(match[2]) : currentYear;
-      if (start >= 1980 && end >= start && end <= currentYear + 1) ranges.push([start, end]);
+      if (start >= 1980 && end >= start && end <= currentYear + 1) {
+        if (!ranges.some(([a, b]) => a === start && b === end)) ranges.push([start, end]);
+      }
     }
   }
 
   const rangeYears = ranges.reduce((sum, [start, end]) => sum + Math.max(0.5, end - start), 0);
-  const estimated = Math.max(explicitYears, rangeYears);
+  const estimated = Math.min(rangeYears, 15);
   return estimated > 0 ? Math.round(estimated * 10) / 10 : 0;
 }
 
@@ -387,17 +395,19 @@ function validateCandidateCompanyClaim({
   compactCv: string;
 }): ClaimValidationResult {
   const factProfile = setup?.candidateFactProfile || {};
-  const evidenceText = [factProfile.evidenceText, compactCv].filter(Boolean).join(" ");
+  const primaryEvidence = factProfile.evidenceText || compactCv || "";
+  const evidenceText = primaryEvidence;
+
+  // Ground only against CV-derived facts. Do not let compact interview/JD
+  // summaries leak target-role, language, or skill lines into verified facts.
   const verifiedCompanies = uniqueCompanies([
     ...(Array.isArray(factProfile.companies) ? factProfile.companies : []),
-    ...extractCompanyLikeNames(factProfile.evidenceText || "", 18),
-    ...extractCompanyLikeNames(compactCv, 18),
+    ...extractCompanyLikeNames(primaryEvidence, 18),
   ], 24);
 
   const verifiedTitles = uniqueTitleFacts([
     ...(Array.isArray(factProfile.titles) ? factProfile.titles : []),
-    ...extractTitleLikeNames(factProfile.evidenceText || "", 18),
-    ...extractTitleLikeNames(compactCv, 18),
+    ...extractTitleLikeNames(primaryEvidence, 18),
   ], 24);
 
   const estimatedYearsExperience =
@@ -503,13 +513,121 @@ function validateCandidateCompanyClaim({
 
 function compactTranscript(items: TranscriptItem[] | undefined) {
   return (items || [])
-    .slice(-4)
+    .slice(-2)
     .map((item) => ({
       role: item.role,
-      text: text(item.text, 260),
+      text: text(item.text, 220),
       time: item.time,
     }))
     .filter((item) => item.text);
+}
+
+
+function isAdmissionOfFalseClaim(answer: string) {
+  const lower = (answer || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!lower) return false;
+  return /\b(i\s+lied|i\s+just\s+lied|i\s+was\s+lying|i\s+made\s+that\s+up|i\s+made\s+it\s+up|that'?s\s+not\s+true|that\s+wasn'?t\s+true|it'?s\s+not\s+true|sorry\s+(?:that'?s|it'?s)\s+not\s+true|sorry\s+i\s+lied|i\s+exaggerated|i\s+was\s+exaggerating|i\s+gave\s+false\s+information|false\s+information|not\s+real|not\s+correct)\b/i.test(lower);
+}
+
+function buildAdmissionRedirectResponse({
+  compactCv,
+  claimValidation,
+  trust,
+}: {
+  compactCv: string;
+  claimValidation?: ClaimValidationResult;
+  trust: number;
+}) {
+  const verifiedTitles = claimValidation?.verifiedTitles?.filter(Boolean).slice(0, 3) || [];
+  const verifiedCompanies = claimValidation?.verifiedCompanies?.filter(Boolean).slice(0, 3) || [];
+  const roleFallback = compactCv ? compactCv.slice(0, 180) : "the experience visible in your resume";
+  const roleLine = verifiedTitles.length ? verifiedTitles.join(", ") : roleFallback;
+  const companyLine = verifiedCompanies.length ? ` at ${verifiedCompanies.join(", ")}` : "";
+  const reply = `Thank you for being honest. Recruiters care a lot about consistency between what you say and what is visible on your resume. Let’s reset and work only with the verified experience I can see: ${roleLine}${companyLine}. Tell me about one real customer or stakeholder situation from that experience, what you personally did, and what changed after your support.`
+    .replace(/\s+/g, " ")
+    .trim();
+  const nextTrust = Math.max(20, Math.min(90, trust - 10));
+
+  return NextResponse.json({
+    question: reply,
+    displayQuestion: reply,
+    feedback: "Candidate admitted an unsupported claim. Recruiter acknowledged honesty, lowered trust slightly, and redirected to verified CV experience.",
+    intent: "admitted_false_claim",
+    shouldAdvanceQuestion: false,
+    shouldCountAsAnswer: false,
+    shouldStayOnCurrentQuestion: true,
+    trustDelta: -10,
+    recruiterState: "skeptical",
+    correction: reply,
+    concern: "Candidate admitted that a prior experience claim was not true. Recruiter should stay cautious and ask for verified examples.",
+    psychology: {
+      trust: nextTrust,
+      interest: 50,
+      skepticism: 78,
+      patience: 58,
+      engagement: 60,
+      confidenceInCandidate: 34,
+    },
+    recruiterMemory: {
+      summary: "Candidate admitted an unsupported claim. Stay cautious and require verified CV-grounded examples.",
+      weakMoments: ["Admitted unsupported or exaggerated experience claim."],
+      strongMoments: ["Was honest after clarification."],
+      openDoubts: ["Needs to rebuild trust with verified resume examples."],
+      roleFitSignals: [],
+    },
+    memoryEvents: [
+      {
+        type: "admitted_false_claim",
+        severity: "high",
+        detail: "Candidate admitted a previous claim was false or exaggerated.",
+      },
+    ],
+    pressure: {
+      level: 72,
+      label: "trust reset",
+      reason: "Candidate admitted a false or exaggerated claim.",
+      behaviorShift: "Recruiter acknowledges honesty, becomes cautious, and redirects to verified resume experience.",
+    },
+    honestFeedback: {
+      headline: "Trust reset",
+      recruiterRead: "The candidate admitted an unsupported claim. A real recruiter would appreciate the honesty but become more cautious.",
+      risk: "False or exaggerated claims can reduce recruiter confidence quickly.",
+      nextFix: "Return to concrete, verified examples from the CV and describe personal contribution clearly.",
+    },
+    scores: {
+      relevance: 25,
+      clarity: 45,
+      structure: 35,
+      evidence: 15,
+      confidence: 28,
+      pressure: 72,
+      overall: nextTrust,
+    },
+    liveUiState: {
+      label: "Recruiter is resetting trust",
+      theme: "skeptical",
+      pressure: {
+        level: 72,
+        label: "trust reset",
+        reason: "Candidate admitted a false or exaggerated claim.",
+        behaviorShift: "Recruiter redirects to verified CV evidence.",
+      },
+      honestFeedback: null,
+      recruiterMemoryInsight: null,
+      livePressureSimulation: null,
+      marketExpectation: null,
+      humanImperfection: null,
+      socialSignals: null,
+      cinematicRealism: null,
+    },
+    trustTimeline: [
+      {
+        type: "drop",
+        delta: -10,
+        reason: "Candidate admitted an unsupported or exaggerated claim.",
+      },
+    ],
+  });
 }
 
 export async function POST(request: Request) {
@@ -538,11 +656,11 @@ export async function POST(request: Request) {
     );
     const compactCv = compactInterviewContext(
       setup.candidateProfileSummary || setup.cvText || body.cvText,
-      900,
+      720,
     );
     const compactJob = compactInterviewContext(
       setup.jobProfileSummary || body.jobDescription || setup.jobDescription,
-      900,
+      650,
     );
 
     const claimValidation = validateCandidateCompanyClaim({
@@ -550,6 +668,14 @@ export async function POST(request: Request) {
       setup,
       compactCv: cvGroundingEvidence || compactCv,
     });
+
+    if (isAdmissionOfFalseClaim(answer)) {
+      return buildAdmissionRedirectResponse({
+        compactCv: cvGroundingEvidence || compactCv,
+        claimValidation,
+        trust: typeof body.recruiterTrust === "number" ? body.recruiterTrust : 58,
+      });
+    }
 
     if (claimValidation.hasIssue) {
       return NextResponse.json({
@@ -663,7 +789,7 @@ export async function POST(request: Request) {
         recruiterPersonality: text(body.recruiterPersonality || setup.recruiterPersonality, 80),
         language: text(setup.language, 40),
         recruiterMemoryProfile: body.recruiterMemorySummary
-          ? { summary: text(body.recruiterMemorySummary, 420) }
+          ? { summary: text(body.recruiterMemorySummary, 280) }
           : undefined,
         jobMemoryProfile: undefined,
       },

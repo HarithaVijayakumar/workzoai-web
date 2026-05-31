@@ -1612,7 +1612,15 @@ function uniqueCleanFacts(values: string[], limit = 24) {
       .replace(/\s+/g, " ")
       .replace(/^[•\-–—|:]+|[•\-–—|:]+$/g, "")
       .trim();
-    if (!cleaned || cleaned.length < 2 || cleaned.length > 80) continue;
+
+    // Keep fact extraction conservative. Do not allow long summary, skill,
+    // language, or JD-like lines to become fake companies/titles. This was
+    // causing outputs like "Fluent in English, Python, SQL" as CV evidence.
+    if (!cleaned || cleaned.length < 2 || cleaned.length > 72) continue;
+    if (cleaned.split(/[,;|]/).length > 2) continue;
+    if (/\b(?:fluent|conversational|language|languages|skills?|programming|machine learning|visualization|tools?|soft skills|python|sql|tableau|power bi|excel|matplotlib|seaborn|tensorflow|sklearn|gcp|rag|linkedin|email|phone|contact|summary|profile)\b/i.test(cleaned)) continue;
+    if (/\b(?:interested in|aspiring|target role|job title|required skills|roles? & responsibilities|about the job|experience :|experience:)\b/i.test(cleaned)) continue;
+
     const key = normalizeFactToken(cleaned);
     if (!key || key.length < 2 || seen.has(key)) continue;
     seen.add(key);
@@ -1696,8 +1704,13 @@ function estimateYearsFromCvEvidence(sourceText: string) {
   const explicit = source.match(/(?:over|more than|around|about|nearly)?\s*(\d{1,2})\+?\s+years?\s+of\s+experience/i);
   const explicitYears = explicit ? Number(explicit[1]) : 0;
 
+  // If the CV explicitly says "4+ years of experience", trust that over
+  // summed date ranges. Summing education + projects + duplicated extracted
+  // text caused nonsense estimates like 28 years.
+  if (explicitYears > 0 && explicitYears <= 20) return explicitYears;
+
   const currentYear = new Date().getFullYear();
-  let rangeYears = 0;
+  const ranges: Array<[number, number]> = [];
   const patterns = [
     /\b(?:\d{1,2}\/)?((?:19|20)\d{2})\s*(?:-|–|—|to)\s*(?:present|current|heute|now|((?:19|20)\d{2}))/gi,
     /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+((?:19|20)\d{2})\s*(?:-|–|—|to)\s*(?:present|current|heute|now|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+((?:19|20)\d{2}))/gi,
@@ -1708,12 +1721,14 @@ function estimateYearsFromCvEvidence(sourceText: string) {
       const start = Number(match[1]);
       const end = match[2] ? Number(match[2]) : currentYear;
       if (start >= 1980 && end >= start && end <= currentYear + 1) {
-        rangeYears += Math.max(0.5, end - start);
+        const key: [number, number] = [start, end];
+        if (!ranges.some(([a, b]) => a === key[0] && b === key[1])) ranges.push(key);
       }
     }
   }
 
-  const estimated = Math.max(explicitYears, rangeYears);
+  const rangeYears = ranges.reduce((sum, [start, end]) => sum + Math.max(0.5, end - start), 0);
+  const estimated = Math.min(rangeYears, 15);
   return estimated > 0 ? Math.round(estimated * 10) / 10 : undefined;
 }
 
@@ -1727,14 +1742,11 @@ function buildCandidateFactProfile(setup: WorkZoInterviewSetup) {
   ].filter((entry): entry is string => typeof entry === "string" && Boolean(entry.trim())).join("\n");
 
   const resumeProfile = setup.resumeProfile || setup.recruiterMemoryProfile || {};
-  const companies = uniqueCleanFacts([
-    ...collectStringsDeep(resumeProfile, ["company", "employer", "organization", "organisation"]),
-    ...extractCompanyLikeNames(rawCv, 20),
-  ], 24);
-  const titles = uniqueCleanFacts([
-    ...collectStringsDeep(resumeProfile, ["role", "title", "position", "headline"]),
-    ...extractTitleLikeFacts(rawCv, 24),
-  ], 24);
+
+  // For grounding, only trust CV-derived experience facts. Avoid target-role,
+  // JD, skills, or language text leaking into companies/titles.
+  const companies = uniqueCleanFacts(extractCompanyLikeNames(rawCv, 20), 24);
+  const titles = uniqueCleanFacts(extractTitleLikeFacts(rawCv, 24), 24);
   const skills = uniqueCleanFacts([
     ...collectStringsDeep(resumeProfile, ["skill", "tool", "technology", "keyword"]),
     ...pickRoleKeywords(rawCv, 24),
@@ -1765,7 +1777,7 @@ function buildCompactCandidateProfile(setup: WorkZoInterviewSetup) {
     keywords.length ? `Relevant interview keywords: ${keywords.join(", ")}` : "",
   ].filter(Boolean);
 
-  return compactInterviewText(parts.join(". "), 1200);
+  return compactInterviewText(parts.join(". "), 900);
 }
 
 function buildCompactJobProfile(setup: WorkZoInterviewSetup) {
@@ -1778,7 +1790,7 @@ function buildCompactJobProfile(setup: WorkZoInterviewSetup) {
     keywords.length ? `Job priority keywords: ${keywords.join(", ")}` : "",
   ].filter(Boolean);
 
-  return compactInterviewText(parts.join(". "), 1150);
+  return compactInterviewText(parts.join(". "), 760);
 }
 
 function buildCompactRecruiterMemory(memory: RecruiterMemory) {
@@ -1795,13 +1807,13 @@ function buildCompactRecruiterMemory(memory: RecruiterMemory) {
     memory.vagueAnswers ? `Vague answers: ${memory.vagueAnswers}` : "",
   ].filter(Boolean);
 
-  return parts.join(" | ").slice(0, 420);
+  return parts.join(" | ").slice(0, 280);
 }
 
-function buildCompactTranscript(items: TranscriptItem[], maxTurns = 4) {
+function buildCompactTranscript(items: TranscriptItem[], maxTurns = 2) {
   return items.slice(-maxTurns).map((item) => ({
     role: item.role,
-    text: compactInterviewText(item.text, 260),
+    text: compactInterviewText(item.text, 220),
     time: item.time,
   }));
 }
@@ -1946,6 +1958,72 @@ function localTitleSupportedByCv(claimedTitle: string, verifiedTitles: string[],
     const overlap = claimedTokens.filter((token) => tokens.includes(token)).length;
     return overlap / Math.max(claimedTokens.length, tokens.length) >= 0.58;
   });
+}
+
+
+function isAdmissionOfFalseClaim(answer: string) {
+  const lower = (answer || "").replace(/\s+/g, " ").trim().toLowerCase();
+  if (!lower) return false;
+  return /\b(i\s+lied|i\s+just\s+lied|i\s+was\s+lying|i\s+made\s+that\s+up|i\s+made\s+it\s+up|that'?s\s+not\s+true|that\s+wasn'?t\s+true|it'?s\s+not\s+true|sorry\s+(?:that'?s|it'?s)\s+not\s+true|sorry\s+i\s+lied|i\s+exaggerated|i\s+was\s+exaggerating|i\s+gave\s+false\s+information|false\s+information|not\s+real|not\s+correct)\b/i.test(lower);
+}
+
+function buildVerifiedExperienceRedirect(setup: WorkZoInterviewSetup) {
+  const factProfile = buildCandidateFactProfile(setup);
+  const titles = (factProfile.titles || []).filter(Boolean).slice(0, 3);
+  const companies = (factProfile.companies || []).filter(Boolean).slice(0, 3);
+  const roleLine = titles.length
+    ? titles.join(", ")
+    : "the experience shown in your resume";
+  const companyLine = companies.length ? ` at ${companies.join(", ")}` : "";
+  return { roleLine, companyLine };
+}
+
+function buildLocalAdmissionResponse(
+  answer: string,
+  setup: WorkZoInterviewSetup,
+  previousTrust: number,
+): UnifiedRecruiterApiResponse | null {
+  if (!isAdmissionOfFalseClaim(answer)) return null;
+
+  const { roleLine, companyLine } = buildVerifiedExperienceRedirect(setup);
+  const verifiedQuestion = `Thank you for being honest. Recruiters care a lot about consistency between what you say and what is visible on your resume. Let’s reset and work only with the verified experience I can see: ${roleLine}${companyLine}. Tell me about one real customer or stakeholder situation from that experience, what you personally did, and what changed after your support.`
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return {
+    question: verifiedQuestion,
+    displayQuestion: verifiedQuestion,
+    feedback: "Candidate admitted an unsupported claim. Recruiter acknowledged the honesty, reduced trust slightly, and redirected to verified CV experience.",
+    intent: "admitted_false_claim",
+    shouldAdvanceQuestion: false,
+    shouldCountAsAnswer: false,
+    shouldStayOnCurrentQuestion: true,
+    trustDelta: -10,
+    recruiterState: "skeptical",
+    correction: verifiedQuestion,
+    concern: "Candidate admitted that a prior experience claim was not true. Recruiter should stay cautious but continue constructively with verified CV evidence.",
+    psychology: {
+      trust: Math.max(20, Math.min(90, previousTrust - 10)),
+      interest: 50,
+      skepticism: 78,
+      patience: 58,
+      engagement: 60,
+      confidenceInCandidate: 34,
+    },
+    recruiterMemory: {
+      summary: "Candidate admitted an unsupported claim. Stay cautious and ask for verified, CV-grounded examples before increasing trust.",
+      weakMoments: ["Admitted unsupported or exaggerated experience claim."],
+      strongMoments: ["Was honest after clarification."],
+      openDoubts: ["Needs to rebuild trust with verified examples from resume experience."],
+      roleFitSignals: [],
+    },
+    pressure: {
+      level: 72,
+      label: "trust reset",
+      reason: "Candidate admitted a false or exaggerated claim.",
+      behaviorShift: "Recruiter acknowledges honesty, becomes cautious, and redirects to verified resume experience.",
+    },
+  };
 }
 
 function buildLocalCvGroundingResponse(
@@ -3581,6 +3659,11 @@ export default function InterviewPage() {
   const market = activeSetup.targetMarket || "Global";
   const candidateName = getCandidateName(activeSetup);
 
+  const compactInterviewSetup = useMemo(
+    () => buildCompactInterviewSetup(activeSetup, recruiterId),
+    [activeSetup, recruiterId],
+  );
+
   const getLockedBrowserVoice = useCallback(() => {
     if (typeof window === "undefined" || !window.speechSynthesis) return null;
 
@@ -4393,19 +4476,31 @@ export default function InterviewPage() {
       }
 
       if (!intelligence) {
+        // Highest priority: if the candidate admits a false/exaggerated claim,
+        // respond instantly and do not wait for the API/LLM path.
+        intelligence = buildLocalAdmissionResponse(cleanAnswer, activeSetup, previousTrust);
+      }
+
+      if (!intelligence) {
+        // Local CV grounding is intentionally before the API call for speed and
+        // reliability. If it finds a conflict, return immediately.
         intelligence = buildLocalCvGroundingResponse(cleanAnswer, activeSetup, previousTrust);
       }
 
       if (!intelligence) try {
-        const response = await fetch("/api/interview", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: (() => {
-            const compactSetup = buildCompactInterviewSetup(activeSetup, recruiterId);
-            return JSON.stringify({
+        const controller = new AbortController();
+        const apiTimeout = window.setTimeout(() => controller.abort(), 4200);
+
+        try {
+          const compactSetup = compactInterviewSetup;
+          const response = await fetch("/api/interview", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
+            body: JSON.stringify({
               answer: cleanAnswer,
-              currentQuestion: compactInterviewText(currentQuestion, 360),
-              transcript: buildCompactTranscript(currentTranscript, 4),
+              currentQuestion: compactInterviewText(currentQuestion, 260),
+              transcript: buildCompactTranscript(currentTranscript, 2),
               setup: compactSetup,
               targetRole: compactSetup.targetRole,
               targetMarket: compactSetup.targetMarket,
@@ -4414,12 +4509,14 @@ export default function InterviewPage() {
               recruiterTrust: previousTrust,
               recruiterState: recruiterStateRef.current,
               recruiterMemorySummary: buildCompactRecruiterMemory(currentMemory),
-            });
-          })(),
-        });
+            }),
+          });
 
-        if (response.ok) {
-          intelligence = (await response.json()) as UnifiedRecruiterApiResponse;
+          if (response.ok) {
+            intelligence = (await response.json()) as UnifiedRecruiterApiResponse;
+          }
+        } finally {
+          window.clearTimeout(apiTimeout);
         }
       } catch {
         intelligence = null;

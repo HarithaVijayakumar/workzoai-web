@@ -1,245 +1,351 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import {
-  Bot,
-  CheckCircle2,
-  ClipboardCheck,
+  ArrowRight,
+  BarChart3,
+  Briefcase,
+  Check,
+  ChevronRight,
+  Clock3,
   FileText,
+  Home,
   Mail,
   Mic,
   Search,
   Settings,
   Sparkles,
+  Star,
+  TrendingUp,
+  Upload,
 } from "lucide-react";
-import {
-  readCandidateIdentity,
-  syncCandidateIdentityFromSetup,
-  type WorkZoCandidateIdentity,
-} from "@/lib/workzoCandidateIdentity";
-import { readLatestInterviewSetup } from "@/lib/workzoInterviewSetup";
 
 const navItems = [
-  { label: "Dashboard", href: "/dashboard", icon: Sparkles, active: true },
+  { label: "Dashboard", href: "/dashboard", icon: Home, active: true },
   { label: "Improve CV", href: "/cv", icon: FileText },
   { label: "Cover Letter", href: "/cover-letter", icon: Mail },
-  { label: "Find Jobs", href: "/jobs", icon: Search },
+  { label: "Find Jobs", href: "/jobs", icon: Briefcase },
   { label: "Real Interview AI", href: "/interview", icon: Mic },
-  { label: "Results", href: "/results", icon: ClipboardCheck },
-  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Results", href: "/results", icon: BarChart3 },
+  { label: "Settings", href: "#", icon: Settings },
 ];
 
-function firstName(fullName: string) {
-  const clean = String(fullName || "Candidate").trim();
-  if (!clean || /^candidate$/i.test(clean)) return "Candidate";
-  return clean.split(/\s+/)[0];
+const actionCards = [
+  {
+    title: "Improve CV",
+    detail: "ATS score: 85 · 3 fixes available",
+    href: "/cv",
+    icon: FileText,
+    tone: "emerald",
+    cta: "Review CV",
+  },
+  {
+    title: "Cover Letter",
+    detail: "Create a focused letter from CV + job context",
+    href: "/cover-letter",
+    icon: Mail,
+    tone: "violet",
+    cta: "Create letter",
+  },
+  {
+    title: "Find Jobs",
+    detail: "12 matching roles prepared from your profile",
+    href: "/jobs",
+    icon: Search,
+    tone: "blue",
+    cta: "Find roles",
+  },
+];
+
+const journeyItems = [
+  { label: "CV uploaded", done: true },
+  { label: "Job context added", done: true },
+  { label: "Interview prepared", done: true },
+  { label: "Feedback reviewed", done: false },
+];
+
+const insights = [
+  {
+    color: "bg-emerald-300",
+    title: "Support experience is your strongest signal",
+    detail: "Use customer-facing stories when answering Sales, Success, or Analyst role questions.",
+  },
+  {
+    color: "bg-yellow-300",
+    title: "Add measurable impact",
+    detail: "Recruiters need numbers, scale, time saved, quality improved, or customer outcome.",
+  },
+  {
+    color: "bg-blue-400",
+    title: "Prepare one ownership story",
+    detail: "Choose one example with pressure, your action, and the final result.",
+  },
+];
+
+const quickLinks = [
+  { label: "Interview history", href: "/results", icon: Clock3 },
+  { label: "Saved cover letters", href: "/cover-letter", icon: FileText },
+  { label: "Job matches", href: "/jobs", icon: Briefcase },
+  { label: "Recommended roles", href: "/jobs", icon: Star },
+];
+
+function toneClasses(tone: string) {
+  if (tone === "emerald") return "bg-emerald-400/10 text-emerald-200 border-emerald-300/20";
+  if (tone === "violet") return "bg-violet-400/10 text-violet-200 border-violet-300/20";
+  return "bg-blue-400/10 text-blue-200 border-blue-300/20";
 }
 
-function isRealCandidateName(name = "") {
-  return Boolean(name.trim()) && !/^candidate$/i.test(name.trim());
-}
+function MiniTrendChart() {
+  const points = [45, 60, 72, 85];
+  const width = 360;
+  const height = 130;
+  const coords = points.map((value, index) => {
+    const x = 34 + index * 96;
+    const y = 108 - (value / 100) * 78;
+    return { x, y, value };
+  });
+  const path = coords.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
 
-function WorkZoLogo() {
   return (
-    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl shadow-lg shadow-cyan-500/25">
-      <img
-        src="/workzo_icon.png"
-        alt="WorkZo AI"
-        className="h-full w-full object-cover"
-      />
+    <div className="rounded-2xl border border-white/8 bg-black/15 p-3">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[130px] w-full" role="img" aria-label="Performance trend">
+        {[28, 54, 80, 106].map((y) => (
+          <line key={y} x1="24" y1={y} x2="340" y2={y} stroke="rgba(148,163,184,0.16)" strokeWidth="1" />
+        ))}
+        <path d={path} fill="none" stroke="rgb(59,130,246)" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+        {coords.map((point, index) => (
+          <g key={point.value}>
+            <circle cx={point.x} cy={point.y} r="8" fill="#061225" stroke="rgb(96,165,250)" strokeWidth="5" />
+            <text x={point.x} y={point.y - 18} textAnchor="middle" fill="rgb(147,197,253)" fontSize="16" fontWeight="800">
+              {point.value}
+            </text>
+            <text x={point.x} y="124" textAnchor="middle" fill="rgb(148,163,184)" fontSize="13" fontWeight="600">
+              W{index + 1}
+            </text>
+          </g>
+        ))}
+      </svg>
+      <div className="mt-1 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
+        <span className="h-1 w-8 rounded-full bg-blue-400" /> Overall score
+      </div>
     </div>
   );
 }
 
-function BrandLockup() {
-  return (
-    <Link href="/dashboard" className="flex min-w-0 items-center gap-3">
-      <WorkZoLogo />
-      <div className="min-w-0 leading-none">
-        <p className="whitespace-nowrap text-lg font-black tracking-tight text-white">
-          WorkZo <span className="text-blue-300">AI</span>
-        </p>
-        <p className="mt-1 whitespace-nowrap text-[10px] font-black uppercase tracking-[0.22em] text-cyan-200">
-          Career OS
-        </p>
-      </div>
-    </Link>
-  );
-}
-
 export default function DashboardPage() {
-  const [candidate, setCandidate] = useState<WorkZoCandidateIdentity>(() => readCandidateIdentity());
-
-  useEffect(() => {
-    const setup = readLatestInterviewSetup();
-    const synced = syncCandidateIdentityFromSetup(setup);
-    const latest = isRealCandidateName(synced.name) ? synced : readCandidateIdentity();
-    setCandidate(latest);
-  }, []);
-
-  const displayName = isRealCandidateName(candidate.name) ? candidate.name : "Candidate";
-  const displayFirstName = firstName(displayName);
-
-  const progress = useMemo(
-    () => [
-      { label: "CV uploaded", done: isRealCandidateName(candidate.name) },
-      { label: "Job context added", done: true },
-      { label: "Interview prepared", done: true },
-      { label: "Feedback reviewed", done: false },
-    ],
-    [candidate.name],
-  );
-
-  const recruiterSignals = [
-    { label: "Trust", value: "58/100" },
-    { label: "Pressure", value: "Medium" },
-    { label: "Trend", value: "Recovering" },
-    { label: "Focus", value: "Metrics" },
-  ];
-
   return (
-    <main className="min-h-screen bg-[#020817] px-4 py-4 text-white sm:px-5">
-      <div className="mx-auto grid max-w-[1480px] gap-5 xl:grid-cols-[275px_minmax(0,1fr)]">
-        <aside className="rounded-[26px] border border-white/10 bg-[#071120]/95 p-5 shadow-2xl shadow-black/25 xl:sticky xl:top-4 xl:h-[calc(100vh-32px)]">
-          <div className="mb-6 overflow-visible">
-            <BrandLockup />
-          </div>
+    <main className="min-h-screen bg-[#050b14] text-white">
+      <div className="flex min-h-screen">
+        <aside className="fixed inset-y-0 left-0 hidden w-[240px] border-r border-white/10 bg-[#07111f]/92 px-4 py-4 lg:flex lg:flex-col">
+          <Link href="/dashboard" className="flex items-center gap-3">
+            <Image src="/workzo_icon.png" alt="WorkZo AI" width={44} height={44} priority className="rounded-2xl" />
+            <div>
+              <div className="text-xl font-black tracking-tight">WorkZo <span className="text-blue-400">AI</span></div>
+              <div className="mt-0.5 text-[9px] font-black uppercase tracking-[0.24em] text-cyan-200">Career OS</div>
+            </div>
+          </Link>
 
-          <nav className="space-y-1.5">
+          <nav className="mt-5 space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               return (
                 <Link
                   key={item.label}
                   href={item.href}
-                  className={[
-                    "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-black transition",
+                  className={`flex h-9 items-center gap-3 rounded-xl px-3 text-[12px] font-black transition ${
                     item.active
-                      ? "bg-gradient-to-r from-blue-500 to-violet-600 text-white shadow-lg shadow-blue-600/20"
-                      : "text-slate-300 hover:bg-white/[0.08]",
-                  ].join(" ")}
+                      ? "bg-gradient-to-r from-blue-500 to-violet-600 text-white shadow-[0_16px_40px_rgba(37,99,235,0.22)]"
+                      : "text-slate-300 hover:bg-white/[0.04] hover:text-white"
+                  }`}
                 >
-                  <Icon className="h-5 w-5 shrink-0" />
-                  <span className="truncate">{item.label}</span>
+                  <Icon className="h-3.5 w-3.5" />
+                  {item.label}
                 </Link>
               );
             })}
           </nav>
 
-          <section className="mt-7 rounded-3xl border border-cyan-300/15 bg-cyan-400/[0.08] p-4">
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-violet-600">
-                <Bot className="h-4.5 w-4.5" />
+          <div className="mt-auto space-y-3">
+            <div className="rounded-[16px] border border-cyan-300/15 bg-cyan-300/[0.045] p-2.5">
+              <div className="flex items-center gap-3">
+                <div className="grid h-8 w-8 place-items-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-600">
+                  <Sparkles className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <div className="text-[13px] font-black leading-tight">Work-O-Bot</div>
+                  <div className="text-[10px] font-bold text-cyan-200">Career assistant</div>
+                </div>
               </div>
+              <button className="mt-2 h-7 w-full rounded-xl bg-white/10 text-[11px] font-black text-white hover:bg-white/[0.14]">Open assistant</button>
+            </div>
+
+            <div className="flex items-center gap-2 border-t border-white/10 pt-2">
+              <div className="h-7 w-7 rounded-full bg-gradient-to-br from-amber-100 to-slate-300" />
               <div className="min-w-0">
-                <p className="font-black">Work-O-Bot</p>
-                <p className="text-xs font-bold text-cyan-200">Career assistant</p>
+                <div className="truncate text-xs font-black">Haritha Vijayakumar</div>
+                <div className="truncate text-[10px] text-slate-400">Data Science Enthusiast</div>
               </div>
             </div>
-            <Link
-              href="/copilot"
-              className="block rounded-2xl bg-white/10 px-4 py-3 text-center text-sm font-black text-white transition hover:bg-white/15"
-            >
-              Open assistant
-            </Link>
-          </section>
+          </div>
         </aside>
 
-        <section className="min-w-0 space-y-5">
-          <header className="rounded-[28px] border border-white/10 bg-gradient-to-br from-slate-900 via-slate-950 to-blue-950 p-5 shadow-2xl shadow-blue-950/20 sm:p-6 lg:p-7">
-            <div className="grid gap-5 lg:grid-cols-[1fr_auto] lg:items-start">
-              <div className="min-w-0">
-                <div className="mb-5 flex items-center gap-3 xl:hidden">
-                  <BrandLockup />
-                </div>
-
-                <p className="mb-3 text-xs font-black uppercase tracking-[0.32em] text-cyan-200">
-                  Career Workspace
-                </p>
-                <h1 className="max-w-5xl text-[34px] font-black leading-[1.02] tracking-tight sm:text-5xl xl:text-[56px]">
-                  Welcome back, {displayFirstName} <span className="inline-block">👋</span>
-                </h1>
-                <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">
-                  Start a realistic recruiter room with follow-ups, pressure, and feedback based on the uploaded CV and job context.
-                </p>
-              </div>
-
-              <Link
-                href="/interview"
-                className="inline-flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-blue-500 to-violet-600 px-6 py-3.5 text-sm font-black text-white shadow-xl shadow-blue-600/25 transition hover:scale-[1.01] sm:text-base"
-              >
-                Start Real Interview
-                <span className="text-xl leading-none">→</span>
+        <section className="w-full px-5 py-5 lg:ml-[240px] lg:px-8 xl:px-10">
+          <header className="flex flex-col gap-4 border-b border-white/10 pb-4 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.42em] text-cyan-200">Career Workspace</p>
+              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Welcome back, Haritha! 👋</h1>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Your focused workspace for interview practice, CV improvement, and job preparation.</p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link href="/interview" className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-violet-600 px-5 text-sm font-black shadow-[0_18px_48px_rgba(37,99,235,0.22)]">
+                Start Real Interview <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link href="/onboarding" className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl border border-white/12 bg-white/[0.035] px-5 text-sm font-black">
+                <Upload className="h-4 w-4" /> Upload CV
               </Link>
             </div>
           </header>
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
-            <section className="rounded-[28px] border border-cyan-300/15 bg-gradient-to-br from-cyan-950/30 via-slate-950 to-violet-950/40 p-5 sm:p-6 lg:p-7">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3.5 py-1.5 text-[11px] font-black uppercase tracking-[0.25em] text-cyan-200">
-                  Hero Feature
-                </span>
-                <span className="rounded-full border border-emerald-300/15 bg-emerald-300/10 px-3.5 py-1.5 text-xs font-black text-emerald-200">
-                  Recruiter simulation ready
-                </span>
-              </div>
-
-              <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-center">
-                <div className="min-w-0">
-                  <h2 className="text-[40px] font-black leading-[0.98] tracking-tight sm:text-5xl xl:text-[54px]">
-                    Real<br />Interview<br />AI
-                  </h2>
-                  <p className="mt-5 max-w-md text-base leading-7 text-slate-300">
-                    Practice with an AI recruiter that challenges vague answers, asks follow-ups, and shows where trust changed.
-                  </p>
+          <div className="mt-5 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
+            <section className="rounded-[24px] border border-blue-300/15 bg-gradient-to-br from-blue-500/[0.13] via-[#0b1527] to-[#0a1020] p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <div className="inline-flex rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.22em] text-cyan-100">Next Best Action</div>
+                  <h2 className="mt-3 text-2xl font-black tracking-[-0.03em]">Practice your first realistic recruiter call</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Your CV and job context are ready. Start one interview and get feedback on trust, clarity, ownership, and measurable impact.</p>
                 </div>
-
-                <div className="rounded-[24px] border border-white/10 bg-black/20 p-4 sm:p-5">
-                  <p className="mb-4 text-xs font-black uppercase tracking-[0.22em] text-cyan-200">
-                    Latest Recruiter Signal
-                  </p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {recruiterSignals.map((signal) => (
-                      <div key={signal.label} className="min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5">
-                        <p className="text-xs font-bold text-slate-400">{signal.label}</p>
-                        <p className="mt-1 whitespace-normal break-words text-base font-black leading-tight text-white sm:text-lg">
-                          {signal.value}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <Link href="/interview" className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white text-sm font-black text-slate-950 px-4">
+                  Start practice <ChevronRight className="h-4 w-4" />
+                </Link>
               </div>
             </section>
 
-            <section className="rounded-[28px] border border-white/10 bg-white/[0.03] p-5 sm:p-6 lg:p-6">
-              <p className="mb-3 text-xs font-black uppercase tracking-[0.26em] text-cyan-200">
-                Your Job Journey
-              </p>
-              <h2 className="mb-4 text-2xl font-black">Progress snapshot</h2>
-
-              <div className="space-y-3">
-                {progress.map((item) => (
-                  <div
-                    key={item.label}
-                    className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3.5"
-                  >
-                    <span
-                      className={[
-                        "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl",
-                        item.done ? "bg-emerald-400/10 text-emerald-300" : "bg-slate-400/10 text-slate-500",
-                      ].join(" ")}
-                    >
-                      <CheckCircle2 className="h-4.5 w-4.5" />
+            <section className="rounded-[24px] border border-white/10 bg-[#0b1527] p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">Journey</p>
+                  <h2 className="mt-1 text-xl font-black">75% ready</h2>
+                </div>
+                <div className="grid h-16 w-16 place-items-center rounded-full border-[8px] border-blue-500 bg-[#07111f] text-base font-black">75%</div>
+              </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+                {journeyItems.map((item, index) => (
+                  <div key={item.label} className="flex items-center gap-2.5 rounded-xl border border-white/8 bg-black/15 px-3 py-2">
+                    <span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-black ${item.done ? "bg-emerald-400/20 text-emerald-200" : "bg-slate-600/40 text-slate-300"}`}>
+                      {item.done ? <Check className="h-4 w-4" /> : index + 1}
                     </span>
-                    <span className="text-sm font-black">{item.label}</span>
+                    <span className="text-sm font-bold text-slate-200">{item.label}</span>
                   </div>
                 ))}
               </div>
             </section>
           </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            {actionCards.map((card) => {
+              const Icon = card.icon;
+              return (
+                <Link key={card.title} href={card.href} className="group rounded-[22px] border border-white/10 bg-[#0b1527] p-4 transition hover:border-blue-300/30 hover:bg-[#0d192e]">
+                  <div className={`grid h-10 w-10 place-items-center rounded-xl border ${toneClasses(card.tone)}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="mt-4 text-xl font-black tracking-[-0.02em]">{card.title}</h3>
+                  <p className="mt-2 min-h-[40px] text-sm leading-6 text-slate-300">{card.detail}</p>
+                  <div className="mt-3 inline-flex items-center gap-2 text-sm font-black text-blue-300">
+                    {card.cta} <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 grid items-start gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <section className="rounded-[22px] border border-white/10 bg-[#0b1527] p-4">
+              <h2 className="text-xl font-black">Recent interview</h2>
+              <div className="mt-3 rounded-2xl border border-white/8 bg-black/15 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex gap-4">
+                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/5"><Mic className="h-4 w-4 text-blue-200" /></div>
+                    <div>
+                      <h3 className="font-black">Data Analyst · Product</h3>
+                      <p className="mt-1 text-sm text-slate-400">Practice session · 12 minutes</p>
+                    </div>
+                  </div>
+                  <span className="rounded-full bg-blue-500/20 px-3 py-1 text-sm font-black text-blue-200">72%</span>
+                </div>
+                <Link href="/results" className="mt-3 inline-flex items-center gap-2 text-sm font-black text-blue-300">View result <ArrowRight className="h-4 w-4" /></Link>
+              </div>
+            </section>
+
+            <section className="rounded-[22px] border border-white/10 bg-[#0b1527] p-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-black">Recruiter insights</h2>
+                <Link href="/results" className="text-sm font-black text-blue-300">View all</Link>
+              </div>
+              <div className="mt-3 grid gap-3">
+                {insights.map((item) => (
+                  <div key={item.title} className="rounded-2xl border border-white/8 bg-black/15 p-3.5">
+                    <div className="flex gap-3">
+                      <span className={`mt-1.5 h-3 w-3 shrink-0 rounded-full ${item.color}`} />
+                      <div>
+                        <h3 className="font-black">{item.title}</h3>
+                        <p className="mt-1.5 text-sm leading-6 text-slate-300">{item.detail}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_0.9fr_0.85fr]">
+            <section className="rounded-[22px] border border-white/10 bg-[#0b1527] p-4">
+              <div className="flex items-center justify-between gap-4">
+                <h2 className="text-xl font-black">Performance trend</h2>
+                <span className="rounded-full border border-white/10 px-4 py-2 text-xs font-black text-slate-300">This month</span>
+              </div>
+              <div className="mt-3"><MiniTrendChart /></div>
+              <p className="mt-3 flex items-center gap-2 text-sm text-slate-300"><TrendingUp className="h-4 w-4 text-blue-300" /> Interview clarity improved by 40 points across recent practice.</p>
+            </section>
+
+            <section className="rounded-[22px] border border-white/10 bg-[#0b1527] p-4">
+              <h2 className="text-xl font-black">Activity summary</h2>
+              <div className="mt-4 divide-y divide-white/10 text-sm">
+                {[
+                  ["Interviews practiced", "8"],
+                  ["Avg. score", "68%"],
+                  ["Strongest skill", "Communication"],
+                  ["Focus area", "Technical depth"],
+                ].map(([label, value]) => (
+                  <div key={label} className="flex items-center justify-between py-2.5">
+                    <span className="text-slate-300">{label}</span>
+                    <span className="font-black text-white">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-[22px] border border-white/10 bg-[#0b1527] p-4">
+              <h2 className="text-xl font-black">Quick links</h2>
+              <div className="mt-3 divide-y divide-white/10">
+                {quickLinks.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link key={item.label} href={item.href} className="flex items-center justify-between py-2.5 text-sm text-slate-200 hover:text-white">
+                      <span className="flex items-center gap-3"><Icon className="h-5 w-5 text-slate-400" /> {item.label}</span>
+                      <ArrowRight className="h-4 w-4 text-slate-500" />
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          </div>
+
+          <footer className="mt-6 flex flex-col gap-3 pb-4 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span>© 2026 WorkZo AI. All rights reserved.</span>
+            <div className="flex gap-6"><span>Privacy Policy</span><span>Terms of Service</span><span>Contact</span></div>
+          </footer>
         </section>
       </div>
     </main>
