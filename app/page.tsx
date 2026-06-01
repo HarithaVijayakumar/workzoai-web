@@ -2,233 +2,429 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Sparkles, Upload } from "lucide-react";
-import { useEffect } from "react";
-import { trackWorkZoLaunchEvent } from "@/lib/workzoLaunchAnalytics";
+import {
+  ArrowRight,
+  BarChart3,
+  CheckCircle2,
+  FileText,
+  Mic,
+  PlayCircle,
+  ShieldCheck,
+  Sparkles,
+  UserRound,
+  Zap,
+} from "lucide-react";
 
-const featureItems = [
-  "Realistic AI interviewer",
-  "Follow-ups & interruptions",
-  "Pressure simulation",
-  "Honest feedback",
+const trustItems = [
+  "CV + job based practice",
+  "Dynamic recruiter follow-ups",
+  "Trust timeline + weakest answer",
 ];
 
-const proofItems = [
-  "CV-aware questions",
-  "JD-based follow-ups",
-  "Contradiction checks",
-  "Recruiter-style feedback",
+const quickFeatures = [
+  {
+    title: "Real Recruiter AI",
+    text: "Follow-up questions based on your answers.",
+    icon: Mic,
+  },
+  {
+    title: "CV + Job Aware",
+    text: "Practice for the exact role you want.",
+    icon: FileText,
+  },
+  {
+    title: "Live Copilot",
+    text: "Know what to say next during practice.",
+    icon: Zap,
+  },
+  {
+    title: "Recruiter Feedback",
+    text: "See score, trust, verdict, and weak answers.",
+    icon: BarChart3,
+  },
 ];
+
+const steps = [
+  ["01", "Add CV", "Paste or upload your resume."],
+  ["02", "Add Job", "Add the target role or job description."],
+  ["03", "Practice", "Start a realistic AI recruiter interview."],
+  ["04", "Improve", "Review verdict, trust, and weakest answer."],
+];
+
+function InterviewRoomMockup() {
+  return (
+    <div className="relative mx-auto w-full max-w-[650px] rounded-[2rem] border border-white/10 bg-white/[0.04] p-3 shadow-2xl shadow-blue-950/40 backdrop-blur">
+      <div className="overflow-hidden rounded-[1.5rem] border border-white/10 bg-[#07101f] text-white">
+        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-200">Live interview</p>
+            <h3 className="mt-1 text-lg font-black">Daniel · Hiring Manager</h3>
+          </div>
+          <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-200">
+            Interested
+          </span>
+        </div>
+
+        <div className="grid gap-4 p-5 sm:grid-cols-[160px_1fr]">
+          <div className="grid min-h-56 place-items-center rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800">
+            <div className="text-center">
+              <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-blue-500/15">
+                <UserRound className="h-8 w-8 text-blue-200" />
+              </div>
+              <p className="mt-3 text-sm font-bold text-slate-300">AI Recruiter</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Current question</p>
+              <p className="mt-2 text-sm leading-6 text-slate-100">
+                Tell me about a customer situation where you influenced the outcome.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+                <p className="text-xs text-slate-400">Trust</p>
+                <p className="mt-1 text-3xl font-black text-blue-200">74</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-4">
+                <p className="text-xs text-slate-400">Progress</p>
+                <p className="mt-1 text-3xl font-black text-emerald-200">7/12</p>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-amber-200">Recruiter note</p>
+              <p className="mt-2 text-sm leading-6 text-slate-100">
+                Needs stronger metrics and clearer ownership.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="absolute -bottom-6 left-6 right-6 hidden rounded-2xl border border-white/10 bg-[#0b1424]/95 p-4 shadow-xl shadow-blue-950/40 backdrop-blur lg:block">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-200">Live Copilot</p>
+            <p className="mt-1 text-sm font-semibold text-slate-200">Use one real example and state the result.</p>
+          </div>
+          <span className="rounded-full bg-blue-600 px-3 py-1 text-xs font-black text-white">ON</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultsMockup() {
+  return (
+    <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-blue-950/30">
+      <div className="rounded-2xl border border-white/10 bg-[#07101f] p-5">
+        <div className="flex items-center justify-between">
+          <h3 className="text-lg font-black text-white">Interview Results</h3>
+          <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-200">
+            Engaged
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 sm:grid-cols-[110px_1fr]">
+          <div className="grid h-24 w-24 place-items-center rounded-full border-[10px] border-blue-500 bg-blue-500/10">
+            <div className="text-center">
+              <p className="text-3xl font-black text-white">74</p>
+              <p className="text-xs text-slate-400">/100</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {[
+              ["Confidence", "80/100"],
+              ["Clarity", "70/100"],
+              ["Relevance", "78/100"],
+            ].map(([label, value]) => (
+              <div key={label} className="flex items-center justify-between rounded-xl bg-white/[0.06] px-3 py-2 text-sm">
+                <span className="text-slate-300">{label}</span>
+                <span className="font-black text-white">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-2xl border border-amber-300/15 bg-amber-300/10 p-4">
+          <p className="text-sm font-black text-amber-100">Weakest answer</p>
+          <p className="mt-2 text-sm leading-6 text-slate-200">
+            Too broad. Add one verified metric and explain your personal action.
+          </p>
+        </div>
+
+        <div className="mt-5">
+          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-blue-200">Trust timeline</p>
+          <div className="mt-3 h-3 overflow-hidden rounded-full bg-white/10">
+            <div className="h-full w-[74%] rounded-full bg-gradient-to-r from-blue-500 to-emerald-400" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-300">{children}</p>;
+}
 
 export default function LandingPage() {
-  useEffect(() => {
-    trackWorkZoLaunchEvent({ event: "landing_viewed" });
-  }, []);
-
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#020617] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_72%_18%,rgba(37,99,235,0.18),transparent_34%),radial-gradient(circle_at_12%_78%,rgba(34,211,238,0.12),transparent_28%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(2,6,23,0.98)_0%,rgba(2,6,23,0.92)_46%,rgba(15,23,42,0.78)_100%)]" />
-      <div className="absolute inset-y-0 left-[28%] hidden w-px bg-white/[0.06] lg:block" />
-      <div className="absolute inset-y-0 left-[56%] hidden w-px bg-white/[0.04] lg:block" />
+    <main className="min-h-screen overflow-x-hidden bg-[#050b14] text-white">
+      <section className="relative isolate overflow-hidden border-b border-white/10">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.26),transparent_35%),radial-gradient(circle_at_top_right,rgba(124,58,237,0.22),transparent_35%),linear-gradient(180deg,#050b14_0%,#081221_55%,#050b14_100%)]" />
+        <div className="absolute left-1/2 top-24 -z-10 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-500/10 blur-3xl" />
 
-      <div className="relative z-10 mx-auto flex min-h-screen max-w-[1500px] flex-col px-4 py-4 sm:px-6 lg:px-10">
-        <header className="flex min-h-[64px] items-center justify-between gap-3 rounded-[24px] border border-white/10 bg-[#050b18]/76 px-4 shadow-[0_22px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:h-[78px] sm:rounded-[30px] sm:px-5 lg:px-7">
-          <Link href="/" className="flex min-w-0 items-center gap-3">
-            <Image
-              src="/workzo_icon.png"
-              alt="WorkZo AI"
-              width={52}
-              height={52}
-              className="h-11 w-11 rounded-2xl sm:h-[52px] sm:w-[52px]"
-              priority
-            />
-            <span className="truncate text-[25px] font-black tracking-tight sm:text-[32px]">
+        <header className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-5 sm:px-6 lg:px-8">
+          <Link href="/" className="flex items-center gap-3">
+            <Image src="/workzo_icon.png" alt="WorkZo AI" width={42} height={42} priority className="rounded-xl" />
+            <span className="text-xl font-black tracking-tight sm:text-2xl">
               WorkZo <span className="text-blue-400">AI</span>
             </span>
           </Link>
 
-          <nav className="hidden items-center gap-8 text-sm font-black text-slate-300 xl:flex">
-            <Link href="/onboarding" className="hover:text-white">
-              Product
-            </Link>
-            <a href="#features" className="hover:text-white">
-              Features
-            </a>
-            <a href="#how" className="hover:text-white">
-              How it works
-            </a>
-            <a href="#pricing" className="hover:text-white">
-              Pricing
-            </a>
-            <a href="#resources" className="hover:text-white">
-              Resources
-            </a>
+          <nav className="hidden items-center gap-7 text-sm font-semibold text-slate-300 md:flex">
+            <a href="#features" className="transition hover:text-white">Features</a>
+            <a href="#how" className="transition hover:text-white">How it works</a>
+            <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
+            <Link href="/resources" className="transition hover:text-white">Resources</Link>
           </nav>
 
-          <div className="flex shrink-0 items-center gap-3">
-            <Link
-              href="/dashboard"
-              className="hidden h-12 items-center rounded-2xl border border-white/10 bg-white/[0.05] px-6 text-sm font-black text-white sm:inline-flex"
-            >
-              Sign in
+          <div className="flex items-center gap-2">
+            <Link href="/login" className="hidden rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-bold text-slate-200 transition hover:bg-white/[0.08] sm:inline-flex">
+              Login
             </Link>
-            <Link
-              href="/onboarding"
-              className="inline-flex h-11 items-center rounded-2xl bg-gradient-to-r from-sky-500 to-violet-600 px-4 text-sm font-black text-white shadow-[0_0_30px_rgba(59,130,246,0.28)] sm:h-12 sm:px-7"
-            >
-              Get Started
+            <Link href="/onboarding" className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-black text-slate-950 shadow-lg shadow-blue-950/20 transition hover:bg-blue-50">
+              Start Free
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </div>
         </header>
 
-        <section className="grid flex-1 items-center gap-10 py-10 lg:grid-cols-[0.95fr_1.05fr] lg:gap-12 lg:py-12">
-          <div className="max-w-[720px] text-center lg:text-left">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-white/[0.06] px-4 py-2 text-sm font-black text-slate-100 backdrop-blur-xl">
-              <Sparkles className="h-4 w-4 text-cyan-300" />
-              AI interviewer that feels real
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 pb-20 pt-10 sm:px-6 lg:grid-cols-[1fr_650px] lg:px-8 lg:pb-24 lg:pt-14">
+          <section>
+            <div className="inline-flex items-center gap-2 rounded-full border border-blue-300/20 bg-blue-400/10 px-3 py-1.5 text-xs font-black uppercase tracking-[0.18em] text-blue-200">
+              <Sparkles className="h-3.5 w-3.5" />
+              Real Interview AI
             </div>
 
-            <h1 className="mt-7 text-[clamp(48px,11vw,92px)] font-black leading-[0.9] tracking-[-0.06em] lg:text-[clamp(64px,6vw,112px)]">
-              Face a real interview{" "}
-              <span className="bg-gradient-to-r from-cyan-300 via-blue-500 to-violet-500 bg-clip-text text-transparent">
-                before the real one.
-              </span>
+            <h1 className="mt-6 max-w-4xl text-4xl font-black leading-[0.98] tracking-tight sm:text-6xl lg:text-[66px]">
+              Practice real interviews before the real one.
             </h1>
 
-            <p className="mx-auto mt-6 max-w-[650px] text-[17px] leading-8 text-slate-300 sm:text-[20px] sm:leading-9 lg:mx-0">
-              Practice with an AI recruiter that reads your CV, asks follow-up
-              questions, challenges vague answers, detects contradictions, and
-              gives honest feedback.
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300 sm:text-xl">
+              WorkZo AI helps you rehearse recruiter-style interviews based on your CV and target job, then shows exactly where recruiter trust dropped.
             </p>
 
-            <div
-              id="features"
-              className="mx-auto mt-8 grid max-w-[650px] grid-cols-2 gap-3 text-left text-sm font-bold text-slate-200 sm:grid-cols-4 lg:mx-0"
-            >
-              {featureItems.map((item) => (
-                <div
-                  key={item}
-                  className="rounded-2xl border border-white/[0.07] bg-white/[0.045] p-3 backdrop-blur-xl"
-                >
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-cyan-300" />
-                    <span>{item}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:gap-4">
-              <Link
-                href="/onboarding"
-                className="inline-flex min-h-[60px] items-center justify-center gap-3 rounded-[24px] bg-gradient-to-r from-sky-500 to-violet-600 px-8 text-base font-black text-white shadow-[0_0_46px_rgba(59,130,246,0.35)] transition active:scale-[0.98]"
-              >
-                Start Real Interview
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/onboarding" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 to-violet-600 px-6 py-4 text-base font-black text-white shadow-xl shadow-blue-950/30 transition hover:scale-[1.02]">
+                Start Free Interview
                 <ArrowRight className="h-5 w-5" />
               </Link>
 
-              <Link
-                href="/onboarding"
-                className="inline-flex min-h-[60px] items-center justify-center gap-3 rounded-[24px] border border-white/[0.10] bg-white/[0.025] px-8 text-base font-black text-slate-100 backdrop-blur-xl transition hover:bg-white/[0.045] active:scale-[0.98]"
-              >
-                <Upload className="h-5 w-5" />
-                Upload CV
+              <Link href="/demo" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-6 py-4 text-base font-black text-white transition hover:bg-white/[0.08]">
+                <PlayCircle className="h-5 w-5 text-blue-300" />
+                Try Demo
               </Link>
             </div>
 
-            <p className="mx-auto mt-4 max-w-[560px] text-center text-xs font-semibold leading-5 text-slate-500 lg:mx-0 lg:text-left">
-              Beta product · validate AI feedback before real applications · your setup can be edited anytime.
+            <div className="mt-8 space-y-3">
+              {trustItems.map((item) => (
+                <div key={item} className="flex items-center gap-3 text-sm font-semibold text-slate-300">
+                  <CheckCircle2 className="h-5 w-5 text-emerald-300" />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="pb-8 lg:pb-0">
+            <InterviewRoomMockup />
+          </section>
+        </div>
+      </section>
+
+      <section className="border-b border-white/10 bg-[#07101f] px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-3 sm:grid-cols-3">
+          {[
+            ["Built for global job seekers", "Role, country, and job context can shape the interview."],
+            ["Not a question bank", "The recruiter reacts to what you actually say."],
+            ["Designed for confidence", "Practice pressure before it matters."],
+          ].map(([title, text]) => (
+            <div key={title} className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+              <p className="font-black text-white">{title}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="features" className="bg-[#050b14] px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>Why WorkZo</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">More than interview questions.</h2>
+          <p className="mt-4 text-lg leading-8 text-slate-300">
+            WorkZo focuses on recruiter realism: follow-ups, proof, ownership, metrics, and confidence under pressure.
+          </p>
+        </div>
+
+        <div className="mx-auto mt-10 grid max-w-7xl gap-5 md:grid-cols-4">
+          {quickFeatures.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div key={card.title} className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 shadow-sm shadow-blue-950/10 transition hover:-translate-y-1 hover:bg-white/[0.06]">
+                <div className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-400/10 text-blue-200">
+                  <Icon className="h-6 w-6" />
+                </div>
+                <h3 className="mt-5 text-lg font-black">{card.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-400">{card.text}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="bg-[#07101f] px-4 py-14 text-white sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-2">
+          <div>
+            <SectionLabel>Product experience</SectionLabel>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+              A focused interview room, not a cluttered dashboard.
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-slate-300">
+              See the recruiter, live guidance, score changes, and transcript in one calm space.
             </p>
           </div>
 
-          <div className="relative mx-auto w-full max-w-[620px] lg:max-w-none">
-            <div className="rounded-[34px] border border-white/[0.10] bg-white/[0.045] p-5 shadow-[0_30px_100px_rgba(0,0,0,0.42)] backdrop-blur-2xl sm:p-7">
-              <div className="rounded-[28px] border border-white/[0.08] bg-[#030814]/82 p-6 sm:p-8">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">
-                      Real Interview AI
-                    </p>
-                    <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">
-                      Recruiter simulation
-                    </h2>
-                  </div>
-                  <div className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.18em] text-emerald-200">
-                    Ready
-                  </div>
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-5">
+            <div className="rounded-2xl border border-white/10 bg-[#050b14] p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-black text-blue-200">Live Copilot</h3>
+                <span className="rounded-full bg-blue-500 px-3 py-1 text-xs font-black">On</span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="rounded-2xl border border-emerald-300/15 bg-emerald-400/[0.08] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-200">Say next</p>
+                  <p className="mt-2 text-sm text-slate-100">Use one real example and state the result.</p>
                 </div>
 
-                <div className="mt-8 grid gap-4 sm:grid-cols-3">
-                  {[
-                    ["Trust Signal", "62/100", "Recoverable"],
-                    ["Pressure", "High", "Follow-up incoming"],
-                    ["Clarity", "65%", "Needs proof"],
-                  ].map(([label, value, detail]) => (
-                    <div
-                      key={label}
-                      className="rounded-[22px] border border-white/[0.08] bg-white/[0.04] p-4"
-                    >
-                      <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-400">
-                        {label}
-                      </p>
-                      <p className="mt-3 text-3xl font-black text-white">
-                        {value}
-                      </p>
-                      <p className="mt-2 text-xs font-semibold text-slate-400">
-                        {detail}
-                      </p>
-                    </div>
-                  ))}
+                <div className="rounded-2xl border border-amber-300/15 bg-amber-400/[0.08] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-200">Recruiter concern</p>
+                  <p className="mt-2 text-sm text-slate-100">Answer needs stronger evidence and ownership.</p>
                 </div>
 
-                <div className="mt-6 rounded-[24px] border border-white/[0.08] bg-black/20 p-5">
-                  <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">
-                    Live transcript preview
-                  </p>
-                  <div className="mt-5 space-y-5">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">
-                        AI Recruiter
-                      </p>
-                      <p className="mt-1.5 text-base leading-7 text-slate-100">
-                        Tell me about a time you solved a complex problem with limited information.
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-300">
-                        You
-                      </p>
-                      <p className="mt-1.5 text-base leading-7 text-slate-200">
-                        I took ownership, clarified the missing requirements, and delivered a working solution.
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-300">
-                        AI Recruiter
-                      </p>
-                      <p className="mt-1.5 text-base leading-7 text-slate-100">
-                        That is a start. Now give me proof. What changed because of your action?
-                      </p>
-                    </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <p className="text-xs text-slate-400">Trust</p>
+                    <p className="mt-1 text-3xl font-black text-blue-200">70</p>
                   </div>
-                </div>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                  {proofItems.map((item) => (
-                    <div
-                      key={item}
-                      className="rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-3 text-sm font-bold text-slate-200"
-                    >
-                      {item}
-                    </div>
-                  ))}
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <p className="text-xs text-slate-400">Interest</p>
+                    <p className="mt-1 text-3xl font-black text-emerald-200">67</p>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
+
+      <section className="bg-[#050b14] px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl items-center gap-10 lg:grid-cols-[1fr_520px]">
+          <div>
+            <SectionLabel>Interview results</SectionLabel>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+              Know what to fix before your next interview.
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-slate-300">
+              Review recruiter verdict, trust timeline, weakest answer, and retry guidance after every practice session.
+            </p>
+          </div>
+
+          <ResultsMockup />
+        </div>
+      </section>
+
+      <section id="how" className="bg-[#07101f] px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>How it works</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+            From CV to interview feedback in minutes.
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-slate-300">
+            Start with your own material, or try the demo without uploading anything.
+          </p>
+        </div>
+
+        <div className="mx-auto mt-10 grid max-w-7xl gap-4 md:grid-cols-4">
+          {steps.map(([number, title, text]) => (
+            <div key={number} className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+              <p className="text-sm font-black text-blue-300">{number}</p>
+              <h3 className="mt-4 text-xl font-black">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{text}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-[#050b14] px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto grid max-w-7xl gap-5 lg:grid-cols-2">
+          <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-8">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-300">Free beta</p>
+            <h3 className="mt-3 text-3xl font-black">Start with interview practice</h3>
+            <p className="mt-3 text-slate-300">Try WorkZo AI during beta and experience the real interview flow.</p>
+            <Link href="/onboarding" className="mt-7 inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white">
+              Start Free Interview
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="rounded-[2rem] border border-blue-300/20 bg-blue-400/[0.08] p-8">
+            <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-200">Premium</p>
+            <h3 className="mt-3 text-3xl font-black">Coming soon</h3>
+            <p className="mt-3 text-slate-300">Advanced recruiter memory, deeper results, and more premium interview modes.</p>
+            <Link href="/pricing" className="mt-7 inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-black text-white">
+              View Pricing
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-[#07101f] px-4 py-14 text-white sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-5xl rounded-[2rem] border border-white/10 bg-gradient-to-r from-blue-600/20 to-violet-600/20 p-8 text-center">
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-200">Ready?</p>
+          <h2 className="mt-3 text-3xl font-black sm:text-5xl">Practice your next interview today.</h2>
+          <p className="mx-auto mt-4 max-w-2xl text-slate-300">Start free, or try the demo first without uploading anything.</p>
+          <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
+            <Link href="/onboarding" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-6 py-4 text-base font-black text-slate-950">
+              Start Free Interview
+              <ArrowRight className="h-5 w-5" />
+            </Link>
+            <Link href="/demo" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-6 py-4 text-base font-black">
+              Try Demo
+              <PlayCircle className="h-5 w-5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <footer className="border-t border-white/10 bg-[#050b14] px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
+          <p>© WorkZo AI · Beta</p>
+          <div className="flex flex-wrap gap-4">
+            <Link href="/privacy" className="hover:text-white">Privacy</Link>
+            <Link href="/terms" className="hover:text-white">Terms</Link>
+            <Link href="/resources" className="hover:text-white">Resources</Link>
+            <Link href="/login" className="hover:text-white">Login</Link>
+          </div>
+        </div>
+      </footer>
     </main>
   );
 }

@@ -117,6 +117,12 @@ export function buildWorkZoVapiVariableValues(input: {
   companyName: string;
   cvText?: string;
   jobDescription?: string;
+  recruiterPersonality?: string;
+  companyStyleInstructions?: string;
+  workzoStrictGrounding?: string;
+  strictGroundingRules?: string;
+  recruiterMustChallengeUnsupportedClaims?: string;
+  antiHallucinationMode?: string;
 }) {
   return {
     candidateName: input.candidateName || "Candidate",
@@ -126,16 +132,25 @@ export function buildWorkZoVapiVariableValues(input: {
     targetMarket: input.targetMarket || "Global",
     companyStyle: input.companyStyle || "Realistic",
     companyName: input.companyName || "the company",
+    recruiterPersonality: input.recruiterPersonality || "",
+    companyStyleInstructions: input.companyStyleInstructions || "",
     cvSummary: (input.cvText || "").replace(/\s+/g, " ").slice(0, 2400),
     jobDescription: (input.jobDescription || "").replace(/\s+/g, " ").slice(0, 2400),
     interviewStyle:
-      "Natural human recruiter. Start with brief rapport, answer small questions naturally, ask one question at a time, probe based on the candidate's answer, and avoid robotic scoring language.",
-    voiceDirection: getOpenAiTtsInstructions({
+      `Natural human recruiter. Start with brief rapport, answer small questions naturally, ask one question at a time, probe based on the candidate's answer, avoid robotic scoring language, and challenge unsupported claims before continuing. ${input.recruiterPersonality || ""} ${input.companyStyleInstructions || ""}`,
+    voiceDirection: `${getOpenAiTtsInstructions({
       recruiterId: input.recruiterName || input.recruiterRole,
       recruiterState: "neutral",
       mode: "vapi",
-    }),
+    })} Speak slower than a normal call. Use calm pacing, clear pronunciation, and brief pauses after each sentence. Do not rush.`,
+    strictGroundingRules:
+      input.strictGroundingRules ||
+      input.workzoStrictGrounding ||
+      "Use the CV and job description as ground truth. Challenge unsupported companies, roles, years, achievements, degrees, certifications, and metrics before continuing.",
+    recruiterMustChallengeUnsupportedClaims:
+      input.recruiterMustChallengeUnsupportedClaims || "true",
+    antiHallucinationMode: input.antiHallucinationMode || "strict",
     pacingRules:
-      "Use short human pauses. Acknowledge social turns before continuing. Do not repeat the same question. If the candidate gives a vague answer, narrow the next question instead of lecturing.",
+      "Speak slowly and clearly, around 0.85x normal interview speed. Use short human pauses between sentences. Do not rush follow-up questions. Acknowledge social turns briefly before continuing. Do not repeat the same question. If the candidate gives a vague answer, narrow the next question instead of lecturing.",
   };
 }
