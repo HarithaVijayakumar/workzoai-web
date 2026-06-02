@@ -243,7 +243,7 @@ const initialTranscript: TranscriptItem[] = [
     time: "--:--:--",
     role: "system",
     speaker: "System",
-    text: "Ready to start your interview.",
+    text: "Interview transcript will appear here after you press Start.",
   },
 ];
 
@@ -1883,7 +1883,7 @@ export default function InterviewPage() {
   const [transcript, setTranscript] = useState<TranscriptItem[]>(initialTranscript);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [showTranscript, setShowTranscript] = useState(true);
+  const [showTranscript, setShowTranscript] = useState(false);
   const [showCopilot, setShowCopilot] = useState(true);
   const [autoScrollTranscript, setAutoScrollTranscript] = useState(true);
   const [interviewStyle, setInterviewStyle] = useState<"Supportive" | "Realistic" | "Challenging" | "Brutal">("Realistic");
@@ -1921,7 +1921,7 @@ export default function InterviewPage() {
   const lastUserTranscriptRef = useRef('');
 
   const hasStartedInterview = transcript.some((item) => item.role === "recruiter");
-  const visibleQuestionNumber = hasStartedInterview ? Math.max(1, Math.min(questionIndex, 12)) : 0;
+  const visibleQuestionNumber = hasStartedInterview ? Math.max(1, Math.min(questionIndex, 12)) : 1;
   const progress = hasStartedInterview ? Math.round((visibleQuestionNumber / 12) * 100) : 0;
   const interviewComplete: boolean =
     visibleQuestionNumber >= 12 || recruiterMemory.readyForResults;
@@ -2991,14 +2991,16 @@ export default function InterviewPage() {
 
             <div className="hidden h-9 w-px bg-white/10 sm:block" />
 
-            <div className="flex min-w-0 items-center gap-3">
-              <h1 className="max-w-[170px] truncate text-sm font-black sm:max-w-[520px] sm:text-lg lg:max-w-[680px] lg:text-xl">
+            <div className="flex min-w-0 flex-col justify-center gap-0.5 sm:flex-row sm:items-center sm:gap-3">
+              <h1 className="max-w-[210px] truncate text-base font-black leading-tight sm:max-w-[520px] sm:text-lg lg:max-w-[680px] lg:text-xl">
                 {headerTitle}
               </h1>
-              <span className="hidden h-2.5 w-2.5 rounded-full bg-emerald-400 sm:block" />
-              <span className={`hidden rounded-full border px-2.5 py-1 text-xs font-black uppercase sm:block ${recruiterStatusTone(recruiterSignal, scoreReady)}`}>
-                {recruiterStatus}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase sm:px-2.5 sm:py-1 sm:text-xs ${recruiterStatusTone(recruiterSignal, scoreReady)}`}>
+                  {recruiterStatus}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -3365,7 +3367,7 @@ export default function InterviewPage() {
                 >
                   {status === "listening" ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
                 </button>
-                <button className="grid h-10 w-10 place-items-center rounded-full sm:h-14 sm:w-14 bg-white text-slate-950 shadow-2xl sm:h-14 sm:w-14">
+                <button className="hidden h-10 w-10 place-items-center rounded-full bg-white text-slate-950 shadow-2xl sm:grid sm:h-14 sm:w-14">
                   <Video className="h-6 w-6" />
                 </button>
                 <button
@@ -3385,28 +3387,60 @@ export default function InterviewPage() {
               </div>
             </section>
 
+            {!showTranscript ? (
+              <button
+                type="button"
+                onClick={() => setShowTranscript(true)}
+                className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#0b1527]/95 px-4 py-3 text-left transition hover:bg-white/[0.04]"
+              >
+                <div>
+                  <p className="text-sm font-black">Live Transcript</p>
+                  <p className="mt-1 text-xs text-slate-400">Collapsed to keep the interview room focused.</p>
+                </div>
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-black text-blue-200">
+                  Open
+                </span>
+              </button>
+            ) : null}
+
             <section style={{ display: showTranscript ? undefined : "none" }} className="rounded-2xl border border-white/10 bg-[#0b1527]/95 lg:min-h-0">
-              <div className="flex h-10 items-center justify-between border-b border-white/10 px-5">
+              <div className="flex min-h-10 items-center justify-between gap-3 border-b border-white/10 px-4 py-2 sm:px-5">
                 <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-black">Live Transcript</h2>
+                  <h2 className="text-base font-black sm:text-lg">Live Transcript</h2>
                   <span className="h-2 w-2 rounded-full bg-red-400" />
                   <span className="text-sm text-slate-300">Live</span>
                 </div>
-                <div className="hidden items-center gap-3 text-sm text-slate-300 sm:flex">
-                  Auto-scroll
+                <div className="flex items-center gap-3 text-sm text-slate-300">
                   <button
                     type="button"
-                    onClick={() => setAutoScrollTranscript((value) => !value)}
-                    className={`relative h-5 w-9 rounded-full ${autoScrollTranscript ? "bg-blue-500" : "bg-white/15"}`}
+                    onClick={() => setShowTranscript(false)}
+                    className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold hover:bg-white/[0.05]"
                   >
-                    <span className={`absolute top-1 h-3 w-3 rounded-full bg-white transition ${autoScrollTranscript ? "right-1" : "left-1"}`} />
+                    Collapse
                   </button>
+                  <div className="hidden items-center gap-2 sm:flex">
+                    Auto-scroll
+                    <button
+                      type="button"
+                      onClick={() => setAutoScrollTranscript((value) => !value)}
+                      className={`relative h-5 w-9 rounded-full ${autoScrollTranscript ? "bg-blue-500" : "bg-white/15"}`}
+                    >
+                      <span className={`absolute top-1 h-3 w-3 rounded-full bg-white transition ${autoScrollTranscript ? "right-1" : "left-1"}`} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
               <div className="overflow-hidden px-4 py-1 lg:h-[calc(100%-74px)] lg:max-h-none">
                 <div className="divide-y divide-white/8">
-                  {transcript.map((line) => (
+                  {transcript.length <= 1 && transcript[0]?.role === "system" ? (
+                    <div className="py-4 text-sm leading-6 text-slate-300">
+                      <p className="font-semibold text-slate-100">Interview transcript will appear here.</p>
+                      <p className="mt-1 text-slate-400">The recruiter will ask the first question after you press Start.</p>
+                    </div>
+                  ) : null}
+
+                  {transcript.filter((line) => !(transcript.length <= 1 && line.role === "system")).map((line) => (
                     <div
                       key={line.id}
                       className="grid grid-cols-[80px_150px_1fr] gap-3 py-1 text-sm max-sm:grid-cols-1 max-sm:gap-1 max-sm:py-3"
@@ -3449,10 +3483,10 @@ export default function InterviewPage() {
           </div>
 
           <aside className="grid gap-3 lg:min-h-0 lg:grid-rows-[190px_270px_82px]">
-            <section className="rounded-2xl border border-white/10 bg-[#0b1527] p-3.5">
+            <section className="order-2 rounded-2xl border border-white/10 bg-[#0b1527] p-3.5 lg:order-none">
               <h2 className="text-base font-black">Interview Score</h2>
-              <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <div className={`grid h-[78px] w-[78px] place-items-center rounded-full border-[7px] bg-[#07111f] transition-all duration-500 ${scoreFlash === "up" ? "border-emerald-400 shadow-[0_0_0_10px_rgba(52,211,153,0.18)]" : scoreFlash === "down" ? "border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.18)]" : "border-blue-500 shadow-[0_0_0_10px_rgba(124,58,237,0.2)]"}`}>
+              <div className="mt-2 flex flex-row items-center gap-3">
+                <div className={`grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full border-[6px] bg-[#07111f] transition-all duration-500 ${scoreFlash === "up" ? "border-emerald-400 shadow-[0_0_0_10px_rgba(52,211,153,0.18)]" : scoreFlash === "down" ? "border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.18)]" : "border-blue-500 shadow-[0_0_0_10px_rgba(124,58,237,0.2)]"}`}>
                   <div className="text-center">
                     {scoreReady ? (
                       <>
@@ -3482,7 +3516,7 @@ export default function InterviewPage() {
                           <span className={`grid h-6 w-6 place-items-center rounded-lg ${toneClass(item.tone)}`}>
                             <Icon className="h-4 w-4" />
                           </span>
-                          <span className="text-sm">{item.label}</span>
+                          <span className="text-sm max-[380px]:text-xs">{item.label}</span>
                         </div>
                         <span className="text-xs text-slate-200">{item.value}</span>
                       </div>
@@ -3496,7 +3530,7 @@ export default function InterviewPage() {
               </p>
             </section>
 
-            <section style={{ display: showCopilot ? undefined : "none" }} className="rounded-2xl border border-white/10 bg-[#0b1527] p-3.5 overflow-hidden">
+            <section style={{ display: showCopilot ? undefined : "none" }} className="order-1 sticky top-3 z-20 rounded-2xl border border-white/10 bg-[#0b1527] p-3.5 overflow-hidden shadow-2xl shadow-black/20 lg:static lg:order-none lg:shadow-none">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-black text-blue-300">
                   Live Copilot{" "}
@@ -3543,7 +3577,7 @@ export default function InterviewPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/10 bg-[#0b1527] p-4">
+            <section className="order-3 rounded-2xl border border-white/10 bg-[#0b1527] p-4 lg:order-none">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-black">Interview Progress</h2>
                 <span className="text-sm text-slate-300">
