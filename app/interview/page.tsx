@@ -24,7 +24,6 @@ import {
   Sparkles,
   Star,
   User,
-  Video,
   Volume2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -243,7 +242,7 @@ const initialTranscript: TranscriptItem[] = [
     time: "--:--:--",
     role: "system",
     speaker: "System",
-    text: "Interview transcript will appear here after you press Start.",
+    text: "Ready to start your interview.",
   },
 ];
 
@@ -1744,6 +1743,8 @@ function cleanVisibleTranscriptText(text: string) {
     .replace(/\bhigh\s+/i, "Hi ")
     .replace(/\bherathivudayakuma\b/gi, "Haritha")
     .replace(/\bharithavijayakumar\b/gi, "Haritha Vijayakumar")
+    .replace(/\bHi,?\s+surrender\b/gi, "Hi there")
+    .replace(/\bsurrender\b/gi, "there")
     .replace(/\s+([,.!?])/g, "$1")
     .trim();
 }
@@ -1787,6 +1788,13 @@ function shouldMergeVisibleTranscript(
 function safeFirstName(name: string) {
   const cleaned = safeText(name, "Candidate").replace(/\s+/g, " ").trim();
   return cleaned.split(" ")[0] || "Candidate";
+}
+
+function safeGreetingName(name: string) {
+  const firstName = safeFirstName(name);
+  if (!firstName || /^(candidate|user|there|unknown|resume|cv|profile|surrender)$/i.test(firstName)) return "there";
+  if (!/^[A-Za-zÀ-ÖØ-öø-ÿ' .-]{2,24}$/.test(firstName)) return "there";
+  return firstName;
 }
 
 function isProgressWorthyRecruiterTurn(text: string) {
@@ -1921,7 +1929,9 @@ export default function InterviewPage() {
   const lastUserTranscriptRef = useRef('');
 
   const hasStartedInterview = transcript.some((item) => item.role === "recruiter");
-  const visibleQuestionNumber = hasStartedInterview ? Math.max(1, Math.min(questionIndex, 12)) : 1;
+  const visibleTranscriptItems = transcript.filter((item) => !(item.role === "system" && item.id === "initial-ready"));
+  const transcriptMessageCount = visibleTranscriptItems.filter((item) => item.role !== "system").length + (interimText ? 1 : 0);
+  const visibleQuestionNumber = hasStartedInterview ? Math.max(1, Math.min(questionIndex, 12)) : 0;
   const progress = hasStartedInterview ? Math.round((visibleQuestionNumber / 12) * 100) : 0;
   const interviewComplete: boolean =
     visibleQuestionNumber >= 12 || recruiterMemory.readyForResults;
@@ -2366,7 +2376,7 @@ export default function InterviewPage() {
       window.setTimeout(() => {
         setQuestionIndex(1);
         speakRecruiter(
-          `Hi ${safeFirstName(activeSetup.candidateName)}. Let’s begin your interview for the ${activeSetup.targetRole} role. ${recruiterQuestions[0]}`,
+          `Hi ${safeGreetingName(activeSetup.candidateName)}. Let’s begin your interview for the ${activeSetup.targetRole} role. ${recruiterQuestions[0]}`,
         );
       }, 120);
     },
@@ -2533,7 +2543,7 @@ export default function InterviewPage() {
           strictGroundingRules: "You are WorkZo AI's realistic recruiter. Treat the CV/resume and job description as the only verified facts. Never accept unsupported claims as true. Before any positive follow-up, check whether the candidate's claim is supported by the CV/JD. If the candidate claims a company, role, title, years of experience, certification, degree, achievement, or metric that is not visible in the CV/JD, challenge it immediately and politely. Use this exact style: 'I need to pause there. I cannot verify that from your CV. Can you clarify whether this was official employment, freelance work, volunteer experience, transferable experience, or just an example scenario?' Example: if CV does not mention Tesla or 15 years and candidate says 'I have fifteen years of experience at Tesla', do not say thanks or ask achievements. Challenge the mismatch first. Do not validate fake or exaggerated inputs. Ask one concise follow-up at a time. Prioritize evidence, ownership, STAR structure, metrics, and role relevance.",
           recruiterMustChallengeUnsupportedClaims: "true",
           antiHallucinationMode: "strict",
-          candidateName: safeFirstName(activeSetup.candidateName),
+          candidateName: safeGreetingName(activeSetup.candidateName),
           recruiterName: activeSetup.recruiterName,
           recruiterRole: activeSetup.recruiterTitle,
           targetRole: activeSetup.targetRole,
@@ -2614,13 +2624,13 @@ export default function InterviewPage() {
       const candidateAnswers = countCandidateAnswers(restoredSnapshot.transcript);
       const resumePrompt =
         lastCandidateAnswer && restoredSnapshot.transcript[restoredSnapshot.transcript.length - 1]?.role === "candidate"
-          ? `Welcome back, ${safeFirstName(restoredSnapshot.setup.candidateName)}. I have your last answer saved. Let’s continue from there. ${buildRecruiterReply(
+          ? `Welcome back, ${safeGreetingName(restoredSnapshot.setup.candidateName)}. I have your last answer saved. Let’s continue from there. ${buildRecruiterReply(
               lastCandidateAnswer,
               Math.max(1, restoredSnapshot.questionIndex),
               restoredSnapshot.setup,
               restoredSnapshot.recruiterMemory,
             )}`
-          : `Welcome back, ${safeFirstName(restoredSnapshot.setup.candidateName)}. Let’s continue from where we stopped. Please answer the last question again: ${
+          : `Welcome back, ${safeGreetingName(restoredSnapshot.setup.candidateName)}. Let’s continue from where we stopped. Please answer the last question again: ${
               lastRecruiterQuestion || recruiterQuestions[Math.max(0, Math.min(candidateAnswers, recruiterQuestions.length - 1))]
             }`;
 
@@ -2991,16 +3001,19 @@ export default function InterviewPage() {
 
             <div className="hidden h-9 w-px bg-white/10 sm:block" />
 
-            <div className="flex min-w-0 flex-col justify-center gap-0.5 sm:flex-row sm:items-center sm:gap-3">
-              <h1 className="max-w-[210px] truncate text-base font-black leading-tight sm:max-w-[520px] sm:text-lg lg:max-w-[680px] lg:text-xl">
-                {headerTitle}
-              </h1>
-              <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-emerald-400" />
-                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-black uppercase sm:px-2.5 sm:py-1 sm:text-xs ${recruiterStatusTone(recruiterSignal, scoreReady)}`}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="min-w-0">
+                <h1 className="line-clamp-2 max-w-[190px] text-sm font-black leading-tight sm:max-w-[520px] sm:truncate sm:text-lg sm:leading-normal lg:max-w-[680px] lg:text-xl">
+                  {headerTitle}
+                </h1>
+                <p className="mt-0.5 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-300 sm:hidden">
                   {recruiterStatus}
-                </span>
+                </p>
               </div>
+              <span className="hidden h-2.5 w-2.5 rounded-full bg-emerald-400 sm:block" />
+              <span className={`hidden rounded-full border px-2.5 py-1 text-xs font-black uppercase sm:block ${recruiterStatusTone(recruiterSignal, scoreReady)}`}>
+                {recruiterStatus}
+              </span>
             </div>
           </div>
 
@@ -3354,7 +3367,7 @@ export default function InterviewPage() {
                 </div>
                 <p className="mt-1 truncate text-xs text-white/80 sm:text-sm">{setup.recruiterTitle}</p>
                 <p className="mt-2 text-xs font-bold text-emerald-200">
-                  {scoreReady ? `Trust: ${recruiterSignal.trust} · Interest: ${recruiterSignal.interest}` : "Ready for first answer"}
+                  {scoreReady ? recruiterStatus : "Ready for first answer"}
                 </p>
               </div>
 
@@ -3366,9 +3379,6 @@ export default function InterviewPage() {
                   }`}
                 >
                   {status === "listening" ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
-                </button>
-                <button className="hidden h-10 w-10 place-items-center rounded-full bg-white text-slate-950 shadow-2xl sm:grid sm:h-14 sm:w-14">
-                  <Video className="h-6 w-6" />
                 </button>
                 <button
                   type="button"
@@ -3387,106 +3397,101 @@ export default function InterviewPage() {
               </div>
             </section>
 
-            {!showTranscript ? (
+            <section className="rounded-2xl border border-white/10 bg-[#0b1527]/95 lg:min-h-0">
               <button
                 type="button"
-                onClick={() => setShowTranscript(true)}
-                className="flex items-center justify-between rounded-2xl border border-white/10 bg-[#0b1527]/95 px-4 py-3 text-left transition hover:bg-white/[0.04]"
+                onClick={() => setShowTranscript((value) => !value)}
+                className="flex h-12 w-full items-center justify-between border-b border-white/10 px-5 text-left"
+                aria-expanded={showTranscript}
               >
-                <div>
-                  <p className="text-sm font-black">Live Transcript</p>
-                  <p className="mt-1 text-xs text-slate-400">Collapsed to keep the interview room focused.</p>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-lg font-black">Live Transcript</h2>
+                  <span className="h-2 w-2 rounded-full bg-red-400" />
+                  <span className="text-sm text-slate-300">{transcriptMessageCount} message{transcriptMessageCount === 1 ? "" : "s"}</span>
                 </div>
                 <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-black text-blue-200">
-                  Open
+                  {showTranscript ? "Collapse" : "Expand"}
                 </span>
               </button>
-            ) : null}
 
-            <section style={{ display: showTranscript ? undefined : "none" }} className="rounded-2xl border border-white/10 bg-[#0b1527]/95 lg:min-h-0">
-              <div className="flex min-h-10 items-center justify-between gap-3 border-b border-white/10 px-4 py-2 sm:px-5">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-base font-black sm:text-lg">Live Transcript</h2>
-                  <span className="h-2 w-2 rounded-full bg-red-400" />
-                  <span className="text-sm text-slate-300">Live</span>
-                </div>
-                <div className="flex items-center gap-3 text-sm text-slate-300">
-                  <button
-                    type="button"
-                    onClick={() => setShowTranscript(false)}
-                    className="rounded-full border border-white/10 px-3 py-1 text-xs font-bold hover:bg-white/[0.05]"
-                  >
-                    Collapse
-                  </button>
-                  <div className="hidden items-center gap-2 sm:flex">
-                    Auto-scroll
-                    <button
-                      type="button"
-                      onClick={() => setAutoScrollTranscript((value) => !value)}
-                      className={`relative h-5 w-9 rounded-full ${autoScrollTranscript ? "bg-blue-500" : "bg-white/15"}`}
-                    >
-                      <span className={`absolute top-1 h-3 w-3 rounded-full bg-white transition ${autoScrollTranscript ? "right-1" : "left-1"}`} />
+              {showTranscript ? (
+                <>
+                  <div className="hidden h-10 items-center justify-end border-b border-white/10 px-5 sm:flex">
+                    <div className="flex items-center gap-3 text-sm text-slate-300">
+                      Auto-scroll
+                      <button
+                        type="button"
+                        onClick={() => setAutoScrollTranscript((value) => !value)}
+                        className={`relative h-5 w-9 rounded-full ${autoScrollTranscript ? "bg-blue-500" : "bg-white/15"}`}
+                      >
+                        <span className={`absolute top-1 h-3 w-3 rounded-full bg-white transition ${autoScrollTranscript ? "right-1" : "left-1"}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden px-4 py-1 lg:h-[calc(100%-114px)] lg:max-h-none">
+                    {visibleTranscriptItems.length || interimText ? (
+                      <div className="divide-y divide-white/8">
+                        {visibleTranscriptItems.map((line) => (
+                          <div
+                            key={line.id}
+                            className="grid grid-cols-[80px_150px_1fr] gap-3 py-1 text-sm max-sm:grid-cols-1 max-sm:gap-1 max-sm:py-3"
+                          >
+                            <span className="text-slate-400">{line.time}</span>
+                            <span
+                              className={`font-semibold ${
+                                line.role === "candidate"
+                                  ? "text-blue-300"
+                                  : line.role === "recruiter"
+                                    ? "text-violet-300"
+                                    : "text-slate-400"
+                              }`}
+                            >
+                              {line.speaker}
+                            </span>
+                            <span className="leading-6 text-slate-100 max-sm:line-clamp-none sm:line-clamp-2">{line.text}</span>
+                          </div>
+                        ))}
+
+                        {interimText ? (
+                          <div className="grid grid-cols-[80px_150px_1fr] gap-3 py-1 text-sm opacity-70 max-sm:grid-cols-1 max-sm:gap-1">
+                            <span className="text-slate-400">listening</span>
+                            <span className="font-semibold text-blue-300">You</span>
+                            <span className="leading-6 text-slate-100">{interimText}</span>
+                          </div>
+                        ) : null}
+
+                        <div ref={transcriptEndRef} />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-slate-300">
+                        <p className="font-bold text-slate-100">Interview transcript will appear here.</p>
+                        <p className="mt-1">The recruiter will ask the first question after you press Start.</p>
+                        <div ref={transcriptEndRef} />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex min-h-9 flex-wrap items-center justify-between gap-2 border-t border-white/10 px-4 py-1.5 text-xs text-slate-400 sm:px-5">
+                    <span>Transcript is AI-generated and may not be 100% accurate.</span>
+                    <button onClick={() => setTranscript([])} className="hover:text-white">
+                      Clear Transcript
                     </button>
                   </div>
+                </>
+              ) : (
+                <div className="px-4 py-3 text-sm text-slate-400 sm:px-5">
+                  Transcript is collapsed to keep the recruiter and Live Copilot in focus.
                 </div>
-              </div>
-
-              <div className="overflow-hidden px-4 py-1 lg:h-[calc(100%-74px)] lg:max-h-none">
-                <div className="divide-y divide-white/8">
-                  {transcript.length <= 1 && transcript[0]?.role === "system" ? (
-                    <div className="py-4 text-sm leading-6 text-slate-300">
-                      <p className="font-semibold text-slate-100">Interview transcript will appear here.</p>
-                      <p className="mt-1 text-slate-400">The recruiter will ask the first question after you press Start.</p>
-                    </div>
-                  ) : null}
-
-                  {transcript.filter((line) => !(transcript.length <= 1 && line.role === "system")).map((line) => (
-                    <div
-                      key={line.id}
-                      className="grid grid-cols-[80px_150px_1fr] gap-3 py-1 text-sm max-sm:grid-cols-1 max-sm:gap-1 max-sm:py-3"
-                    >
-                      <span className="text-slate-400">{line.time}</span>
-                      <span
-                        className={`font-semibold ${
-                          line.role === "candidate"
-                            ? "text-blue-300"
-                            : line.role === "recruiter"
-                              ? "text-violet-300"
-                              : "text-slate-400"
-                        }`}
-                      >
-                        {line.speaker}
-                      </span>
-                      <span className="leading-6 text-slate-100 max-sm:line-clamp-none sm:line-clamp-2">{line.text}</span>
-                    </div>
-                  ))}
-
-                  {interimText ? (
-                    <div className="grid grid-cols-[80px_150px_1fr] gap-3 py-1 text-sm opacity-70 max-sm:grid-cols-1 max-sm:gap-1">
-                      <span className="text-slate-400">listening</span>
-                      <span className="font-semibold text-blue-300">You</span>
-                      <span className="leading-6 text-slate-100">{interimText}</span>
-                    </div>
-                  ) : null}
-
-                  <div ref={transcriptEndRef} />
-                </div>
-              </div>
-
-              <div className="flex min-h-9 flex-wrap items-center justify-between gap-2 border-t border-white/10 px-4 py-1.5 text-xs text-slate-400 sm:px-5">
-                <span>Transcript is AI-generated and may not be 100% accurate.</span>
-                <button onClick={() => setTranscript([])} className="hover:text-white">
-                  Clear Transcript
-                </button>
-              </div>
+              )}
             </section>
           </div>
 
           <aside className="grid gap-3 lg:min-h-0 lg:grid-rows-[190px_270px_82px]">
-            <section className="order-2 rounded-2xl border border-white/10 bg-[#0b1527] p-3.5 lg:order-none">
+            <section className="rounded-2xl border border-white/10 bg-[#0b1527] p-3.5">
               <h2 className="text-base font-black">Interview Score</h2>
-              <div className="mt-2 flex flex-row items-center gap-3">
-                <div className={`grid h-[72px] w-[72px] shrink-0 place-items-center rounded-full border-[6px] bg-[#07111f] transition-all duration-500 ${scoreFlash === "up" ? "border-emerald-400 shadow-[0_0_0_10px_rgba(52,211,153,0.18)]" : scoreFlash === "down" ? "border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.18)]" : "border-blue-500 shadow-[0_0_0_10px_rgba(124,58,237,0.2)]"}`}>
+              <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className={`grid h-[78px] w-[78px] place-items-center rounded-full border-[7px] bg-[#07111f] transition-all duration-500 ${scoreFlash === "up" ? "border-emerald-400 shadow-[0_0_0_10px_rgba(52,211,153,0.18)]" : scoreFlash === "down" ? "border-amber-400 shadow-[0_0_0_10px_rgba(251,191,36,0.18)]" : "border-blue-500 shadow-[0_0_0_10px_rgba(124,58,237,0.2)]"}`}>
                   <div className="text-center">
                     {scoreReady ? (
                       <>
@@ -3516,7 +3521,7 @@ export default function InterviewPage() {
                           <span className={`grid h-6 w-6 place-items-center rounded-lg ${toneClass(item.tone)}`}>
                             <Icon className="h-4 w-4" />
                           </span>
-                          <span className="text-sm max-[380px]:text-xs">{item.label}</span>
+                          <span className="text-sm">{item.label}</span>
                         </div>
                         <span className="text-xs text-slate-200">{item.value}</span>
                       </div>
@@ -3530,7 +3535,7 @@ export default function InterviewPage() {
               </p>
             </section>
 
-            <section style={{ display: showCopilot ? undefined : "none" }} className="order-1 sticky top-3 z-20 rounded-2xl border border-white/10 bg-[#0b1527] p-3.5 overflow-hidden shadow-2xl shadow-black/20 lg:static lg:order-none lg:shadow-none">
+            <section style={{ display: showCopilot ? undefined : "none" }} className="rounded-2xl border border-white/10 bg-[#0b1527] p-3.5 overflow-hidden">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-black text-blue-300">
                   Live Copilot{" "}
@@ -3577,7 +3582,7 @@ export default function InterviewPage() {
               </div>
             </section>
 
-            <section className="order-3 rounded-2xl border border-white/10 bg-[#0b1527] p-4 lg:order-none">
+            <section className="rounded-2xl border border-white/10 bg-[#0b1527] p-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-black">Interview Progress</h2>
                 <span className="text-sm text-slate-300">
@@ -3605,6 +3610,23 @@ export default function InterviewPage() {
             </section>
           </aside>
         </div>
+
+        {showCopilot && status !== "idle" ? (
+          <div className="fixed bottom-20 left-3 right-3 z-40 rounded-2xl border border-blue-300/20 bg-[#07111f]/95 px-4 py-3 shadow-2xl backdrop-blur-xl lg:hidden">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-200">Live Copilot</p>
+                <p className={`truncate text-sm font-black ${recruiterMoodColor(recruiterSignal.mood)}`}>
+                  {scoreReady ? recruiterSignal.mood : "Waiting"}
+                </p>
+              </div>
+              <div className="shrink-0 text-right text-xs text-slate-300">
+                <p>Trust <span className="font-black text-white">{scoreReady ? recruiterSignal.trust : "—"}</span></p>
+                <p>Interest <span className="font-black text-white">{scoreReady ? recruiterSignal.interest : "—"}</span></p>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </section>
     </main>
   );
