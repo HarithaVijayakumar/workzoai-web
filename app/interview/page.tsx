@@ -585,6 +585,263 @@ function trackWorkZoInterviewEvent(eventName: string, payload: Record<string, un
   }).catch(() => {});
 }
 
+
+type WorkZoAnswerQuality = "weak" | "average" | "strong" | "excellent";
+type WorkZoFailureSeverity = "low" | "medium" | "high" | "critical";
+
+type WorkZoInterviewSnapshot = {
+  version: 1;
+  id: string;
+  updatedAt: string;
+  status: InterviewStatus;
+  elapsed: number;
+  questionIndex: number;
+  scoreReady: boolean;
+  setup: InterviewSetup;
+  recruiterSignal: RecruiterSignalState;
+  recruiterMemory: RecruiterMemoryState;
+  transcript: TranscriptItem[];
+};
+
+const WORKZO_ACTIVE_INTERVIEW_KEY = "workzo_active_interview";
+const WORKZO_INTERVIEW_SNAPSHOT_KEY = "workzo_interview_snapshot";
+const WORKZO_ERROR_EVENTS_KEY = "workzo_error_events";
+const WORKZO_FAILURE_EVENTS_KEY = "workzo_failure_events";
+const WORKZO_CANDIDATE_PATTERNS_KEY = "workzo_candidate_patterns";
+
+function safeLocalStorageList(key: string) {
+  if (typeof window === "undefined") return [] as Array<Record<string, unknown>>;
+
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [] as Array<Record<string, unknown>>;
+  }
+}
+
+function pushWorkZoLocalEvent(key: string, eventName: string, payload: Record<string, unknown> = {}, limit = 500) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const event = {
+      id: createClientId(),
+      eventName,
+      createdAt: new Date().toISOString(),
+      sessionId: getWorkZoAnalyticsSessionId(),
+      path: window.location.pathname,
+      ...payload,
+    };
+
+    const list = safeLocalStorageList(key);
+    window.localStorage.setItem(key, JSON.stringify([event, ...list].slice(0, limit)));
+  } catch {}
+}
+
+function normalizeErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown error";
+  }
+}
+
+function trackWorkZoFailureEvent(
+  eventName: string,
+  payload: Record<string, unknown> = {},
+  severity: WorkZoFailureSeverity = "medium",
+) {
+  pushWorkZoLocalEvent(WORKZO_FAILURE_EVENTS_KEY, eventName, { severity, ...payload }, 500);
+  trackWorkZoInterviewEvent(eventName, { severity, ...payload });
+}
+
+function trackWorkZoErrorEvent(
+  eventName: string,
+  error: unknown,
+  payload: Record<string, unknown> = {},
+  severity: WorkZoFailureSeverity = "medium",
+) {
+  const errorMessage = normalizeErrorMessage(error);
+
+  pushWorkZoLocalEvent(WORKZO_ERROR_EVENTS_KEY, eventName, {
+    severity,
+    errorMessage,
+    ...payload,
+  }, 500);
+
+  trackWorkZoFailureEvent(eventName, { errorMessage, ...payload }, severity);
+}
+
+function classifyAnswerQuality(answer: string, setup?: InterviewSetup): WorkZoAnswerQuality {
+  const signal = analyzeAnswerSignals(answer, setup);
+
+  if (signal.unsupported || signal.admission || signal.short || signal.vague) return "weak";
+  if (signal.metric && signal.ownership && signal.outcome && signal.wordCount >= 35) return "excellent";
+  if ((signal.metric && signal.ownership) || (signal.ownership && signal.outcome)) return "strong";
+  return "average";
+}
+
+function buildAnswerQualityRecord(answer: string, setup?: InterviewSetup) {
+  const signal = analyzeAnswerSignals(answer, setup);
+  const quality = classifyAnswerQuality(answer, setup);
+
+  return {
+    id: createClientId(),
+    createdAt: new Date().toISOString(),
+    quality,
+    wordCount: signal.wordCount,
+    hasMetric: signal.metric,
+    hasOwnership: signal.ownership,
+    hasOutcome: signal.outcome,
+    unsupported: signal.unsupported,
+    concern: signal.concern,
+    answer,
+  };
+}
+
+function summarizeAnswerQuality(transcript: TranscriptItem[], setup?: InterviewSetup) {
+  const records = transcript
+    .filter((item) => item.role === "candidate")
+    .map((item) => buildAnswerQualityRecord(item.text, setup));
+
+  const summary = records.reduce(
+    (acc, item) => {
+      acc[item.quality] += 1;
+      return acc;
+    },
+    { weak: 0, average: 0, strong: 0, excellent: 0 } as Record<WorkZoAnswerQuality, number>,
+  );
+
+  return { records, summary };
+}
+
+function persistCandidatePatterns(memory: RecruiterMemoryState, setup: InterviewSetup) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const existing = safeLocalStorageList(WORKZO_CANDIDATE_PATTERNS_KEY);
+    const now = new Date().toISOString();
+
+    const incoming = memory.patterns.map((pattern) => ({
+      id: normalizeClaimText(pattern) || createClientId(),
+      pattern,
+      targetRole: setup.targetRole,
+      recruiterName: setup.recruiterName,
+      lastSeenAt: now,
+      count: 1,
+    }));
+
+    const merged = [...incoming, ...existing].reduce((acc, item) => {
+      const key = typeof item.id === "string" ? item.id : normalizeClaimText(String(item.pattern || ""));
+      if (!key) return acc;
+
+      const current = acc.get(key);
+      if (current) {
+        acc.set(key, {
+          ...current,
+          count: Number(current.count || 1) + Number(item.count || 1),
+          lastSeenAt: now,
+        });
+      } else {
+        acc.set(key, item);
+      }
+
+      return acc;
+    }, new Map<string, Record<string, unknown>>());
+
+    window.localStorage.setItem(WORKZO_CANDIDATE_PATTERNS_KEY, JSON.stringify(Array.from(merged.values()).slice(0, 40)));
+  } catch (error) {
+    trackWorkZoErrorEvent("candidate_pattern_persist_failed", error, { role: setup.targetRole }, "low");
+  }
+}
+
+function readActiveInterviewSnapshot() {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(WORKZO_ACTIVE_INTERVIEW_KEY) || window.localStorage.getItem(WORKZO_INTERVIEW_SNAPSHOT_KEY);
+    if (!raw) return null;
+
+    const snapshot = JSON.parse(raw) as Partial<WorkZoInterviewSnapshot>;
+    if (!snapshot || snapshot.version !== 1) return null;
+    if (!Array.isArray(snapshot.transcript) || !snapshot.transcript.some((item) => item.role === "recruiter" || item.role === "candidate")) return null;
+    if (snapshot.status === "ended") return null;
+
+    return snapshot as WorkZoInterviewSnapshot;
+  } catch (error) {
+    trackWorkZoErrorEvent("state_recovery_read_failed", error, {}, "medium");
+    return null;
+  }
+}
+
+function writeActiveInterviewSnapshot(snapshot: WorkZoInterviewSnapshot) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const value = JSON.stringify(snapshot);
+    window.localStorage.setItem(WORKZO_ACTIVE_INTERVIEW_KEY, value);
+    window.localStorage.setItem(WORKZO_INTERVIEW_SNAPSHOT_KEY, value);
+  } catch (error) {
+    trackWorkZoErrorEvent("state_recovery_write_failed", error, { role: snapshot.setup.targetRole }, "medium");
+  }
+}
+
+function clearActiveInterviewSnapshot() {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(WORKZO_ACTIVE_INTERVIEW_KEY);
+  } catch {}
+}
+
+
+function countCandidateAnswers(transcript: TranscriptItem[]) {
+  return transcript.filter((item) => item.role === "candidate").length;
+}
+
+function getLastRecruiterQuestion(transcript: TranscriptItem[]) {
+  const lastRecruiter = [...transcript]
+    .reverse()
+    .find((item) => item.role === "recruiter" && item.text.trim());
+
+  return lastRecruiter?.text.trim() || "";
+}
+
+function getLastCandidateAnswer(transcript: TranscriptItem[]) {
+  const lastCandidate = [...transcript]
+    .reverse()
+    .find((item) => item.role === "candidate" && item.text.trim());
+
+  return lastCandidate?.text.trim() || "";
+}
+
+function getRecoveryProgressLabel(snapshot: WorkZoInterviewSnapshot) {
+  const answers = countCandidateAnswers(snapshot.transcript);
+  const questions = snapshot.transcript.filter((item) => item.role === "recruiter").length;
+
+  if (answers > 0) return `${answers} answer${answers === 1 ? "" : "s"} completed`;
+  if (questions > 0) return `${questions} recruiter question${questions === 1 ? "" : "s"} saved`;
+  return `${snapshot.transcript.length} transcript item${snapshot.transcript.length === 1 ? "" : "s"}`;
+}
+
+function getRecoverySavedLabel(snapshot: WorkZoInterviewSnapshot) {
+  const updated = Date.parse(snapshot.updatedAt);
+  if (!Number.isFinite(updated)) return "Saved recently";
+
+  const diffSeconds = Math.max(0, Math.round((Date.now() - updated) / 1000));
+  if (diffSeconds < 60) return "Saved just now";
+
+  const diffMinutes = Math.round(diffSeconds / 60);
+  if (diffMinutes < 60) return `Saved ${diffMinutes} min ago`;
+
+  const diffHours = Math.round(diffMinutes / 60);
+  return `Saved ${diffHours} hr ago`;
+}
+
 function recruiterStatusLabel(signal: RecruiterSignalState, scoreReady: boolean) {
   if (!scoreReady) return "Ready";
   if (signal.mood === "Impressed") return "Impressed";
@@ -1632,6 +1889,9 @@ export default function InterviewPage() {
   const [interviewStyle, setInterviewStyle] = useState<"Supportive" | "Realistic" | "Challenging" | "Brutal">("Realistic");
   const [voiceSpeed, setVoiceSpeed] = useState(0.84);
   const [copilotAggressiveness, setCopilotAggressiveness] = useState<"Low" | "Medium" | "High">("Medium");
+  const [recoverySnapshot, setRecoverySnapshot] = useState<WorkZoInterviewSnapshot | null>(null);
+  const [recoveryNoticeDismissed, setRecoveryNoticeDismissed] = useState(false);
+  const [recoveredSessionReady, setRecoveredSessionReady] = useState(false);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const listeningRef = useRef(false);
@@ -1641,6 +1901,11 @@ export default function InterviewPage() {
   const stopRequestedRef = useRef(false);
   const setupRef = useRef(setup);
   const recruiterMemoryRef = useRef(defaultRecruiterMemory);
+  const recruiterSignalRef = useRef(defaultRecruiterSignal);
+  const scoreReadyRef = useRef(false);
+  const elapsedRef = useRef(0);
+  const recoverySnapshotRef = useRef<WorkZoInterviewSnapshot | null>(null);
+  const recoveredSessionRef = useRef<WorkZoInterviewSnapshot | null>(null);
   const premiumVoiceEnabledRef = useRef(premiumVoiceEnabled);
   const audioEnabledRef = useRef(audioEnabled);
   const vapiClientRef = useRef<WorkZoVapiClient | null>(null);
@@ -1666,6 +1931,7 @@ export default function InterviewPage() {
   const recruiterImagePosition = recruiterObjectPosition(setup.recruiterId, setup.recruiterName);
   const liveRecruiterThoughts = buildLiveRecruiterThoughts(recruiterSignal, recruiterMemory, scoreReady);
   const recruiterStatus = recruiterStatusLabel(recruiterSignal, scoreReady);
+  const hasRecoveredSessionReady = recoveredSessionReady && transcript.some((item) => item.role === "recruiter" || item.role === "candidate");
 
   useEffect(() => {
     const nextSetup = buildSetupFromStorage();
@@ -1678,6 +1944,18 @@ export default function InterviewPage() {
       recruiter: nextSetup.recruiterName,
       company: nextSetup.targetCompany || "",
     });
+
+    const snapshot = readActiveInterviewSnapshot();
+    if (snapshot) {
+      setRecoverySnapshot(snapshot);
+      recoverySnapshotRef.current = snapshot;
+      trackWorkZoFailureEvent("state_recovery_available", {
+        role: snapshot.setup.targetRole,
+        recruiter: snapshot.setup.recruiterName,
+        transcriptItems: snapshot.transcript.length,
+        questionIndex: snapshot.questionIndex,
+      }, "low");
+    }
 
     const handleStorage = () => {
       const updated = buildSetupFromStorage();
@@ -1700,6 +1978,22 @@ export default function InterviewPage() {
   }, [setup]);
 
   useEffect(() => {
+    recruiterSignalRef.current = recruiterSignal;
+  }, [recruiterSignal]);
+
+  useEffect(() => {
+    scoreReadyRef.current = scoreReady;
+  }, [scoreReady]);
+
+  useEffect(() => {
+    elapsedRef.current = elapsed;
+  }, [elapsed]);
+
+  useEffect(() => {
+    recoverySnapshotRef.current = recoverySnapshot;
+  }, [recoverySnapshot]);
+
+  useEffect(() => {
     recruiterMemoryRef.current = recruiterMemory;
   }, [recruiterMemory]);
 
@@ -1714,6 +2008,57 @@ export default function InterviewPage() {
   useEffect(() => {
     questionIndexRef.current = questionIndex;
   }, [questionIndex]);
+
+  useEffect(() => {
+    const activeTranscript = transcript.filter((item) => item.role === "recruiter" || item.role === "candidate");
+    const shouldPersist = status !== "idle" && status !== "ended" && activeTranscript.length > 0;
+
+    if (!shouldPersist) return;
+
+    writeActiveInterviewSnapshot({
+      version: 1,
+      id: recoverySnapshotRef.current?.id || `snapshot-${Date.now()}`,
+      updatedAt: new Date().toISOString(),
+      status,
+      elapsed,
+      questionIndex,
+      scoreReady,
+      setup,
+      recruiterSignal,
+      recruiterMemory,
+      transcript,
+    });
+  }, [elapsed, questionIndex, recruiterMemory, recruiterSignal, scoreReady, setup, status, transcript]);
+
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      const activeTranscript = transcript.filter((item) => item.role === "recruiter" || item.role === "candidate");
+      if (status === "idle" || status === "ended" || activeTranscript.length === 0) return;
+
+      writeActiveInterviewSnapshot({
+        version: 1,
+        id: recoverySnapshotRef.current?.id || `snapshot-${Date.now()}`,
+        updatedAt: new Date().toISOString(),
+        status,
+        elapsed,
+        questionIndex,
+        scoreReady,
+        setup,
+        recruiterSignal,
+        recruiterMemory,
+        transcript,
+      });
+
+      pushWorkZoLocalEvent(WORKZO_FAILURE_EVENTS_KEY, "page_refresh_during_interview", {
+        role: setup.targetRole,
+        recruiter: setup.recruiterName,
+        transcriptItems: activeTranscript.length,
+      }, 500);
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [elapsed, questionIndex, recruiterMemory, recruiterSignal, scoreReady, setup, status, transcript]);
 
   useEffect(() => {
     if (status === "idle") return;
@@ -1824,9 +2169,13 @@ export default function InterviewPage() {
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       listeningRef.current = false;
       setInterimText("");
+      trackWorkZoErrorEvent("speech_recognition_error", event?.error || event?.message || "Speech recognition error", {
+        role: setupRef.current.targetRole,
+        recruiter: setupRef.current.recruiterName,
+      }, "medium");
       if (!stopRequestedRef.current) setStatus("listening");
     };
 
@@ -1866,7 +2215,11 @@ export default function InterviewPage() {
 
     try {
       recognition.start();
-    } catch {
+    } catch (error) {
+      trackWorkZoErrorEvent("speech_recognition_start_failed", error, {
+        role: setupRef.current.targetRole,
+        recruiter: setupRef.current.recruiterName,
+      }, "medium");
       setStatus("listening");
     }
   }, [addTranscript]);
@@ -1952,6 +2305,17 @@ export default function InterviewPage() {
       });
 
       setScoreReady(true);
+
+      const answerQuality = classifyAnswerQuality(answer, setupRef.current);
+      trackWorkZoFailureEvent("answer_quality_detected", {
+        role: setupRef.current.targetRole,
+        recruiter: setupRef.current.recruiterName,
+        quality: answerQuality,
+        trust: next.trust,
+        interest: next.interest,
+        concern: next.concern,
+      }, answerQuality === "weak" ? "medium" : "low");
+
       setScoreFlash(direction);
       window.setTimeout(() => setScoreFlash(null), 900);
 
@@ -2202,6 +2566,10 @@ export default function InterviewPage() {
       } catch (error) {
         console.error("WORKZO VAPI START FAILED", error);
         classifyVoiceError(error);
+        trackWorkZoErrorEvent("voice_connect_failed", error, {
+          role: activeSetup.targetRole,
+          recruiter: activeSetup.recruiterName,
+        }, "high");
         vapiStartingRef.current = false;
         setPremiumVoiceStatus("failed");
         setPremiumVoiceError("Premium voice could not start. Check the console for WORKZO VAPI START FAILED.");
@@ -2220,11 +2588,85 @@ export default function InterviewPage() {
 
 
   const startInterview = useCallback(async () => {
+    stopRequestedRef.current = false;
+
+    const restoredSnapshot = recoveredSessionRef.current;
+
+    if (restoredSnapshot) {
+      const restoredSetup = restoredSnapshot.setup;
+      setSetup(restoredSetup);
+      setupRef.current = restoredSetup;
+      recruiterMemoryRef.current = restoredSnapshot.recruiterMemory;
+      recruiterSignalRef.current = restoredSnapshot.recruiterSignal;
+      scoreReadyRef.current = restoredSnapshot.scoreReady;
+      elapsedRef.current = restoredSnapshot.elapsed;
+      questionIndexRef.current = restoredSnapshot.questionIndex;
+
+      setTranscript(restoredSnapshot.transcript);
+      setRecruiterMemory(restoredSnapshot.recruiterMemory);
+      setRecruiterSignal(restoredSnapshot.recruiterSignal);
+      setScoreReady(restoredSnapshot.scoreReady);
+      setElapsed(restoredSnapshot.elapsed);
+      setQuestionIndex(restoredSnapshot.questionIndex);
+      setInterimText("");
+      const lastCandidateAnswer = getLastCandidateAnswer(restoredSnapshot.transcript);
+      const lastRecruiterQuestion = getLastRecruiterQuestion(restoredSnapshot.transcript);
+      const candidateAnswers = countCandidateAnswers(restoredSnapshot.transcript);
+      const resumePrompt =
+        lastCandidateAnswer && restoredSnapshot.transcript[restoredSnapshot.transcript.length - 1]?.role === "candidate"
+          ? `Welcome back, ${safeFirstName(restoredSnapshot.setup.candidateName)}. I have your last answer saved. Let’s continue from there. ${buildRecruiterReply(
+              lastCandidateAnswer,
+              Math.max(1, restoredSnapshot.questionIndex),
+              restoredSnapshot.setup,
+              restoredSnapshot.recruiterMemory,
+            )}`
+          : `Welcome back, ${safeFirstName(restoredSnapshot.setup.candidateName)}. Let’s continue from where we stopped. Please answer the last question again: ${
+              lastRecruiterQuestion || recruiterQuestions[Math.max(0, Math.min(candidateAnswers, recruiterQuestions.length - 1))]
+            }`;
+
+      trackWorkZoFailureEvent("interview_recovered_and_resumed", {
+        role: restoredSnapshot.setup.targetRole,
+        recruiter: restoredSnapshot.setup.recruiterName,
+        transcriptItems: restoredSnapshot.transcript.length,
+        questionIndex: restoredSnapshot.questionIndex,
+      }, "low");
+
+      setRecoveredSessionReady(false);
+      recoveredSessionRef.current = null;
+      recoverySnapshotRef.current = null;
+      setRecoverySnapshot(null);
+      setRecoveryNoticeDismissed(false);
+      setPremiumVoiceError("");
+      setPremiumVoiceStatus((current) => (current === "connected" ? current : "fallback"));
+
+      const nextQuestionIndex = Math.max(
+        restoredSnapshot.questionIndex,
+        Math.min(12, candidateAnswers + 1),
+      );
+
+      questionIndexRef.current = nextQuestionIndex;
+      setQuestionIndex(nextQuestionIndex);
+
+      speakRecruiter(resumePrompt);
+      return;
+    }
+
     const freshSetup = buildSetupFromStorage();
     setSetup(freshSetup);
     setupRef.current = freshSetup;
 
-    stopRequestedRef.current = false;
+    if (recoverySnapshotRef.current) {
+      trackWorkZoFailureEvent("active_interview_replaced", {
+        previousRole: recoverySnapshotRef.current.setup.targetRole,
+        previousTranscriptItems: recoverySnapshotRef.current.transcript.length,
+      }, "low");
+    }
+
+    clearActiveInterviewSnapshot();
+    recoveredSessionRef.current = null;
+    setRecoveredSessionReady(false);
+    setRecoverySnapshot(null);
+    setRecoveryNoticeDismissed(false);
 
     trackWorkZoInterviewEvent("interview_started", {
       role: freshSetup.targetRole,
@@ -2267,7 +2709,7 @@ export default function InterviewPage() {
     }
 
     startBrowserFallbackInterview(freshSetup);
-  }, [addTranscript, startBrowserFallbackInterview, startPremiumVoice]);
+  }, [addTranscript, speakRecruiter, startBrowserFallbackInterview, startPremiumVoice]);
 
   const saveInterviewResult = useCallback(
     (reason: "ended" | "paused" = "ended") => {
@@ -2277,6 +2719,9 @@ export default function InterviewPage() {
       const finalScore = scoreReady ? recruiterSignal : null;
       const verdict = buildInterviewVerdict(finalScore, recruiterMemoryRef.current);
       const weakestMoment = findWeakestInterviewMoment(finalTranscript, recruiterMemoryRef.current);
+      const answerQuality = summarizeAnswerQuality(finalTranscript, setupRef.current);
+
+      persistCandidatePatterns(recruiterMemoryRef.current, setupRef.current);
 
       const session = {
         id: `workzo-${Date.now()}`,
@@ -2295,6 +2740,7 @@ export default function InterviewPage() {
         trustTimeline: recruiterMemoryRef.current.trustTimeline,
         weakestMoment,
         verdict,
+        answerQuality,
         summary: {
           mood: scoreReady ? recruiterSignal.mood : "Waiting",
           trust: scoreReady ? recruiterSignal.trust : null,
@@ -2302,6 +2748,7 @@ export default function InterviewPage() {
           concern: recruiterSignal.concern,
           liveNote: recruiterMemoryRef.current.liveNote,
           patterns: recruiterMemoryRef.current.patterns,
+          answerQuality: answerQuality.summary,
           verdict: verdict.decision,
         },
       };
@@ -2316,6 +2763,7 @@ export default function InterviewPage() {
           JSON.stringify([session, ...list].slice(0, 20)),
         );
         window.localStorage.setItem("workzo_latest_interview_result", JSON.stringify(session));
+        clearActiveInterviewSnapshot();
 
         trackWorkZoInterviewEvent("interview_completed", {
           reason,
@@ -2338,7 +2786,12 @@ export default function InterviewPage() {
           verdict: session.verdict?.decision ?? "",
           answers: session.transcript.filter((item) => item.role === "candidate").length,
         });
-      } catch {}
+      } catch (error) {
+        trackWorkZoErrorEvent("interview_save_failed", error, {
+          role: setupRef.current.targetRole,
+          recruiter: setupRef.current.recruiterName,
+        }, "high");
+      }
     },
     [elapsed, recruiterSignal, recruiterMemory, scoreReady, transcript],
   );
@@ -2376,6 +2829,68 @@ export default function InterviewPage() {
 
     if (status !== "recruiter-speaking") startListening();
   }, [startInterview, startListening, status, stopListening]);
+
+  const restoreInterviewSnapshot = useCallback(() => {
+    const snapshot = recoverySnapshotRef.current || recoverySnapshot;
+    if (!snapshot) return;
+
+    stopRequestedRef.current = true;
+    stopListening();
+    stopPremiumVoice();
+
+    try {
+      window.speechSynthesis?.cancel();
+    } catch {}
+
+    setupRef.current = snapshot.setup;
+    recruiterMemoryRef.current = snapshot.recruiterMemory;
+    recruiterSignalRef.current = snapshot.recruiterSignal;
+    scoreReadyRef.current = snapshot.scoreReady;
+    elapsedRef.current = snapshot.elapsed;
+    questionIndexRef.current = snapshot.questionIndex;
+    recoveredSessionRef.current = snapshot;
+    stopRequestedRef.current = false;
+
+    setSetup(snapshot.setup);
+    setTranscript(snapshot.transcript);
+    setRecruiterMemory(snapshot.recruiterMemory);
+    setRecruiterSignal(snapshot.recruiterSignal);
+    setScoreReady(snapshot.scoreReady);
+    setElapsed(snapshot.elapsed);
+    setQuestionIndex(snapshot.questionIndex);
+    setInterimText("");
+    setStatus("idle");
+    setRecoveredSessionReady(true);
+    setRecoverySnapshot(null);
+    setRecoveryNoticeDismissed(false);
+
+    trackWorkZoFailureEvent("state_recovery_used", {
+      role: snapshot.setup.targetRole,
+      recruiter: snapshot.setup.recruiterName,
+      transcriptItems: snapshot.transcript.length,
+      questionIndex: snapshot.questionIndex,
+    }, "low");
+
+    window.setTimeout(() => {
+      const activeSnapshot = recoveredSessionRef.current;
+      if (!activeSnapshot) return;
+      startInterview();
+    }, 250);
+  }, [recoverySnapshot, startInterview, stopListening, stopPremiumVoice]);
+
+  const discardInterviewSnapshot = useCallback(() => {
+    const snapshot = recoverySnapshotRef.current || recoverySnapshot;
+    clearActiveInterviewSnapshot();
+    recoveredSessionRef.current = null;
+    setRecoveredSessionReady(false);
+    setRecoverySnapshot(null);
+    setRecoveryNoticeDismissed(true);
+
+    trackWorkZoFailureEvent("state_recovery_discarded", {
+      role: snapshot?.setup.targetRole || setupRef.current.targetRole,
+      transcriptItems: snapshot?.transcript.length || 0,
+    }, "low");
+  }, [recoverySnapshot]);
 
   const formattedElapsed = useMemo(() => {
     const mins = Math.floor(elapsed / 60);
@@ -2507,7 +3022,7 @@ export default function InterviewPage() {
                 className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 px-3 text-sm font-black sm:h-10 sm:gap-2 sm:px-4"
               >
                 <Play className="h-4 w-4" />
-                {"Start"}
+                {hasRecoveredSessionReady ? "Resume" : "Start"}
               </button>
             ) : (
               <button
@@ -2770,6 +3285,38 @@ export default function InterviewPage() {
             ) : null}
           </div>
         </header>
+
+        {recoverySnapshot && !recoveryNoticeDismissed && status === "idle" ? (
+          <section className="mx-3 mt-3 rounded-2xl border border-amber-300/25 bg-amber-400/10 p-4 text-amber-50 lg:mx-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black">Resume previous interview?</p>
+                <p className="mt-1 text-xs leading-5 text-amber-100/80">
+                  Role: {recoverySnapshot.setup.targetRole || "Interview Role"} · Recruiter: {recoverySnapshot.setup.recruiterName || "AI Recruiter"} · {getRecoveryProgressLabel(recoverySnapshot)} · {getRecoverySavedLabel(recoverySnapshot)}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-amber-100/70">
+                  Click Resume Interview to restore the transcript, trust score, recruiter memory, and continue from the last saved question.
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <button
+                  type="button"
+                  onClick={restoreInterviewSnapshot}
+                  className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-black text-slate-950"
+                >
+                  Resume Interview
+                </button>
+                <button
+                  type="button"
+                  onClick={discardInterviewSnapshot}
+                  className="rounded-xl border border-amber-200/25 px-4 py-2 text-sm font-black text-amber-50"
+                >
+                  Start Fresh
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <div className="grid grid-cols-1 gap-3 overflow-x-hidden p-3 pb-24 lg:min-h-0 lg:grid-cols-[1fr_368px] lg:overflow-hidden lg:p-4">
           <div className="grid gap-3 lg:min-h-0 lg:grid-rows-[69vh_18vh]">

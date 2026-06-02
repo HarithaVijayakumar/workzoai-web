@@ -421,13 +421,38 @@ function buildRoleFit(profile: ResumeProfile, jd: JdSignal) {
 }
 
 function cleanSkillForDisplay(value = "") {
-  return clean(value)
+  const raw = clean(value)
     .replace(/\bWÜRzburg\b/gi, "Würzburg")
     .replace(/\bInventor 3d Printing:\s*Fff\b/gi, "Inventor")
     .replace(/\b3d Printing\b/gi, "3D Printing")
     .replace(/\bFff\b/g, "FFF")
+    .replace(/\bNum\s+Py\b/gi, "NumPy")
+    .replace(/\bPower\s+Bi\b/gi, "Power BI")
+    .replace(/\bMatplotlib\b/gi, "Matplotlib")
+    .replace(/\bJupyter Notebook Soft\b/gi, "Jupyter Notebook")
+    .replace(/^\s*(programming|visualization|visualisation|data visualization|data visualisation|tools|soft skills|technical|data & reporting|operations|communication & support|additional)\s*[:\-]?\s*/i, "")
+    .replace(/^\s*(in|using|with)\s+(Python|SQL|Power BI|Tableau|Excel|Pandas|NumPy|GCP|AWS)\b/i, "$2")
     .replace(/\s+/g, " ")
     .trim();
+
+  const exact: Record<string, string> = {
+    "power bi": "Power BI",
+    "numpy": "NumPy",
+    "num py": "NumPy",
+    "pandas": "pandas",
+    "python": "Python",
+    "sql": "SQL",
+    "mysql": "MySQL",
+    "gcp": "GCP",
+    "google cloud platform": "Google Cloud Platform",
+    "api integration": "API Integration",
+    "web scraping": "Web Scraping",
+    "jupyter notebook": "Jupyter Notebook",
+    "matplotlib": "Matplotlib",
+    "seaborn": "Seaborn",
+  };
+
+  return exact[raw.toLowerCase()] || raw;
 }
 
 function cleanSkillsForDisplay(items: string[]) {
@@ -436,8 +461,8 @@ function cleanSkillsForDisplay(items: string[]) {
       .map(cleanSkillForDisplay)
       .filter(Boolean)
       .filter((item) => item.length <= 45)
-      .filter((item) => !/^(education|languages|contact|profile|summary|work experience|professional experience|tools|experience)$/i.test(item))
-      .filter((item) => !/\b(linkedin|outlook|gmail|@|\+\d|www\.)\b/i.test(item)),
+      .filter((item) => !/^(education|languages|contact|profile|summary|work experience|professional experience|tools|experience|selected projects?|project management)$/i.test(item))
+      .filter((item) => !/\b(linkedin|outlook|gmail|@|\+\d|www\.|actively improving|competition|flight data|database management|built a knowledge|enhancing customer|visualized patterns|automated processes with|in python)\b/i.test(item)),
   );
 }
 
@@ -573,6 +598,15 @@ function normalizeBullet(value = "") {
   return text.endsWith(".") ? text : `${text}.`;
 }
 
+
+function looksLikeProjectBulletInCv(value = "") {
+  return /\b(project|market|brazilian|feasibility|partnership|youtube|video data|viewer comments|sentiment|cultural|classical dance|pandas|textblob|gans|e-scooter|pipeline|web scraping|rest\s*apis?|mysql|cloud functions?|scheduled daily|weather|flight data|database|data-driven recommendations|strategic decision-making|traditional art|digital platforms)\b/i.test(value);
+}
+
+function looksLikeSummaryBulletInCv(value = "") {
+  return /\b(detail-oriented|planned career break|aspiring|over\s+\d+\s+years|fluent in|passion for|dynamic .* environments)\b/i.test(value) && value.length > 45;
+}
+
 function improveBulletVerb(bullet = "") {
   const text = normalizeBullet(bullet);
   if (!text) return "";
@@ -593,9 +627,16 @@ function splitMergedBullets(bullet = "") {
 
 function rankBullets(job: ResumeExperience, jd: JdSignal) {
   return unique<string>(job.bullets.flatMap(splitMergedBullets))
-    .map((bullet) => ({ bullet, score: scoreEvidence(`${job.title} ${job.company} ${bullet}`, jd) }))
+    // The parser owns structure. If a bullet is already inside experience, do not
+    // delete it just because it contains words like "pipeline" or "market".
+    // Those can be valid experience bullets. Only remove obvious summary pollution.
+    .filter((bullet) => !looksLikeSummaryBulletInCv(bullet))
+    .map((bullet, index) => ({ bullet, score: scoreEvidence(`${job.title} ${job.company} ${bullet}`, jd), index }))
     .filter((item) => item.bullet.length > 15)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      const diff = b.score - a.score;
+      return Math.abs(diff) >= 8 ? diff : a.index - b.index;
+    })
     .map((item) => item.bullet);
 }
 
@@ -620,66 +661,113 @@ function cleanCompanyName(value = "") {
 }
 
 function tailorExperience(profile: ResumeProfile, jd: JdSignal) {
-  return profile.experience.slice(0, 4).map((job, index) => {
+  return profile.experience.slice(0, 6).map((job, index) => {
     const ranked = rankBullets(job, jd);
-    const limit = index === 0 ? 5 : 4;
+    const limit = index === 0 ? 6 : 5;
     const bullets = ranked.slice(0, limit);
-    const title = cleanExperienceTitle(job.title);
+    const title = cleanExperienceTitle(job.title) || "Professional Experience";
     const company = cleanCompanyName(job.company);
-    return { ...job, title, company, bullets: bullets.length ? bullets : job.bullets.map(normalizeBullet).filter(Boolean).slice(0, 3) };
+    const fallbackBullets = job.bullets
+      .map(normalizeBullet)
+      .filter(Boolean)
+      .filter((bullet) => !looksLikeSummaryBulletInCv(bullet))
+      .slice(0, limit);
+    return { ...job, title, company, bullets: bullets.length ? bullets : fallbackBullets };
   }).filter((job) => clean(job.title || job.company || job.dates) || job.bullets.length);
 }
 
-function cleanEducation(items: ResumeProfile["education"]) {
-  return unique<ResumeProfile["education"][number]>(items, (item) => `${item.degree}-${item.institution}-${item.dates}`)
-    .slice(0, 4)
+function cleanEducation(items: ResumeProfile["education"], candidateName = "") {
+  const escapedName = candidateName ? escapeRegExp(candidateName).replace(/\s+/g, "\\s+") : "";
+  const namePattern = escapedName ? new RegExp(escapedName, "gi") : /\b[A-Z][a-z]+\s+[A-Z][a-z]+\b(?=\s*[·|]\s*)/g;
+
+  const cleaned = items
     .map((item) => ({
       ...item,
-      degree: clean(item.degree).replace(/\bMaster'S\b/g, "Master's").replace(/\bBachelor'S\b/g, "Bachelor's"),
-      institution: clean(item.institution).replace(/\s*\|\s*/g, " · ").replace(/\bMaster'S\b/g, "Master's").replace(/\bBachelor'S\b/g, "Bachelor's"),
-    }));
+      degree: clean(item.degree)
+        .replace(/\bMaster'S\b/g, "Master's")
+        .replace(/\bBachelor'S\b/g, "Bachelor's")
+        .replace(namePattern, "")
+        .replace(/\s*·\s*$/g, "")
+        .trim(),
+      institution: clean(item.institution)
+        .replace(/\s*\|\s*/g, " · ")
+        .replace(/\bMaster'S\b/g, "Master's")
+        .replace(/\bBachelor'S\b/g, "Bachelor's")
+        .replace(namePattern, "")
+        .replace(/\bCandidate\b/gi, "")
+        .replace(/\s*·\s*$/g, "")
+        .trim(),
+      dates: clean(item.dates),
+    }))
+    .filter((item) => item.degree || item.institution)
+    .filter((item) => !/\b(engineer|analyst|developer|support specialist|application engineer|professional experience|linkedin|gmail|outlook)\b/i.test(`${item.degree} ${item.institution}`));
+
+  const merged = new Map<string, ResumeProfile["education"][number]>();
+  for (const item of cleaned) {
+    const degreeKey = item.degree.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const institutionKey = item.institution.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    const dateKey = item.dates.replace(/\D/g, "");
+    const key = institutionKey || `${degreeKey}|${dateKey}` || degreeKey;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, item);
+      continue;
+    }
+    merged.set(key, {
+      ...existing,
+      degree: existing.degree.length >= item.degree.length ? existing.degree : item.degree,
+      institution: existing.institution || item.institution,
+      dates: existing.dates || item.dates,
+      location: existing.location || item.location,
+    });
+  }
+
+  return Array.from(merged.values()).slice(0, 5);
 }
 
+
 function tailorProjects(profile: ResumeProfile, jd: JdSignal, experience: ResumeExperience[]) {
-  const experienceBullets = experience.reduce((sum, job) => sum + job.bullets.length, 0);
-  const limit = experienceBullets >= 8 ? 2 : 3;
-  return profile.projects.slice(0, limit).map((project) => ({
-    ...project,
-    bullets: unique<string>(project.bullets.map(improveBulletVerb).filter(Boolean))
-      .map((bullet) => ({ bullet, score: scoreEvidence(`${project.name} ${bullet}`, jd) }))
-      .sort((a, b) => b.score - a.score)
-      .map((item) => item.bullet)
-      .slice(0, experienceBullets >= 8 ? 2 : 3),
-  })).filter((project) => project.name || project.bullets.length);
+  return profile.projects
+    .filter((project) => {
+      const name = clean(project.name);
+      const bullets = project.bullets.map(clean).filter(Boolean);
+      if (!name && !bullets.length) return false;
+      if (/^selected projects?$/i.test(name) && bullets.length < 2) return false;
+      return true;
+    })
+    .slice(0, 5)
+    .map((project) => ({
+      ...project,
+      name: clean(project.name).replace(/^Selected Projects?$/i, "Selected Project"),
+      bullets: unique<string>(project.bullets.map(improveBulletVerb).filter(Boolean))
+        .map((bullet, index) => ({ bullet, score: scoreEvidence(`${project.name} ${bullet}`, jd), index }))
+        .sort((a, b) => Math.abs(b.score - a.score) >= 8 ? b.score - a.score : a.index - b.index)
+        .map((item) => item.bullet)
+        .slice(0, 4),
+    }))
+    .filter((project) => project.name || project.bullets.length);
 }
 
 function buildSummary(profile: ResumeProfile, roleFit: ResumeJson["roleFit"], jd: JdSignal, hasJd: boolean) {
-  const base = compactSentence(profile.summary, 300);
+  const base = compactSentence(profile.summary, 420);
   const nameFreeBase = base.replace(new RegExp(escapeRegExp(profile.basics.name || "__never__"), "gi"), "").trim();
+  const safeBase = nameFreeBase && !/^(analy[sz]ed|developed|conducted|showcased|automated|collected|visuali[sz]ed)\b/i.test(nameFreeBase)
+    ? nameFreeBase
+    : `${roleFit.safeHeadline} with practical professional experience, problem solving, and cross-functional collaboration.`;
 
   if (!hasJd || jd.family.id === "general") {
-    return nameFreeBase || `${roleFit.safeHeadline} with experience across communication, problem solving, and cross-functional collaboration.`;
+    return safeBase;
   }
 
   const highlights = roleFit.highlights.slice(0, 3);
-  const headline = roleFit.safeHeadline;
-  const baseStart = nameFreeBase || `${headline} with practical professional experience.`;
-
-  const familySummary: Record<string, string> = {
-    sales_business_development: `${headline} with experience in customer-facing communication, product support, stakeholder coordination, and problem solving in technology environments.`,
-    production_operations: `${headline} with experience supporting product manufacturability, technical documentation, engineering change processes, and cross-functional collaboration in industrial environments.`,
-    data_analytics: `${headline} with experience in analysis, reporting, technical problem solving, and translating data into practical business insights.`,
-    technical_support: `${headline} with experience resolving customer issues, coordinating with internal teams, documenting solutions, and improving service quality.`,
-    engineering_design: `${headline} with experience in CAD design, mechanical engineering support, prototyping, technical drawings, and manufacturing collaboration.`,
-  };
-
-  const targeted = familySummary[jd.family.id];
   const second = highlights.length
-    ? `Brings relevant strengths in ${highlights.join(", ")}, supported by the CV.`
-    : "Brings transferable strengths that are relevant to the target role.";
+    ? `Relevant strengths include ${highlights.join(", ")}.`
+    : "Relevant transferable strengths are supported by the CV.";
 
-  const summary = targeted ? `${targeted} ${second}` : `${baseStart} ${second}`;
-  return compactSentence(summary, 520)
+  // Keep the candidate's real profile summary as the base. Do not replace it with project
+  // bullets or a generic role sentence; this prevents Improve CV from losing the good
+  // onboarding summary.
+  return compactSentence(`${safeBase} ${second}`, 520)
     .replace(/\bRepositioned for\b/gi, "Relevant for")
     .replace(/\boptimized for\b/gi, "aligned with")
     .replace(/\btailored toward\b/gi, "aligned with");
@@ -691,28 +779,87 @@ function matchLevelLabel(level: MatchLevel) {
   return "Needs more evidence";
 }
 
+function preserveExperienceStructure(items: ResumeProfile["experience"]) {
+  return unique(
+    items
+      .map((job) => ({
+        ...job,
+        title: clean(job.title).replace(/^Professional Experience$/i, clean(job.title) || "Professional Experience"),
+        company: clean(job.company),
+        location: clean(job.location),
+        dates: clean(job.dates),
+        bullets: unique<string>(job.bullets.map(improveBulletVerb).filter(Boolean)).slice(0, 7),
+      }))
+      .filter((job) => job.company || job.title || job.bullets.length),
+    (job) => `${job.company}|${job.title}|${job.dates}`,
+  ).slice(0, 8);
+}
+
+function preserveProjectStructure(items: ResumeProfile["projects"]) {
+  return unique(
+    items
+      .map((project) => ({
+        name: clean(project.name).replace(/^Selected Projects?$/i, "Selected Project"),
+        bullets: unique<string>(project.bullets.map(improveBulletVerb).filter(Boolean)).slice(0, 5),
+      }))
+      .filter((project) => {
+        const name = project.name;
+        const bullets = project.bullets;
+        if (!name && !bullets.length) return false;
+        // Never invent a Projects section from loose evidence. If the parser only has a generic
+        // placeholder and one weak sentence, hide it instead of showing fake projects.
+        if (/^Selected Project$/i.test(name) && bullets.length < 2) return false;
+        if (/^(Project Management|Communication|Problem Solving|Teamwork)$/i.test(name) && bullets.length < 2) return false;
+        return true;
+      }),
+    (project) => `${project.name}|${project.bullets.join("|")}`,
+  ).slice(0, 6);
+}
+
+function preserveSummary(profile: ResumeProfile, roleFit: ResumeJson["roleFit"]) {
+  const summary = compactSentence(profile.summary || "", 650);
+  const badSummary =
+    !summary ||
+    summary.length < 45 ||
+    /^(skilled in|experienced in|proficient in|knowledge of|showcased|developed|conducted|analyzed|automated|visualized)/i.test(summary);
+
+  if (!badSummary) return summary;
+
+  const evidence = profile.experience.flatMap((job) => job.bullets).find((line) => line.length > 70) || "";
+  if (evidence && !/^(showcased|developed|conducted|analyzed|automated|visualized)/i.test(evidence)) {
+    return compactSentence(`${roleFit.safeHeadline} with practical experience across ${evidence.replace(/^[•-]\s*/, "")}`, 420);
+  }
+
+  return `${roleFit.safeHeadline} with practical professional experience, problem solving, and cross-functional collaboration.`;
+}
+
 export function buildResumeJson(input: CvGenerationInput): ResumeJson {
   const profile = profileFromInput(input);
   const jd = analyzeJd(input);
   const roleFit = buildRoleFit(profile, jd);
-  const experience = tailorExperience(profile, jd);
-  const projects = tailorProjects(profile, jd, experience);
-  const roleSkills = truthfulRoleSkills(profile, jd);
-  const skills = rankSkillsForJd(cleanSkillsForDisplay(unique<string>([...roleSkills, ...profile.skills])), jd).slice(0, 28);
+
+  // Important architecture rule:
+  // Parser owns structure. Improve CV may polish wording, but it must not re-rank,
+  // move, invent, or delete resume sections. This prevents onboarding and Improve CV
+  // from showing different projects, education, summaries, or experience histories.
+  const experience = preserveExperienceStructure(profile.experience);
+  const projects = preserveProjectStructure(profile.projects);
+  const education = cleanEducation(profile.education, profile.basics.name);
+  const skills = cleanSkillsForDisplay(unique<string>(profile.skills)).slice(0, 28);
   const groupedSkills = groupedSkillLines(skills);
-  const summary = buildSummary(profile, roleFit, jd, Boolean(input.jobDescription?.trim()));
+  const summary = preserveSummary(profile, roleFit);
 
   return {
     profile,
-    basics: { ...profile.basics, headline: roleFit.safeHeadline },
+    basics: { ...profile.basics, headline: profile.basics.headline || roleFit.safeHeadline },
     summary,
     skills,
     groupedSkills,
     experience,
     projects,
-    education: cleanEducation(profile.education),
+    education,
     languages: unique<string>(profile.languages, (item) => item.split(" - ")[0]).slice(0, 4),
-    strengths: unique<string>([...roleFit.highlights, ...profile.strengths]).slice(0, 7),
+    strengths: unique<string>([...profile.strengths, ...roleFit.highlights]).slice(0, 7),
     roleFit,
     market: normalizeMarket(input.targetMarket),
     style: normalizeStyle(input.template),

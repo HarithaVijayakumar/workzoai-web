@@ -19,6 +19,8 @@ import {
   normalizeSetupTargetRole,
   readLatestInterviewSetup,
 } from "@/lib/workzoInterviewSetup";
+import type { ResumeProfile } from "@/lib/workzoResumeParser";
+import { debugCvPipeline, debugCvProfile, debugCvText } from "@/lib/workzoCvPipelineDebug";
 
 const templates: Array<{ id: CvTemplate; label: string; description: string }> = [
   { id: "ats", label: "ATS Clean", description: "Strict, single-column, recruiter-safe layout." },
@@ -33,29 +35,65 @@ export default function CvWorkspacePage() {
   const [targetMarket, setTargetMarket] = useState("global");
   const [template, setTemplate] = useState<CvTemplate>("ats");
   const [atsText, setAtsText] = useState("");
+  const [savedResumeProfile, setSavedResumeProfile] = useState<ResumeProfile | undefined>(undefined);
 
   useEffect(() => {
     const setup = readLatestInterviewSetup();
+    debugCvPipeline("cv.page.setup.loaded", {
+      hasSetup: Boolean(setup),
+      setupKeys: setup && typeof setup === "object" ? Object.keys(setup).slice(0, 40) : [],
+      cvChars: normalizeSetupCvText(setup).length,
+      hasResumeProfile: Boolean(setup?.resumeProfile),
+    });
+    debugCvText("cv.page.setup.cvText", normalizeSetupCvText(setup));
+    debugCvProfile("cv.page.setup.resumeProfile", setup?.resumeProfile);
+
     syncCandidateIdentityFromSetup(setup);
     setCvText(normalizeSetupCvText(setup));
     setJobDescription(normalizeSetupJobDescription(setup));
     setTargetRole(normalizeSetupTargetRole(setup));
     setTargetMarket(normalizeSetupTargetMarket(setup));
+
+    // Critical: Improve CV must use the exact structured profile produced during onboarding.
+    // Do not re-parse raw PDF text here unless no profile exists. Re-parsing is what caused
+    // projects, education, and summary to drift between Onboarding and Improve CV.
+    const profile = setup?.resumeProfile;
+    if (profile && typeof profile === "object" && "basics" in profile) {
+      setSavedResumeProfile(profile as ResumeProfile);
+      debugCvProfile("cv.page.savedResumeProfile.set", profile);
+    }
   }, []);
 
   const resumeInput = useMemo(
     () => ({
       cvText,
+      resumeProfile: savedResumeProfile,
       jobDescription,
       targetRole,
       targetMarket,
       template,
     }),
-    [cvText, jobDescription, targetRole, targetMarket, template],
+    [cvText, savedResumeProfile, jobDescription, targetRole, targetMarket, template],
   );
 
-  const improvedCv = useMemo(() => generateImprovedCv(resumeInput), [resumeInput]);
-  const resumeJson = useMemo(() => buildResumeJson(resumeInput), [resumeInput]);
+  const improvedCv = useMemo(() => {
+    debugCvProfile("cv.page.generateImprovedCv.inputProfile", resumeInput.resumeProfile);
+    const output = generateImprovedCv(resumeInput);
+    debugCvText("cv.page.generateImprovedCv.outputText", output);
+    return output;
+  }, [resumeInput]);
+
+  const resumeJson = useMemo(() => {
+    const output = buildResumeJson(resumeInput);
+    debugCvProfile("cv.page.buildResumeJson.outputProfile", output.profile, {
+      summary: output.summary,
+      experienceCount: output.experience.length,
+      projectCount: output.projects.length,
+      educationCount: output.education.length,
+      skillsCount: output.skills.length,
+    });
+    return output;
+  }, [resumeInput]);
   const htmlPreview = useMemo(() => generateResumeHtml(resumeInput), [resumeInput]);
 
 
@@ -213,7 +251,10 @@ export default function CvWorkspacePage() {
               </span>
               <textarea
                 value={cvText}
-                onChange={(event) => setCvText(event.target.value)}
+                onChange={(event) => {
+                  setCvText(event.target.value);
+                  setSavedResumeProfile(undefined);
+                }}
                 className="min-h-[260px] w-full rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-sm leading-6 outline-none transition focus:border-blue-400"
                 placeholder="Upload a CV during onboarding or paste CV text here."
               />

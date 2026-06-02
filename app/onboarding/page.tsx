@@ -38,6 +38,7 @@ import {
 
 import BetaPrivacyNotice from "@/components/BetaPrivacyNotice";
 import { trackWorkZoLaunchEvent } from "@/lib/workzoLaunchAnalytics";
+import { debugCvPipeline, debugCvProfile, debugCvText } from "@/lib/workzoCvPipelineDebug";
 
 type Market = "Global" | "Germany" | "US" | "UK" | "India" | "Netherlands";
 type CompanyStyle =
@@ -316,8 +317,18 @@ function buildCanonicalCvSetup(input: {
 }
 
 function saveCanonicalCvSetup(setup: SetupState, store: any) {
+  debugCvProfile("onboarding.saveCanonicalCvSetup.before", setup.resumeProfile, {
+    setupId: setup.setupId,
+    source: setup.source,
+    cvChars: typeof setup.cvText === "string" ? setup.cvText.length : 0,
+  });
   saveSetupToStore(setup, store);
-  saveLatestInterviewSetup(setup);
+  const saved = saveLatestInterviewSetup(setup);
+  debugCvProfile("onboarding.saveCanonicalCvSetup.after", saved.resumeProfile, {
+    setupId: saved.setupId,
+    source: saved.source,
+    cvChars: typeof saved.cvText === "string" ? saved.cvText.length : 0,
+  });
 }
 
 function ResumeProfileReview({ profile }: { profile: ResumeProfile | null }) {
@@ -779,6 +790,12 @@ export default function OnboardingPage() {
         throw new Error(data?.error || "CV extraction failed");
       }
 
+      debugCvPipeline("onboarding.upload.api_response", {
+        keys: data && typeof data === "object" ? Object.keys(data) : [],
+        fileName: file.name,
+        chars: data?.chars || null,
+      });
+
       const extracted =
         data?.text ||
         data?.cvText ||
@@ -794,7 +811,16 @@ export default function OnboardingPage() {
       }
 
       const rawCvText = normalizeResumeText(String(extracted));
-      const profile = extractResumeProfile(rawCvText);
+      debugCvText("onboarding.upload.cleaned_text", rawCvText, { fileName: file.name });
+
+      const apiProfile = data?.resumeProfile || data?.profile;
+      const profile = apiProfile && typeof apiProfile === "object" && "basics" in apiProfile
+        ? (apiProfile as ResumeProfile)
+        : extractResumeProfile(rawCvText);
+      debugCvProfile("onboarding.upload.profile_selected", profile, {
+        source: apiProfile ? "api_resumeProfile" : "client_extractResumeProfile",
+        fileName: file.name,
+      });
 
       // IMPORTANT:
       // Onboarding must display the parser preview, not stale localStorage,
@@ -813,6 +839,7 @@ export default function OnboardingPage() {
       });
 
       saveCanonicalCvSetup(canonicalSetup, store);
+      debugCvProfile("onboarding.upload.canonical_saved", canonicalSetup.resumeProfile, { setupId: canonicalSetup.setupId });
 
       // Optional interview enrichment must never overwrite the CV extraction result.
       void buildAndSaveInterviewSetup({
@@ -837,6 +864,9 @@ export default function OnboardingPage() {
             updatedAt: new Date().toISOString(),
           } as SetupState;
 
+          debugCvProfile("onboarding.upload.enriched_before_save", enrichedSetup.resumeProfile, {
+            note: "This should still match canonical parser profile. AI memory must not replace structure.",
+          });
           saveCanonicalCvSetup(enrichedSetup, store);
         })
         .catch(() => {

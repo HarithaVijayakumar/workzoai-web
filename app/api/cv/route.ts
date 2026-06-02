@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { createRequire } from "module";
+import { extractResumeProfile } from "@/lib/workzoResumeParser";
+import { debugCvPipeline, debugCvProfile, debugCvText } from "@/lib/workzoCvPipelineDebug";
 
 const require = createRequire(import.meta.url);
 
@@ -67,13 +69,15 @@ function sentences(value: string, limit = 8) {
 }
 
 async function extractPdfText(buffer: Buffer) {
+  debugCvPipeline("api.cv.pdf_parse.before", { bytes: buffer.length });
   try {
-    type PdfParseFn = (buffer: Buffer) => Promise<{ text?: string }>;
+    type PdfParseFn = (buffer: Buffer) => Promise<PdfParseResult>;
 
     const pdfParse = require("pdf-parse/lib/pdf-parse.js") as PdfParseFn;
 
     const result = await pdfParse(buffer);
     const extracted = normalizeExtractedText(result.text || "");
+    debugCvText("api.cv.pdf_parse.after", extracted, { pages: result.numpages || null });
 
     if (extracted.length > 30) {
       return extracted;
@@ -93,9 +97,12 @@ async function extractPdfText(buffer: Buffer) {
 
 function normalizeCvText(raw: string) {
   return raw
-    .replace(/\s+/g, " ")
+    .replace(/\x00/g, " ")
+    .replace(/\r/g, "\n")
+    .replace(/[\t ]+/g, " ")
+    .replace(/\n[\t ]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
     .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/(WORK EXPERIENCE|EDUCATION|SKILLS|PROJECTS)/gi, "\n\n$1\n")
     .replace(/ManageEngine/g, "ManageEngine")
     .replace(/TextBlob/g, "TextBlob")
     .replace(/LangChain/g, "LangChain")
@@ -334,14 +341,22 @@ export async function POST(request: Request) {
       }
 
       const extracted = await extractFileText(file);
+      debugCvText("api.cv.file_text.extracted", extracted, { fileName: file.name, fileType: file.type });
+
       const cleanedCv = normalizeCvText(extracted);
+      debugCvText("api.cv.file_text.cleaned", cleanedCv, { fileName: file.name });
+
+      const resumeProfile = extractResumeProfile(cleanedCv);
+      debugCvProfile("api.cv.parser.output", resumeProfile, { fileName: file.name });
 
       return NextResponse.json({
-        text: extracted,
-        cvText: extracted,
-        content: extracted,
+        text: cleanedCv,
+        cvText: cleanedCv,
+        content: cleanedCv,
+        resumeProfile,
+        profile: resumeProfile,
         fileName: file.name,
-        chars: extracted.length,
+        chars: cleanedCv.length,
       });
     } catch (error) {
       return NextResponse.json(

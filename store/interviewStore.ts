@@ -35,6 +35,35 @@ export type LiveScore = {
   overall: number;
 };
 
+export type AnswerQuality = "weak" | "average" | "strong" | "excellent";
+export type FailureSeverity = "low" | "medium" | "high" | "critical";
+
+export type FailureAnalyticsEvent = {
+  id: string;
+  eventName: string;
+  severity: FailureSeverity;
+  message?: string;
+  metadata?: Record<string, unknown>;
+  timestamp: number;
+};
+
+export type InterviewRecoverySnapshot = {
+  id: string;
+  sessionId: string | null;
+  mode: InterviewMode;
+  vapiStatus: VapiStatus;
+  setup: InterviewSetup;
+  currentQuestion: string;
+  lastUserAnswer: string;
+  transcript: TranscriptItem[];
+  recruiterMemory: RecruiterMemoryItem[];
+  liveScore: LiveScore;
+  pressureLevel: number;
+  emotionState: string;
+  startedAt: number | null;
+  updatedAt: number;
+};
+
 export type InterviewSetup = {
   targetRole: string;
   targetMarket: string;
@@ -57,6 +86,8 @@ export type AnswerHistoryItem = {
   answer: string;
   mode: InterviewMode;
   score: LiveScore;
+  quality: AnswerQuality;
+  detectedPatterns: string[];
   emotionState: string;
   pressureLevel: number;
   timestamp: number;
@@ -101,6 +132,10 @@ type InterviewState = {
   interruptionHistory: InterruptionHistoryItem[];
   emotionTimeline: EmotionTimelineItem[];
   recruiterTrustHistory: number[];
+  failureAnalytics: FailureAnalyticsEvent[];
+  errorEvents: FailureAnalyticsEvent[];
+  recoverySnapshot: InterviewRecoverySnapshot | null;
+  recoveryAvailable: boolean;
 
   setMode: (mode: InterviewMode) => void;
   setVapiStatus: (status: VapiStatus) => void;
@@ -135,6 +170,22 @@ type InterviewState = {
     severity?: "low" | "medium" | "high"
   ) => void;
   clearPersistentMemory: () => void;
+
+  recordFailureEvent: (
+    eventName: string,
+    severity?: FailureSeverity,
+    message?: string,
+    metadata?: Record<string, unknown>
+  ) => void;
+  recordErrorEvent: (
+    eventName: string,
+    error: unknown,
+    metadata?: Record<string, unknown>,
+    severity?: FailureSeverity
+  ) => void;
+  saveRecoverySnapshot: () => void;
+  restoreRecoverySnapshot: () => void;
+  discardRecoverySnapshot: () => void;
 };
 
 const defaultScore: LiveScore = {
@@ -219,6 +270,31 @@ function detectPatterns(answer: string): string[] {
   return patterns;
 }
 
+function detectAnswerQuality(answer: string, patterns: string[]): AnswerQuality {
+  const text = answer.toLowerCase();
+  const wordCount = answer.split(/\s+/).filter(Boolean).length;
+  const hasMetric =
+    /\d|%|percent|impact|result|improved|reduced|increased|saved|users|customers|tickets|revenue|cost|time|quality|sla|csat|nps/i.test(text);
+  const hasOwnership = /\b(i|my|me|personally|owned|built|handled|created|led|resolved|analyzed|implemented|managed|supported)\b/i.test(text);
+  const hasOutcome = /\b(result|impact|outcome|after|therefore|which led|improved|reduced|increased|saved|resolved|delivered|achieved)\b/i.test(text);
+
+  if (patterns.includes("Answers too briefly") || patterns.includes("Uses generic interview claims")) return "weak";
+  if (hasMetric && hasOwnership && hasOutcome && wordCount >= 35) return "excellent";
+  if ((hasMetric && hasOwnership) || (hasOwnership && hasOutcome)) return "strong";
+  return "average";
+}
+
+function normalizeError(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 export const useInterviewStore = create<InterviewState>()(
   persist(
     (set, get) => ({
@@ -246,6 +322,10 @@ export const useInterviewStore = create<InterviewState>()(
       interruptionHistory: [],
       emotionTimeline: [],
       recruiterTrustHistory: [],
+      failureAnalytics: [],
+      errorEvents: [],
+      recoverySnapshot: null,
+      recoveryAvailable: false,
 
       setMode: (mode) => set({ mode }),
       setVapiStatus: (status) => set({ vapiStatus: status }),
@@ -440,10 +520,17 @@ export const useInterviewStore = create<InterviewState>()(
 
       recordAnswerHistory: (answer, mode) => {
         const detectedPatterns = detectPatterns(answer);
+        const quality = detectAnswerQuality(answer, detectedPatterns);
 
         detectedPatterns.forEach((pattern) => {
           get().recordPersistentPattern(pattern, "medium");
         });
+
+        if (quality === "weak") {
+          get().recordFailureEvent("weak_answer_detected", "medium", "Weak answer detected", {
+            patterns: detectedPatterns,
+          });
+        }
 
         set((state) => ({
           answerHistory: [
@@ -453,6 +540,8 @@ export const useInterviewStore = create<InterviewState>()(
               answer,
               mode,
               score: state.liveScore,
+              quality,
+              detectedPatterns,
               emotionState: state.emotionState,
               pressureLevel: state.pressureLevel,
               timestamp: Date.now(),
@@ -530,6 +619,100 @@ export const useInterviewStore = create<InterviewState>()(
           emotionTimeline: [],
           recruiterTrustHistory: [],
         }),
+
+      recordFailureEvent: (eventName, severity = "medium", message, metadata) =>
+        set((state) => ({
+          failureAnalytics: [
+            {
+              id: createId("failure"),
+              eventName,
+              severity,
+              message,
+              metadata,
+              timestamp: Date.now(),
+            },
+            ...state.failureAnalytics,
+          ].slice(0, 200),
+        })),
+
+      recordErrorEvent: (eventName, error, metadata, severity = "medium") => {
+        const message = normalizeError(error);
+
+        set((state) => ({
+          errorEvents: [
+            {
+              id: createId("error"),
+              eventName,
+              severity,
+              message,
+              metadata,
+              timestamp: Date.now(),
+            },
+            ...state.errorEvents,
+          ].slice(0, 200),
+          failureAnalytics: [
+            {
+              id: createId("failure"),
+              eventName,
+              severity,
+              message,
+              metadata,
+              timestamp: Date.now(),
+            },
+            ...state.failureAnalytics,
+          ].slice(0, 200),
+        }));
+      },
+
+      saveRecoverySnapshot: () =>
+        set((state) => ({
+          recoverySnapshot: {
+            id: createId("snapshot"),
+            sessionId: state.sessionId,
+            mode: state.mode,
+            vapiStatus: state.vapiStatus,
+            setup: state.setup,
+            currentQuestion: state.currentQuestion,
+            lastUserAnswer: state.lastUserAnswer,
+            transcript: state.transcript,
+            recruiterMemory: state.recruiterMemory,
+            liveScore: state.liveScore,
+            pressureLevel: state.pressureLevel,
+            emotionState: state.emotionState,
+            startedAt: state.startedAt,
+            updatedAt: Date.now(),
+          },
+          recoveryAvailable: true,
+        })),
+
+      restoreRecoverySnapshot: () =>
+        set((state) => {
+          const snapshot = state.recoverySnapshot;
+          if (!snapshot) return state;
+
+          return {
+            sessionId: snapshot.sessionId,
+            mode: snapshot.mode,
+            vapiStatus: snapshot.vapiStatus,
+            setup: snapshot.setup,
+            currentQuestion: snapshot.currentQuestion,
+            lastUserAnswer: snapshot.lastUserAnswer,
+            transcript: snapshot.transcript,
+            recruiterMemory: snapshot.recruiterMemory,
+            liveScore: snapshot.liveScore,
+            pressureLevel: snapshot.pressureLevel,
+            emotionState: snapshot.emotionState,
+            startedAt: snapshot.startedAt,
+            endedAt: null,
+            recoveryAvailable: false,
+          };
+        }),
+
+      discardRecoverySnapshot: () =>
+        set({
+          recoverySnapshot: null,
+          recoveryAvailable: false,
+        }),
     }),
     {
       name: "workzo-interview-memory",
@@ -540,6 +723,10 @@ export const useInterviewStore = create<InterviewState>()(
         interruptionHistory: state.interruptionHistory.slice(-20),
         emotionTimeline: state.emotionTimeline.slice(-25),
         recruiterTrustHistory: state.recruiterTrustHistory.slice(-25),
+        failureAnalytics: state.failureAnalytics.slice(0, 100),
+        errorEvents: state.errorEvents.slice(0, 100),
+        recoverySnapshot: state.recoverySnapshot,
+        recoveryAvailable: state.recoveryAvailable,
       }),
     }
   )

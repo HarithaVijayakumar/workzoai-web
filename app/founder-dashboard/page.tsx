@@ -5,12 +5,16 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
+  CheckCircle2,
   Clock3,
+  FileText,
   Laptop,
   Mic,
   RefreshCcw,
+  Save,
   Smartphone,
   Tablet,
+  TrendingDown,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -85,6 +89,11 @@ function formatNumber(value?: number | null) {
   return new Intl.NumberFormat("en").format(Number(value || 0));
 }
 
+function formatPercent(value: number) {
+  if (!Number.isFinite(value)) return "0%";
+  return `${Math.round(value * 10) / 10}%`;
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "Recent";
 
@@ -101,12 +110,27 @@ function formatDate(value?: string | null) {
 }
 
 function cleanLabel(value?: string | null, fallback = "Unknown") {
-  const text = String(value || "").replace(/_/g, " ").trim();
+  const text = String(value || "").replace(/_/g, " ").replace(/-/g, " ").trim();
   if (!text) return fallback;
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function topEntries(map: Record<string, number>, limit = 6) {
+function normalizeEventName(value?: string | null) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function getEventCount(eventCounts: Record<string, number>, aliases: string[]) {
+  const wanted = new Set(aliases.map(normalizeEventName));
+
+  return Object.entries(eventCounts || {}).reduce((total, [event, count]) => {
+    return wanted.has(normalizeEventName(event)) ? total + Number(count || 0) : total;
+  }, 0);
+}
+
+function topEntries(map: Record<string, number>, limit = 8) {
   return Object.entries(map || {})
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit);
@@ -160,21 +184,74 @@ export default function FounderDashboardPage() {
     loadAnalytics();
   }, [loadAnalytics]);
 
+  const founderMetrics = useMemo(() => {
+    const resultsViewed = getEventCount(summary.eventCounts, [
+      "results_viewed",
+      "result_viewed",
+      "results_page_viewed",
+      "interview_results_viewed",
+    ]);
+
+    const reportsSaved = getEventCount(summary.eventCounts, [
+      "report_saved",
+      "results_saved",
+      "saved_report",
+      "interview_saved",
+      "interview_session_saved",
+      "session_saved",
+      "history_saved",
+    ]);
+
+    const landingViewed = getEventCount(summary.eventCounts, ["landing_viewed", "home_viewed", "landing_page_viewed"]);
+    const onboardingViewed = getEventCount(summary.eventCounts, ["onboarding_viewed", "onboarding_started"]);
+    const interviewRoomViewed = getEventCount(summary.eventCounts, ["interview_room_viewed", "interview_page_viewed"]);
+    const interviewStarted = summary.interviewStarts || getEventCount(summary.eventCounts, ["interview_started"]);
+    const interviewCompleted = summary.interviewCompleted || getEventCount(summary.eventCounts, ["interview_completed", "interview_ended"]);
+    const abandoned = Math.max(0, interviewStarted - interviewCompleted);
+    const resultViewRate = interviewCompleted > 0 ? (resultsViewed / interviewCompleted) * 100 : 0;
+    const saveRate = resultsViewed > 0 ? (reportsSaved / resultsViewed) * 100 : 0;
+
+    const funnel = [
+      { label: "Landing Viewed", value: landingViewed },
+      { label: "Onboarding Viewed", value: onboardingViewed },
+      { label: "Interview Room Viewed", value: interviewRoomViewed },
+      { label: "Interview Started", value: interviewStarted },
+      { label: "Interview Completed", value: interviewCompleted },
+      { label: "Results Viewed", value: resultsViewed },
+      { label: "Report Saved", value: reportsSaved },
+    ];
+
+    return {
+      resultsViewed,
+      reportsSaved,
+      abandoned,
+      resultViewRate,
+      saveRate,
+      funnel,
+      maxFunnelValue: Math.max(1, ...funnel.map((item) => item.value)),
+    };
+  }, [summary]);
+
   const statCards = useMemo(
     () => [
       { label: "Production Events", value: formatNumber(summary.totalEvents), icon: BarChart3 },
       { label: "Unique Sessions", value: formatNumber(summary.uniqueSessions), icon: Users },
       { label: "Interviews Started", value: formatNumber(summary.interviewStarts), icon: Mic },
-      { label: "Completed", value: formatNumber(summary.interviewCompleted), icon: TrendingUp },
+      { label: "Completed", value: formatNumber(summary.interviewCompleted), icon: CheckCircle2 },
+      { label: "Results Viewed", value: formatNumber(founderMetrics.resultsViewed), icon: FileText },
+      { label: "Result View Rate", value: formatPercent(founderMetrics.resultViewRate), icon: TrendingUp },
+      { label: "Reports Saved", value: formatNumber(founderMetrics.reportsSaved), icon: Save },
+      { label: "Save Rate", value: formatPercent(founderMetrics.saveRate), icon: Save },
+      { label: "Abandoned", value: formatNumber(founderMetrics.abandoned), icon: TrendingDown },
       { label: "Completion Rate", value: `${summary.completionRate || 0}%`, icon: TrendingUp },
       { label: "Mobile Sessions", value: formatNumber(summary.mobileSessions), icon: Smartphone },
       { label: "Desktop Sessions", value: formatNumber(summary.desktopSessions), icon: Laptop },
       { label: "Tablet Sessions", value: formatNumber(summary.tabletSessions), icon: Tablet },
     ],
-    [summary],
+    [summary, founderMetrics],
   );
 
-  const eventEntries = topEntries(summary.eventCounts, 8);
+  const eventEntries = topEntries(summary.eventCounts, 10);
   const recruiterEntries = topEntries(summary.recruiterCounts, 6);
 
   return (
@@ -201,7 +278,7 @@ export default function FounderDashboardPage() {
           <p className="text-sm font-black uppercase tracking-[0.18em] text-blue-200">Founder Dashboard</p>
           <h1 className="mt-2 text-3xl font-black sm:text-4xl">WorkZo Production Signals</h1>
           <p className="mt-2 max-w-3xl text-slate-300">
-            Production-safe analytics from Supabase. Localhost, private network, development, preview, and Vercel preview traffic are filtered by the analytics API.
+            Production-safe analytics from Supabase. Track the full funnel from landing to interview completion, results viewed, and saved reports.
           </p>
 
           <div className="mt-5 flex flex-wrap items-center gap-3 text-xs font-bold text-slate-400">
@@ -225,12 +302,12 @@ export default function FounderDashboardPage() {
           </section>
         ) : null}
 
-        <section className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <section className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
           {statCards.map((item) => {
             const Icon = item.icon;
             return (
               <div key={item.label} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-slate-400">{item.label}</p>
                   <Icon className="h-5 w-5 text-blue-300" />
                 </div>
@@ -240,10 +317,42 @@ export default function FounderDashboardPage() {
           })}
         </section>
 
+        <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-xl font-black">User Funnel</h2>
+              <p className="mt-1 text-sm text-slate-400">Use this to see exactly where users drop off after interview completion.</p>
+            </div>
+            <div className="rounded-full border border-white/10 bg-black/20 px-3 py-1.5 text-xs font-bold text-slate-300">
+              Results viewed: {formatNumber(founderMetrics.resultsViewed)}
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-3 lg:grid-cols-7">
+            {founderMetrics.funnel.map((item, index) => (
+              <div key={item.label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <div className="flex items-start justify-between gap-3 lg:block">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">Step {index + 1}</p>
+                    <p className="mt-1 text-sm font-black text-slate-200">{item.label}</p>
+                  </div>
+                  <p className="text-2xl font-black text-blue-200 lg:mt-3">{formatNumber(item.value)}</p>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                  <div
+                    className="h-full rounded-full bg-blue-400"
+                    style={{ width: `${Math.max(4, Math.min(100, (item.value / founderMetrics.maxFunnelValue) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_380px]">
           <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
             <h2 className="text-xl font-black">Event Breakdown</h2>
-            <p className="mt-1 text-sm text-slate-400">Launch-critical events only. Use this to judge activation and interview completion.</p>
+            <p className="mt-1 text-sm text-slate-400">Launch-critical events including results viewed and report saved.</p>
 
             <div className="mt-4 space-y-3">
               {eventEntries.map(([event, count]) => (

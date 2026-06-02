@@ -1,7 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, BarChart3, CheckCircle2, Clock3, MessageSquareText, RotateCcw, ShieldAlert, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  ArrowLeft,
+  BarChart3,
+  CheckCircle2,
+  Clock3,
+  MessageSquareText,
+  RotateCcw,
+  ShieldAlert,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import SaveInterviewSessionCard from "./SaveInterviewSessionCard";
 
@@ -25,6 +35,9 @@ type RecruiterSignalState = {
   concern: string;
 };
 
+type TrustPoint = { time: string; trust: number; interest: number; note: string };
+type AnswerQuality = "weak" | "average" | "strong" | "excellent";
+
 type InterviewResult = {
   id: string;
   savedAt: string;
@@ -37,7 +50,7 @@ type InterviewResult = {
   durationSeconds: number;
   score: RecruiterSignalState | null;
   transcript: TranscriptItem[];
-  trustTimeline?: Array<{ time: string; trust: number; interest: number; note: string }>;
+  trustTimeline?: TrustPoint[];
   weakestMoment?: { answer: string; problem: string; advice: string };
   verdict?: { decision: string; reason: string };
   memory?: {
@@ -57,12 +70,39 @@ type InterviewResult = {
     liveNote?: string;
     patterns?: string[];
     verdict?: string;
+    answerQualitySummary?: Record<AnswerQuality, number>;
+  };
+  answerQuality?: {
+    records?: Array<{
+      id?: string;
+      quality: AnswerQuality;
+      wordCount?: number;
+      hasMetric?: boolean;
+      hasOwnership?: boolean;
+      hasOutcome?: boolean;
+      unsupported?: boolean;
+      concern?: string;
+      answer?: string;
+    }>;
+    summary?: Record<AnswerQuality, number>;
   };
 };
 
+type CandidatePattern = {
+  id?: string;
+  pattern?: string;
+  label?: string;
+  count?: number;
+  targetRole?: string;
+  recruiterName?: string;
+  lastSeenAt?: string;
+  severity?: "low" | "medium" | "high";
+};
+
 function formatDuration(seconds = 0) {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const total = Math.max(0, Math.round(seconds || 0));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
   return `${mins}m ${secs}s`;
 }
 
@@ -75,6 +115,18 @@ function loadLatestResult(): InterviewResult | null {
     return JSON.parse(raw) as InterviewResult;
   } catch {
     return null;
+  }
+}
+
+function loadCandidatePatterns(): CandidatePattern[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem("workzo_candidate_patterns");
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.slice(0, 12) : [];
+  } catch {
+    return [];
   }
 }
 
@@ -120,12 +172,93 @@ function scoreTone(score?: number | null) {
   return "text-red-300";
 }
 
+function cleanAnswerText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function hasMetricSignal(answer: string) {
+  return /\d|percent|%|customers?|users?|tickets?|hours?|days?|weeks?|months?|saved|reduced|increased|improved|revenue|cost|time|quality|sla|csat|nps|conversion|retention/i.test(answer);
+}
+
+function hasOwnershipSignal(answer: string) {
+  return /\b(i|my|me|personally|owned|built|handled|created|led|resolved|analyzed|improved|reduced|increased|designed|implemented|managed|supported|debugged|troubleshot)\b/i.test(answer);
+}
+
+function hasOutcomeSignal(answer: string) {
+  return /\b(result|impact|outcome|after|therefore|which led|improved|reduced|increased|saved|resolved|delivered|achieved)\b/i.test(answer);
+}
+
+function hasUnsupportedSignal(answer: string) {
+  return /\b(i lied|i made that up|not true|wasn't true|false|fake|exaggerated|tesla|google|microsoft|amazon|meta|apple)\b/i.test(answer);
+}
+
+function classifyAnswerQuality(answer: string): AnswerQuality {
+  const wordCount = answer.split(/\s+/).filter(Boolean).length;
+  const metric = hasMetricSignal(answer);
+  const ownership = hasOwnershipSignal(answer);
+  const outcome = hasOutcomeSignal(answer);
+  const vague = /\b(stuff|things|many things|good|nice|various|some|helped|worked on|responsible for|involved in|team player|hardworking)\b/i.test(answer) && !metric;
+
+  if (wordCount < 14 || vague || hasUnsupportedSignal(answer)) return "weak";
+  if (metric && ownership && outcome && wordCount >= 35) return "excellent";
+  if ((metric && ownership) || (ownership && outcome)) return "strong";
+  return "average";
+}
+
+function summarizeAnswerQuality(transcript: TranscriptItem[], result?: InterviewResult | null) {
+  const storedSummary = result?.answerQuality?.summary || result?.summary?.answerQualitySummary;
+  if (storedSummary) {
+    return {
+      weak: storedSummary.weak || 0,
+      average: storedSummary.average || 0,
+      strong: storedSummary.strong || 0,
+      excellent: storedSummary.excellent || 0,
+    };
+  }
+
+  const summary: Record<AnswerQuality, number> = { weak: 0, average: 0, strong: 0, excellent: 0 };
+
+  transcript
+    .filter((item) => item.role === "candidate")
+    .forEach((item) => {
+      summary[classifyAnswerQuality(item.text)] += 1;
+    });
+
+  return summary;
+}
+
+function getTrustJourney(timeline: TrustPoint[]) {
+  if (!timeline.length) return [];
+
+  return timeline.slice(-8).map((point, index, list) => {
+    const previous = index > 0 ? list[index - 1] : null;
+    const delta = previous ? point.trust - previous.trust : 0;
+    const direction = delta > 1 ? "up" : delta < -1 ? "down" : "flat";
+    const label = direction === "up" ? "Trust increased" : direction === "down" ? "Trust dropped" : "Trust held steady";
+
+    return {
+      ...point,
+      delta,
+      direction,
+      label,
+    };
+  });
+}
+
+function splitPatternType(pattern: string) {
+  const lower = pattern.toLowerCase();
+  if (lower.includes("strong") || lower.includes("positive") || lower.includes("evidence") || lower.includes("customer")) return "Strong";
+  return "Weak";
+}
+
 export default function ResultsPage() {
   const [result, setResult] = useState<InterviewResult | null>(null);
+  const [candidatePatterns, setCandidatePatterns] = useState<CandidatePattern[]>([]);
 
   useEffect(() => {
     const latest = loadLatestResult();
     setResult(latest);
+    setCandidatePatterns(loadCandidatePatterns());
 
     trackWorkZoAnalyticsEvent("results_viewed", {
       recruiter: latest?.recruiterName || null,
@@ -146,6 +279,16 @@ export default function ResultsPage() {
   const candidateTurns = useMemo(
     () => result?.transcript?.filter((item) => item.role === "candidate") || [],
     [result],
+  );
+
+  const answerQualitySummary = useMemo(
+    () => summarizeAnswerQuality(result?.transcript || [], result),
+    [result],
+  );
+
+  const trustJourney = useMemo(
+    () => getTrustJourney(result?.trustTimeline || []),
+    [result?.trustTimeline],
   );
 
   if (!result) {
@@ -171,6 +314,12 @@ export default function ResultsPage() {
     decision: result.summary?.verdict || "Not enough signal",
     reason: result.summary?.concern || "Complete more interview answers to receive a stronger verdict.",
   };
+
+  const repeatedPatterns = result.memory?.patterns || result.summary?.patterns || [];
+  const crossSessionPatterns = candidatePatterns
+    .map((item) => item.pattern || item.label || "")
+    .filter(Boolean)
+    .slice(0, 8);
 
   return (
     <main className="min-h-screen bg-[#050b14] px-4 py-6 text-white sm:px-6">
@@ -219,7 +368,21 @@ export default function ResultsPage() {
           </div>
         </section>
 
-        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_360px]">
+        <section className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {(["weak", "average", "strong", "excellent"] as AnswerQuality[]).map((quality) => (
+            <div key={quality} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+              <p className="text-sm capitalize text-slate-400">{quality} answers</p>
+              <p className={`mt-2 text-3xl font-black ${quality === "weak" ? "text-red-300" : quality === "average" ? "text-amber-300" : quality === "strong" ? "text-blue-300" : "text-emerald-300"}`}>
+                {answerQualitySummary[quality]}
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                {quality === "weak" ? "Needs evidence or structure" : quality === "average" ? "Acceptable but shallow" : quality === "strong" ? "Good proof signal" : "Clear, measured, owned"}
+              </p>
+            </div>
+          ))}
+        </section>
+
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_380px]">
           <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
             <div className="flex items-center gap-2">
               {verdict.decision?.toLowerCase().includes("proceed") && !verdict.decision?.toLowerCase().includes("not") ? (
@@ -237,7 +400,7 @@ export default function ResultsPage() {
               <p className="mt-2 text-sm text-amber-200">{result.weakestMoment?.problem || "No weakest answer detected yet."}</p>
               {result.weakestMoment?.answer ? (
                 <blockquote className="mt-3 rounded-xl border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-300">
-                  “{result.weakestMoment.answer}”
+                  “{cleanAnswerText(result.weakestMoment.answer)}”
                 </blockquote>
               ) : null}
               <p className="mt-3 text-sm leading-6 text-slate-300">{result.weakestMoment?.advice}</p>
@@ -248,25 +411,35 @@ export default function ResultsPage() {
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
               <div className="flex items-center gap-2">
                 <TrendingUp className="h-5 w-5 text-blue-300" />
-                <h2 className="font-black">Trust Timeline</h2>
+                <h2 className="font-black">Trust Journey</h2>
               </div>
 
               <div className="mt-4 space-y-3">
-                {(result.trustTimeline || []).slice(-6).map((point, index) => (
-                  <div key={`${point.time}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                    <div className="flex items-center justify-between text-xs text-slate-400">
-                      <span>{point.time}</span>
-                      <span>Trust {point.trust}/100</span>
+                {trustJourney.map((point, index) => {
+                  const Icon = point.direction === "down" ? TrendingDown : TrendingUp;
+                  return (
+                    <div key={`${point.time}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <Icon className={`h-4 w-4 ${point.direction === "down" ? "text-red-300" : point.direction === "up" ? "text-emerald-300" : "text-slate-300"}`} />
+                          <p className="text-sm font-black">{point.label}</p>
+                        </div>
+                        <span className="text-xs text-slate-400">{point.time}</span>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                        <span>Trust {point.trust}/100</span>
+                        <span>{point.delta > 0 ? "+" : ""}{point.delta}</span>
+                      </div>
+                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.max(4, Math.min(100, point.trust))}%` }} />
+                      </div>
+                      <p className="mt-2 line-clamp-2 text-xs text-slate-300">{point.note}</p>
                     </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-                      <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.max(4, Math.min(100, point.trust))}%` }} />
-                    </div>
-                    <p className="mt-2 line-clamp-2 text-xs text-slate-300">{point.note}</p>
-                  </div>
-                ))}
+                  );
+                })}
 
-                {!(result.trustTimeline || []).length ? (
-                  <p className="text-sm text-slate-400">Trust timeline will appear after scored answers.</p>
+                {!trustJourney.length ? (
+                  <p className="text-sm text-slate-400">Trust journey will appear after scored answers.</p>
                 ) : null}
               </div>
             </section>
@@ -274,23 +447,49 @@ export default function ResultsPage() {
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
               <div className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5 text-violet-300" />
-                <h2 className="font-black">Patterns</h2>
+                <h2 className="font-black">Patterns This Interview</h2>
               </div>
 
               <div className="mt-4 space-y-2">
-                {(result.memory?.patterns || result.summary?.patterns || []).map((pattern, index) => (
+                {repeatedPatterns.map((pattern, index) => (
                   <p key={`${pattern}-${index}`} className="rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-300">
                     {pattern}
                   </p>
                 ))}
 
-                {!(result.memory?.patterns || result.summary?.patterns || []).length ? (
+                {!repeatedPatterns.length ? (
                   <p className="text-sm text-slate-400">No repeated pattern detected yet.</p>
                 ) : null}
               </div>
             </section>
           </aside>
         </div>
+
+        <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+          <div className="flex items-center gap-2">
+            <Clock3 className="h-5 w-5 text-emerald-300" />
+            <h2 className="font-black">Patterns Across Interviews</h2>
+          </div>
+          <p className="mt-1 text-sm text-slate-400">This uses WorkZo's local cross-session memory to show repeated strengths and weak spots.</p>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {crossSessionPatterns.map((pattern, index) => {
+              const type = splitPatternType(pattern);
+              return (
+                <div key={`${pattern}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className={`text-xs font-black uppercase tracking-[0.16em] ${type === "Strong" ? "text-emerald-300" : "text-amber-300"}`}>{type}</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">{pattern}</p>
+                </div>
+              );
+            })}
+
+            {!crossSessionPatterns.length ? (
+              <p className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-400 md:col-span-2">
+                Cross-session memory appears after multiple completed or recovered interviews.
+              </p>
+            ) : null}
+          </div>
+        </section>
 
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
           <div className="flex items-center gap-2">
@@ -310,9 +509,8 @@ export default function ResultsPage() {
             ))}
           </div>
         </section>
-        <SaveInterviewSessionCard
-          result={result}
-        />
+
+        <SaveInterviewSessionCard result={result} />
       </div>
     </main>
   );

@@ -28,7 +28,7 @@ const navItems = [
   { label: "Find Jobs", href: "/jobs", icon: Briefcase },
   { label: "Real Interview AI", href: "/interview", icon: Mic },
   { label: "Results", href: "/results", icon: BarChart3 },
-  { label: "Settings", href: "#", icon: Settings },
+  { label: "Settings", href: "/dashboard/settings", icon: Settings },
 ];
 
 const actionCards = [
@@ -84,7 +84,7 @@ const insights = [
 ];
 
 const quickLinks = [
-  { label: "Interview history", href: "/results", icon: Clock3 },
+  { label: "Interview history", href: "/history", icon: Clock3 },
   { label: "Saved cover letters", href: "/cover-letter", icon: FileText },
   { label: "Job matches", href: "/jobs", icon: Briefcase },
   { label: "Recommended roles", href: "/jobs", icon: Star },
