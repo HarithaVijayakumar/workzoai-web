@@ -130,6 +130,44 @@ function loadCandidatePatterns(): CandidatePattern[] {
   }
 }
 
+function loadPremiumUnlocked() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const flags = ["workzo_premium_unlocked", "workzoPremiumUnlocked", "workzo_pro_unlocked", "workzoProUnlocked"];
+    for (const key of flags) {
+      const value = window.localStorage.getItem(key);
+      if (value === "true" || value === "1" || value === "yes") return true;
+    }
+
+    const raw = window.localStorage.getItem("workzo_subscription") || window.localStorage.getItem("workzoSubscription");
+    if (!raw) return false;
+
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const plan = String(parsed.plan || parsed.tier || parsed.status || "").toLowerCase();
+    return /premium|pro|paid|active/.test(plan);
+  } catch {
+    return false;
+  }
+}
+
+function PremiumInsightLock({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="rounded-3xl border border-amber-300/20 bg-gradient-to-br from-amber-400/[0.12] via-white/[0.04] to-white/[0.02] p-5">
+      <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">Premium Insight</p>
+      <h3 className="mt-2 text-xl font-black">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-amber-50/80">{description}</p>
+      <button
+        type="button"
+        onClick={() => trackWorkZoAnalyticsEvent("premium_gate_clicked", { feature: title })}
+        className="mt-4 rounded-2xl border border-amber-200/25 bg-amber-300 px-4 py-2 text-sm font-black text-slate-950"
+      >
+        Unlock with Premium
+      </button>
+    </div>
+  );
+}
+
 function getWorkZoAnalyticsSessionId() {
   if (typeof window === "undefined") return "server-session";
 
@@ -254,11 +292,13 @@ function splitPatternType(pattern: string) {
 export default function ResultsPage() {
   const [result, setResult] = useState<InterviewResult | null>(null);
   const [candidatePatterns, setCandidatePatterns] = useState<CandidatePattern[]>([]);
+  const [premiumUnlocked, setPremiumUnlocked] = useState(false);
 
   useEffect(() => {
     const latest = loadLatestResult();
     setResult(latest);
     setCandidatePatterns(loadCandidatePatterns());
+    setPremiumUnlocked(loadPremiumUnlocked());
 
     trackWorkZoAnalyticsEvent("results_viewed", {
       recruiter: latest?.recruiterName || null,
@@ -415,32 +455,41 @@ export default function ResultsPage() {
               </div>
 
               <div className="mt-4 space-y-3">
-                {trustJourney.map((point, index) => {
-                  const Icon = point.direction === "down" ? TrendingDown : TrendingUp;
-                  return (
-                    <div key={`${point.time}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2">
-                          <Icon className={`h-4 w-4 ${point.direction === "down" ? "text-red-300" : point.direction === "up" ? "text-emerald-300" : "text-slate-300"}`} />
-                          <p className="text-sm font-black">{point.label}</p>
+                {premiumUnlocked ? (
+                  <>
+                    {trustJourney.map((point, index) => {
+                      const Icon = point.direction === "down" ? TrendingDown : TrendingUp;
+                      return (
+                        <div key={`${point.time}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <Icon className={`h-4 w-4 ${point.direction === "down" ? "text-red-300" : point.direction === "up" ? "text-emerald-300" : "text-slate-300"}`} />
+                              <p className="text-sm font-black">{point.label}</p>
+                            </div>
+                            <span className="text-xs text-slate-400">{point.time}</span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                            <span>Trust {point.trust}/100</span>
+                            <span>{point.delta > 0 ? "+" : ""}{point.delta}</span>
+                          </div>
+                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                            <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.max(4, Math.min(100, point.trust))}%` }} />
+                          </div>
+                          <p className="mt-2 line-clamp-2 text-xs text-slate-300">{point.note}</p>
                         </div>
-                        <span className="text-xs text-slate-400">{point.time}</span>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
-                        <span>Trust {point.trust}/100</span>
-                        <span>{point.delta > 0 ? "+" : ""}{point.delta}</span>
-                      </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-                        <div className="h-full rounded-full bg-blue-400" style={{ width: `${Math.max(4, Math.min(100, point.trust))}%` }} />
-                      </div>
-                      <p className="mt-2 line-clamp-2 text-xs text-slate-300">{point.note}</p>
-                    </div>
-                  );
-                })}
+                      );
+                    })}
 
-                {!trustJourney.length ? (
-                  <p className="text-sm text-slate-400">Trust journey will appear after scored answers.</p>
-                ) : null}
+                    {!trustJourney.length ? (
+                      <p className="text-sm text-slate-400">Trust journey will appear after scored answers.</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <PremiumInsightLock
+                    title="Trust Journey"
+                    description="See exactly where recruiter trust increased, dropped, and recovered during the interview."
+                  />
+                )}
               </div>
             </section>
 
@@ -472,23 +521,32 @@ export default function ResultsPage() {
           </div>
           <p className="mt-1 text-sm text-slate-400">This uses WorkZo's local cross-session memory to show repeated strengths and weak spots.</p>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {crossSessionPatterns.map((pattern, index) => {
-              const type = splitPatternType(pattern);
-              return (
-                <div key={`${pattern}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                  <p className={`text-xs font-black uppercase tracking-[0.16em] ${type === "Strong" ? "text-emerald-300" : "text-amber-300"}`}>{type}</p>
-                  <p className="mt-2 text-sm leading-6 text-slate-300">{pattern}</p>
-                </div>
-              );
-            })}
+          {premiumUnlocked ? (
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {crossSessionPatterns.map((pattern, index) => {
+                const type = splitPatternType(pattern);
+                return (
+                  <div key={`${pattern}-${index}`} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                    <p className={`text-xs font-black uppercase tracking-[0.16em] ${type === "Strong" ? "text-emerald-300" : "text-amber-300"}`}>{type}</p>
+                    <p className="mt-2 text-sm leading-6 text-slate-300">{pattern}</p>
+                  </div>
+                );
+              })}
 
-            {!crossSessionPatterns.length ? (
-              <p className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-400 md:col-span-2">
-                Cross-session memory appears after multiple completed or recovered interviews.
-              </p>
-            ) : null}
-          </div>
+              {!crossSessionPatterns.length ? (
+                <p className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-400 md:col-span-2">
+                  Cross-session memory appears after multiple completed or recovered interviews.
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mt-4">
+              <PremiumInsightLock
+                title="Cross-Session Memory"
+                description="Unlock repeated strengths, weak spots, and improvement patterns across interviews."
+              />
+            </div>
+          )}
         </section>
 
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-5">

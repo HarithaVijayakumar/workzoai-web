@@ -96,6 +96,8 @@ export default async function HistoryPage() {
     .limit(50);
 
   const rows = (sessions || []) as SessionRow[];
+  const displayRows = rows.slice(0, 5);
+  const hiddenPremiumCount = Math.max(0, rows.length - displayRows.length);
 
   return (
     <main className="min-h-screen bg-[#050b14] px-4 py-6 text-white sm:px-6">
@@ -156,8 +158,21 @@ export default async function HistoryPage() {
           </section>
         ) : null}
 
+        {hiddenPremiumCount > 0 ? (
+          <section className="mt-5 rounded-3xl border border-amber-300/20 bg-amber-400/[0.07] p-5 text-amber-50">
+            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">Premium History</p>
+            <h2 className="mt-2 text-2xl font-black">Unlimited interview history</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-50/80">
+              Free history shows your latest 5 interviews. Premium unlocks full session history, cross-session patterns, and long-term progress tracking.
+            </p>
+            <Link href="/pricing" className="mt-4 inline-flex rounded-2xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950">
+              View Premium
+            </Link>
+          </section>
+        ) : null}
+
         <section className="mt-5 grid gap-4">
-          {rows.map((session) => (
+          {displayRows.map((session) => (
             <article key={session.id} className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 transition hover:bg-white/[0.05]">
               <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
                 <div>
@@ -180,7 +195,7 @@ export default async function HistoryPage() {
                   <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">{getVerdictText(session)}</p>
                 </div>
 
-                <div className="grid min-w-full grid-cols-3 gap-3 sm:min-w-[360px]">
+                <div className="grid w-full grid-cols-3 gap-3 sm:min-w-[360px] lg:w-auto">
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
                     <p className="text-xs text-slate-500">Overall</p>
                     <p className={`mt-1 text-2xl font-black ${scoreTone(session.overall_score)}`}>{session.overall_score ?? "—"}</p>

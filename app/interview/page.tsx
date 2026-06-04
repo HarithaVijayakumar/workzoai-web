@@ -228,6 +228,15 @@ const recruiterQuestions = [
   "What would you improve if you handled the same situation again?",
 ];
 
+
+function getVisibleTranscriptItems(transcript: TranscriptItem[]) {
+  return transcript.filter((item) => {
+    if (!item || typeof item.text !== "string") return false;
+    return item.text.trim().length > 0;
+  });
+}
+
+
 function formatTranscriptTime(date: Date) {
   return date.toLocaleTimeString([], {
     hour: "2-digit",
@@ -309,6 +318,62 @@ function readJsonFromStorage(key: string) {
     return null;
   }
 }
+
+
+function findFirstStringDeep(source: unknown, keys: string[], depth = 0): string {
+  if (!source || typeof source !== "object" || depth > 5) return "";
+  const record = source as Record<string, unknown>;
+
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  for (const value of Object.values(record)) {
+    if (value && typeof value === "object") {
+      const found = findFirstStringDeep(value, keys, depth + 1);
+      if (found) return found;
+    }
+  }
+
+  return "";
+}
+
+function resolvePersistedInterviewLanguage(state: unknown) {
+  const direct = findFirstStringDeep(state, [
+    "language",
+    "interviewLanguage",
+    "selectedLanguage",
+    "interview_language",
+    "preferredLanguage",
+    "voiceLanguage",
+  ]);
+
+  if (direct) return direct;
+
+  const market = findFirstStringDeep(state, [
+    "market",
+    "targetMarket",
+    "country",
+    "targetCountry",
+    "interviewMarket",
+  ]).toLowerCase();
+
+  if (market.includes("germany") || market.includes("deutschland")) return "German";
+  if (market.includes("netherlands") || market.includes("dutch") || market.includes("nederland")) return "Dutch";
+  if (market.includes("france")) return "French";
+  if (market.includes("spain")) return "Spanish";
+  if (market.includes("italy")) return "Italian";
+  if (market.includes("portugal")) return "Portuguese";
+
+  return "English";
+}
+
+function normalizeStoredLanguageForRuntime(value: string) {
+  const language = normalizeInterviewLanguage(value);
+  return language.label === "Auto" ? "English" : language.label;
+}
+
 
 function findSetupFromLocalStorage() {
   if (typeof window === "undefined") return null;
@@ -482,8 +547,9 @@ function buildSetupFromStorage(): InterviewSetup {
       "recruiter.avatar",
     ]) || profile.image;
 
-  const language =
-    getNestedValue(state, ["language", "setup.language", "interviewLanguage"]) || "en-US";
+  const language = normalizeStoredLanguageForRuntime(
+    resolvePersistedInterviewLanguage(state),
+  );
 
   return {
     candidateName,
@@ -617,6 +683,37 @@ function safeLocalStorageList(key: string) {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [] as Array<Record<string, unknown>>;
+  }
+}
+
+function isWorkZoPremiumUnlocked() {
+  if (typeof window === "undefined") return false;
+
+  try {
+    const directFlags = [
+      "workzo_premium_unlocked",
+      "workzoPremiumUnlocked",
+      "workzo_pro_unlocked",
+      "workzoProUnlocked",
+    ];
+
+    for (const key of directFlags) {
+      const value = window.localStorage.getItem(key);
+      if (value === "true" || value === "1" || value === "yes") return true;
+    }
+
+    const rawSubscription =
+      window.localStorage.getItem("workzo_subscription") ||
+      window.localStorage.getItem("workzoSubscription") ||
+      window.localStorage.getItem("subscription");
+
+    if (!rawSubscription) return false;
+
+    const subscription = JSON.parse(rawSubscription) as Record<string, unknown>;
+    const plan = String(subscription.plan || subscription.tier || subscription.status || "").toLowerCase();
+    return /premium|pro|paid|active/.test(plan);
+  } catch {
+    return false;
   }
 }
 
@@ -918,27 +1015,7 @@ function getAvailableVoices(): Promise<SpeechSynthesisVoice[]> {
 }
 
 function preferredVoiceForRecruiter(voices: SpeechSynthesisVoice[], setup: InterviewSetup) {
-  const wantsMale = recruiterLooksMale(setup);
-  const englishVoices = voices.filter((voice) => voice.lang?.toLowerCase().startsWith("en"));
-
-  const femaleNames = /aria|jenny|samantha|zira|susan|victoria|karen|moira|tessa|female/i;
-  const maleNames = /david|mark|guy|george|daniel|alex|fred|tom|male/i;
-
-  if (wantsMale) {
-    return (
-      englishVoices.find((voice) => maleNames.test(voice.name)) ||
-      englishVoices.find((voice) => !femaleNames.test(voice.name)) ||
-      englishVoices[0] ||
-      voices[0]
-    );
-  }
-
-  return (
-    englishVoices.find((voice) => femaleNames.test(voice.name)) ||
-    englishVoices.find((voice) => !maleNames.test(voice.name)) ||
-    englishVoices[0] ||
-    voices[0]
-  );
+  return getFallbackVoiceForLanguage(voices, setup);
 }
 
 function extractYearsClaim(answer: string) {
@@ -1159,6 +1236,59 @@ function buildUnsupportedClaimChallenge(answer: string, setup: InterviewSetup) {
   }
 
   return `I need to pause there. ${reason} Before we continue, can you clarify whether this was official employment, freelance work, volunteer experience, transferable experience, or just an example scenario? I want to evaluate only experience that can be supported.`;
+}
+
+
+
+function enforceRuntimeLanguageForReply(setup: InterviewSetup, reply: string) {
+  const language = normalizeInterviewLanguage(setup.language);
+  const text = safeText(reply);
+  if (!text || language.code === "en-US") return text;
+
+  if (language.code === "de-DE") {
+    if (/^Yes, I can hear you/i.test(text)) return "Ja, ich kann dich hören. Lass uns richtig beginnen. Gib mir bitte einen kurzen Überblick über deinen Hintergrund und warum diese Rolle für dich relevant ist.";
+    if (/I’m following you, but I need more detail/i.test(text)) return "Ich folge dir, aber ich brauche mehr Details, bevor ich die Passung beurteilen kann. Gib mir eine konkrete Situation, was du persönlich getan hast und was sich danach verändert hat.";
+    if (/The answer still sounds team-level/i.test(text)) return "Die Antwort klingt noch zu sehr nach Teamleistung. Was genau hast du persönlich entschieden, gebaut, gelöst oder verantwortet?";
+    if (/measurable impact|Now add measurable/i.test(text)) return "Die Geschichte ist klar. Jetzt brauche ich messbare Wirkung. Was hat sich nach deiner Arbeit verändert — Zeitersparnis, weniger Fehler, bessere Qualität, Kundenzufriedenheit oder ein Geschäftsergebnis?";
+    if (/I need to pause there/i.test(text)) return "Ich muss hier kurz stoppen. Diese Aussage kann ich aus deinem CV nicht klar verifizieren. Kannst du erklären, ob das offizielle Berufserfahrung, freiberufliche Arbeit, freiwillige Erfahrung, übertragbare Erfahrung oder nur ein Beispielszenario war?";
+  }
+
+  if (language.code === "nl-NL") {
+    if (/^Yes, I can hear you/i.test(text)) return "Ja, ik kan je horen. Laten we goed beginnen. Geef me kort een overzicht van je achtergrond en waarom deze rol relevant voor je is.";
+    if (/I’m following you, but I need more detail/i.test(text)) return "Ik volg je, maar ik heb meer details nodig voordat ik de fit kan beoordelen. Geef één concrete situatie, wat jij persoonlijk deed en wat er daarna veranderde.";
+    if (/The answer still sounds team-level/i.test(text)) return "Het antwoord klinkt nog te veel als teamniveau. Wat heb jij persoonlijk besloten, gebouwd, opgelost of geleverd?";
+    if (/measurable impact|Now add measurable/i.test(text)) return "Het verhaal is duidelijk. Nu wil ik meetbare impact. Wat veranderde er na jouw werk — tijdwinst, minder fouten, betere kwaliteit, klanttevredenheid of een bedrijfsresultaat?";
+  }
+
+  if (language.code === "fr-FR") {
+    if (/^Yes, I can hear you/i.test(text)) return "Oui, je t’entends. Commençons correctement. Présente brièvement ton parcours et explique pourquoi ce poste est pertinent pour toi.";
+    if (/I’m following you, but I need more detail/i.test(text)) return "Je te suis, mais j’ai besoin de plus de détails pour évaluer la pertinence. Donne-moi une situation concrète, ce que tu as fait personnellement et ce qui a changé ensuite.";
+    if (/The answer still sounds team-level/i.test(text)) return "La réponse semble encore trop collective. Qu’as-tu personnellement décidé, construit, résolu ou livré ?";
+    if (/measurable impact|Now add measurable/i.test(text)) return "L’histoire est claire. Maintenant, ajoute un impact mesurable. Qu’est-ce qui a changé après ton travail ?";
+  }
+
+  if (language.code === "es-ES") {
+    if (/^Yes, I can hear you/i.test(text)) return "Sí, puedo escucharte. Empecemos bien. Dame un breve resumen de tu trayectoria y por qué este puesto es relevante para ti.";
+    if (/I’m following you, but I need more detail/i.test(text)) return "Te sigo, pero necesito más detalle para evaluar el encaje. Dame una situación concreta, lo que hiciste personalmente y qué cambió después.";
+    if (/The answer still sounds team-level/i.test(text)) return "La respuesta todavía suena demasiado a trabajo de equipo. ¿Qué decidiste, construiste, resolviste o entregaste tú personalmente?";
+    if (/measurable impact|Now add measurable/i.test(text)) return "La historia está clara. Ahora añade impacto medible. ¿Qué cambió después de tu trabajo?";
+  }
+
+  if (language.code === "it-IT") {
+    if (/^Yes, I can hear you/i.test(text)) return "Sì, ti sento. Iniziamo bene. Raccontami brevemente il tuo percorso e perché questo ruolo è rilevante per te.";
+    if (/I’m following you, but I need more detail/i.test(text)) return "Ti seguo, ma ho bisogno di più dettagli per valutare l’idoneità. Dammi una situazione concreta, cosa hai fatto personalmente e cosa è cambiato dopo.";
+    if (/The answer still sounds team-level/i.test(text)) return "La risposta sembra ancora troppo a livello di team. Cosa hai deciso, costruito, risolto o consegnato personalmente?";
+    if (/measurable impact|Now add measurable/i.test(text)) return "La storia è chiara. Ora aggiungi un impatto misurabile. Cosa è cambiato dopo il tuo lavoro?";
+  }
+
+  if (language.code === "pt-PT") {
+    if (/^Yes, I can hear you/i.test(text)) return "Sim, consigo ouvir-te. Vamos começar corretamente. Dá-me um breve resumo do teu percurso e explica porque esta função é relevante para ti.";
+    if (/I’m following you, but I need more detail/i.test(text)) return "Estou a acompanhar, mas preciso de mais detalhes antes de avaliar o encaixe. Dá-me uma situação concreta, o que fizeste pessoalmente e o que mudou depois.";
+    if (/The answer still sounds team-level/i.test(text)) return "A resposta ainda soa demasiado ao nível da equipa. O que decidiste, construíste, resolveste ou entregaste pessoalmente?";
+    if (/measurable impact|Now add measurable/i.test(text)) return "A história está clara. Agora adiciona impacto mensurável. O que mudou depois do teu trabalho?";
+  }
+
+  return text;
 }
 
 
@@ -1418,6 +1548,259 @@ function companyStyleInstructions(style: CompanyInterviewStyle) {
   return "Company style: Global realistic interview. Adapt questions to the role, country, company, and job description when available.";
 }
 
+function normalizeInterviewLanguage(value?: string) {
+  const raw = safeText(value, "English").trim().toLowerCase();
+
+  const matches = (...items: string[]) =>
+    items.some((item) => raw === item || raw.includes(item));
+
+  if (matches("german", "deutsch", "de-de", "deutschland", "germany") || raw === "de") {
+    return { code: "de-DE", label: "German", instruction: "Conduct the entire interview in German." };
+  }
+
+  if (matches("dutch", "nederlands", "nl-nl", "netherlands", "nederland") || raw === "nl") {
+    return { code: "nl-NL", label: "Dutch", instruction: "Conduct the entire interview in Dutch." };
+  }
+
+  if (matches("french", "français", "francais", "fr-fr", "france") || raw === "fr") {
+    return { code: "fr-FR", label: "French", instruction: "Conduct the entire interview in French." };
+  }
+
+  if (matches("spanish", "español", "espanol", "es-es", "spain") || raw === "es") {
+    return { code: "es-ES", label: "Spanish", instruction: "Conduct the entire interview in Spanish." };
+  }
+
+  if (matches("italian", "italiano", "it-it", "italy") || raw === "it") {
+    return { code: "it-IT", label: "Italian", instruction: "Conduct the entire interview in Italian." };
+  }
+
+  if (matches("portuguese", "português", "portugues", "pt-pt", "pt-br", "portugal", "brazil") || raw === "pt") {
+    return {
+      code: raw.includes("brazil") || raw === "pt-br" ? "pt-BR" : "pt-PT",
+      label: "Portuguese",
+      instruction: "Conduct the entire interview in Portuguese.",
+    };
+  }
+
+  return { code: "en-US", label: "English", instruction: "Conduct the interview in English." };
+}
+
+
+function getSpeechRecognitionLang(setup: InterviewSetup) {
+  return normalizeInterviewLanguage(setup.language).code;
+}
+
+function getSpeechSynthesisLang(setup: InterviewSetup) {
+  return normalizeInterviewLanguage(setup.language).code;
+}
+
+function getFallbackVoiceForLanguage(voices: SpeechSynthesisVoice[], setup: InterviewSetup) {
+  const language = normalizeInterviewLanguage(setup.language);
+  const wantsMale = recruiterLooksMale(setup);
+  const languageVoices = voices.filter((voice) =>
+    voice.lang?.toLowerCase().startsWith(language.code.split("-")[0].toLowerCase()),
+  );
+
+  const preferredPool = languageVoices.length ? languageVoices : voices;
+  const femaleNames = /aria|jenny|samantha|zira|susan|victoria|karen|moira|tessa|female|helena|hortense|lucie|paulina|sabina/i;
+  const maleNames = /david|mark|guy|george|daniel|alex|fred|tom|male|thomas|paul|jorge|luciano/i;
+
+  if (wantsMale) {
+    return (
+      preferredPool.find((voice) => maleNames.test(voice.name)) ||
+      preferredPool.find((voice) => !femaleNames.test(voice.name)) ||
+      preferredPool[0] ||
+      voices[0]
+    );
+  }
+
+  return (
+    preferredPool.find((voice) => femaleNames.test(voice.name)) ||
+    preferredPool.find((voice) => !maleNames.test(voice.name)) ||
+    preferredPool[0] ||
+    voices[0]
+  );
+}
+
+function enforceSelectedLanguagePrefix(setup: InterviewSetup) {
+  const language = normalizeInterviewLanguage(setup.language);
+  return [
+    `INTERVIEW LANGUAGE: ${language.label}.`,
+    language.instruction,
+    "This instruction is mandatory for recruiter questions, follow-ups, fallback TTS, and visible transcript.",
+    "Do not default to English unless the selected language is English or the candidate explicitly asks to switch.",
+  ].join(" ");
+}
+
+
+
+function buildLanguageInstruction(setup: InterviewSetup) {
+  const language = normalizeInterviewLanguage(setup.language);
+  return [
+    `MANDATORY INTERVIEW LANGUAGE: ${language.label}.`,
+    language.instruction,
+    "All recruiter questions, follow-ups, transcript messages, browser TTS replies, and Vapi replies must use this selected language.",
+    "Do not default to English unless the selected language is English or the candidate explicitly asks to switch.",
+  ].join(" ");
+}
+
+function localizedOpeningQuestion(setup: InterviewSetup) {
+  const language = normalizeInterviewLanguage(setup.language);
+  const name = safeGreetingName(normalizeCandidateName(setup.candidateName) || "Candidate");
+  const role = setup.targetRole || "this role";
+
+  if (language.code === "de-DE") {
+    return `Hallo ${name}. Beginnen wir mit deinem Interview für die Rolle ${role}. Kannst du mir kurz deinen Hintergrund erklären und warum diese Rolle für dich relevant ist?`;
+  }
+
+  if (language.code === "nl-NL") {
+    return `Hallo ${name}. Laten we beginnen met je interview voor de rol ${role}. Kun je kort je achtergrond toelichten en uitleggen waarom deze rol relevant voor je is?`;
+  }
+
+  if (language.code === "fr-FR") {
+    return `Bonjour ${name}. Commençons ton entretien pour le poste ${role}. Peux-tu me présenter brièvement ton parcours et expliquer pourquoi ce poste est pertinent pour toi ?`;
+  }
+
+  if (language.code === "es-ES") {
+    return `Hola ${name}. Empecemos tu entrevista para el puesto ${role}. ¿Puedes resumir tu trayectoria y explicar por qué este puesto es relevante para ti?`;
+  }
+
+  if (language.code === "it-IT") {
+    return `Ciao ${name}. Iniziamo il colloquio per il ruolo ${role}. Puoi raccontarmi brevemente il tuo percorso e spiegare perché questo ruolo è rilevante per te?`;
+  }
+
+  if (language.code === "pt-BR") {
+    return `Olá ${name}. Vamos começar sua entrevista para a função ${role}. Você pode resumir sua trajetória e explicar por que essa função é relevante para você?`;
+  }
+
+  if (language.code === "pt-PT") {
+    return `Olá ${name}. Vamos começar a tua entrevista para a função ${role}. Podes resumir o teu percurso e explicar porque esta função é relevante para ti?`;
+  }
+
+  return `Hi ${name}. Let’s begin your interview for the ${role} role. Can you walk me through your background and what makes you interested in this role?`;
+}
+
+function buildContextQualityNotice(setup: InterviewSetup) {
+  const hasCv = Boolean(safeText(setup.cvText));
+  const hasJd = Boolean(safeText(setup.jobDescription));
+
+  if (hasCv && hasJd) return "CV and job description are available. Use both as verified context.";
+  if (hasCv) return "CV context is available, but the job description is missing or incomplete. Ask role-relevant follow-ups, but do not invent JD requirements.";
+  if (hasJd) return "Job description is available, but CV context is missing or incomplete. Ask the candidate to verify their background before assuming experience.";
+  return "CV and job description context are missing or incomplete. Keep the interview useful, but clearly ask the candidate to provide missing context when needed.";
+}
+
+function uniqueLimited(values: string[], limit = 8) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean))).slice(0, limit);
+}
+
+function extractCapitalizedPhrases(text: string) {
+  const matches = text.match(/\b[A-Z][A-Za-z0-9&.+#'/-]*(?:\s+[A-Z][A-Za-z0-9&.+#'/-]*){0,4}\b/g) || [];
+  return uniqueLimited(
+    matches.filter((item) =>
+      item.length >= 3 &&
+      !/^(The|And|For|From|With|This|That|WorkZo|AI|CV|JD|Resume)$/i.test(item),
+    ),
+    10,
+  );
+}
+
+function extractCvFactMemory(setup: InterviewSetup) {
+  const cv = safeText(setup.cvText);
+  const evidence = normalizedEvidenceText(setup);
+  const companies = uniqueLimited(extractCompanyClaims(cv), 8);
+  const roles = uniqueLimited(extractRoleClaims(cv), 8);
+  const namedPhrases = extractCapitalizedPhrases(cv).filter((item) => !companies.includes(item) && !roles.includes(item)).slice(0, 8);
+  const years = Array.from(new Set((cv.match(/\b\d{1,2}\s*\+?\s*(?:years?|yrs?)\b/gi) || []).map((item) => item.trim()))).slice(0, 6);
+  const metrics = extractMetricSnippets(cv).slice(0, 8);
+  const skills = uniqueLimited(
+    [
+      "sql", "python", "excel", "power bi", "tableau", "crm", "salesforce", "zendesk", "freshdesk", "jira", "customer support", "technical support", "data analysis", "stakeholder management", "project management", "api", "saas",
+    ].filter((skill) => evidence.includes(skill)),
+    14,
+  );
+
+  return { companies, roles, namedPhrases, years, metrics, skills, hasCv: Boolean(cv) };
+}
+
+function extractJdFactMemory(setup: InterviewSetup) {
+  const jd = safeText(setup.jobDescription);
+  const lower = jd.toLowerCase();
+  const requiredSignals = uniqueLimited(
+    [
+      "communication", "stakeholder", "customer", "sales", "support", "crm", "sql", "python", "excel", "analytics", "reporting", "leadership", "ownership", "collaboration", "problem solving", "project management", "agile", "api", "saas", "documentation", "english", "german", "dutch",
+    ].filter((skill) => lower.includes(skill)),
+    14,
+  );
+  const responsibilities = uniqueLimited(
+    jd
+      .split(/[\n.;]/)
+      .map((line) => line.trim())
+      .filter((line) => line.length >= 24 && line.length <= 150)
+      .filter((line) => /responsib|manage|support|analy|build|create|lead|communicat|collaborat|improv|deliver|customer|stakeholder/i.test(line)),
+    6,
+  );
+
+  return { requiredSignals, responsibilities, hasJd: Boolean(jd) };
+}
+
+function buildFactualMemoryBrief(setup: InterviewSetup) {
+  const cvFacts = extractCvFactMemory(setup);
+  const jdFacts = extractJdFactMemory(setup);
+
+  return [
+    buildContextQualityNotice(setup),
+    cvFacts.companies.length ? `CV companies: ${cvFacts.companies.join(", ")}.` : "CV companies: none clearly extracted.",
+    cvFacts.roles.length ? `CV roles: ${cvFacts.roles.join(", ")}.` : "CV roles: none clearly extracted.",
+    cvFacts.skills.length ? `CV skills/signals: ${cvFacts.skills.join(", ")}.` : "CV skills/signals: none clearly extracted.",
+    cvFacts.metrics.length ? `CV metrics/results: ${cvFacts.metrics.join(", ")}.` : "CV metrics/results: none clearly extracted.",
+    jdFacts.requiredSignals.length ? `JD requirements/signals: ${jdFacts.requiredSignals.join(", ")}.` : "JD requirements/signals: none clearly extracted.",
+    jdFacts.responsibilities.length ? `JD responsibilities: ${jdFacts.responsibilities.slice(0, 3).join(" | ")}.` : "JD responsibilities: none clearly extracted.",
+  ].join("\n");
+}
+
+function buildFactAwareFollowUp(setup: InterviewSetup, memory: RecruiterMemoryState) {
+  const cvFacts = extractCvFactMemory(setup);
+  const jdFacts = extractJdFactMemory(setup);
+  const company = cvFacts.companies.find((item) => !wasTopicCovered(memory, `cv_company_${normalizeClaimText(item)}`));
+  const skill = jdFacts.requiredSignals.find((item) => !wasTopicCovered(memory, `jd_skill_${normalizeClaimText(item)}`));
+  const role = cvFacts.roles.find((item) => !wasTopicCovered(memory, `cv_role_${normalizeClaimText(item)}`));
+
+  if (company && skill) {
+    return `Your CV mentions ${company}, and the job description appears to value ${skill}. Give me one verified example from ${company} that shows ${skill}, including your action and result.`;
+  }
+
+  if (company) {
+    return `Your CV mentions ${company}. Tell me about one specific responsibility or project there, what you personally did, and what changed after your work.`;
+  }
+
+  if (skill) {
+    return `The job description appears to value ${skill}. Give me one real example that proves you can handle that requirement.`;
+  }
+
+  if (role) {
+    return `Your CV shows experience as ${role}. What was one situation in that role where your personal ownership made a measurable difference?`;
+  }
+
+  if (!cvFacts.hasCv || !jdFacts.hasJd) {
+    return "Some CV or job context seems incomplete. Before I judge fit, give me one verified example from your real experience that is directly relevant to this role.";
+  }
+
+  return "";
+}
+
+function detectNextFactTopic(setup: InterviewSetup, memory: RecruiterMemoryState) {
+  const cvFacts = extractCvFactMemory(setup);
+  const jdFacts = extractJdFactMemory(setup);
+  const company = cvFacts.companies.find((item) => !wasTopicCovered(memory, `cv_company_${normalizeClaimText(item)}`));
+  if (company) return `cv_company_${normalizeClaimText(company)}`;
+  const skill = jdFacts.requiredSignals.find((item) => !wasTopicCovered(memory, `jd_skill_${normalizeClaimText(item)}`));
+  if (skill) return `jd_skill_${normalizeClaimText(skill)}`;
+  const role = cvFacts.roles.find((item) => !wasTopicCovered(memory, `cv_role_${normalizeClaimText(item)}`));
+  if (role) return `cv_role_${normalizeClaimText(role)}`;
+  return "";
+}
+
 
 function detectAnswerTopics(answer: string) {
   const topics = new Set<string>();
@@ -1645,6 +2028,12 @@ function buildMemoryAwareFollowUp(
 
   if (style === "Corporate" && !wasTopicCovered(memory, "structured_process")) {
     return "Walk me through the process you followed. How did you keep the work reliable, documented, and aligned with others?";
+  }
+
+  const factTopic = detectNextFactTopic(setup, memory);
+  const factAwareQuestion = buildFactAwareFollowUp(setup, memory);
+  if (factAwareQuestion && factTopic && !wasTopicCovered(memory, factTopic)) {
+    return factAwareQuestion;
   }
 
   const next = topicPlan.find((item) => !wasTopicCovered(memory, item.topic));
@@ -1900,6 +2289,38 @@ export default function InterviewPage() {
   const [recoverySnapshot, setRecoverySnapshot] = useState<WorkZoInterviewSnapshot | null>(null);
   const [recoveryNoticeDismissed, setRecoveryNoticeDismissed] = useState(false);
   const [recoveredSessionReady, setRecoveredSessionReady] = useState(false);
+  const [premiumUnlocked, setPremiumUnlocked] = useState(false);
+
+  useEffect(() => {
+    setPremiumUnlocked(isWorkZoPremiumUnlocked());
+  }, []);
+
+  const handlePremiumGateClick = useCallback((feature: string) => {
+    trackWorkZoInterviewEvent("premium_gate_clicked", {
+      feature,
+      role: setup.targetRole,
+      recruiter: setup.recruiterName,
+    });
+  }, [setup.recruiterName, setup.targetRole]);
+
+  const applyRecruiterFromSettings = useCallback((recruiterId: string) => {
+    const profile = recruiterProfiles[recruiterId] || recruiterProfiles.friendly_hr;
+
+    setSetup((previous) => ({
+      ...previous,
+      recruiterId,
+      recruiterName: profile.name,
+      recruiterTitle: profile.title,
+      recruiterImage: profile.image,
+    }));
+
+    trackWorkZoInterviewEvent("interview_recruiter_changed", {
+      recruiter: profile.name,
+      role: setup.targetRole,
+      premium: recruiterId === "startup_recruiter" || recruiterId === "german_corporate",
+    });
+  }, [setup.targetRole]);
+
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const listeningRef = useRef(false);
@@ -1929,7 +2350,7 @@ export default function InterviewPage() {
   const lastUserTranscriptRef = useRef('');
 
   const hasStartedInterview = transcript.some((item) => item.role === "recruiter");
-  const visibleTranscriptItems = transcript.filter((item) => !(item.role === "system" && item.id === "initial-ready"));
+  const visibleTranscriptItems = getVisibleTranscriptItems(transcript).filter((item) => !(item.role === "system" && item.id === "initial-ready"));
   const transcriptMessageCount = visibleTranscriptItems.filter((item) => item.role !== "system").length + (interimText ? 1 : 0);
   const visibleQuestionNumber = hasStartedInterview ? Math.max(1, Math.min(questionIndex, 12)) : 0;
   const progress = hasStartedInterview ? Math.round((visibleQuestionNumber / 12) * 100) : 0;
@@ -2153,7 +2574,7 @@ export default function InterviewPage() {
     const recognition = new Recognition();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = setupRef.current.language || "en-US";
+    recognition.lang = getSpeechRecognitionLang(setupRef.current);
 
     recognition.onstart = () => {
       listeningRef.current = true;
@@ -2212,7 +2633,7 @@ export default function InterviewPage() {
 
       setStatus("thinking");
 
-      const reply = buildRecruiterReply(answer, questionIndexRef.current, setupRef.current, recruiterMemoryRef.current);
+      const reply = enforceRuntimeLanguageForReply(setupRef.current, buildRecruiterReply(answer, questionIndexRef.current, setupRef.current, recruiterMemoryRef.current));
 
       window.setTimeout(() => {
         if (stopRequestedRef.current) return;
@@ -2272,7 +2693,7 @@ export default function InterviewPage() {
 
         utterance.rate = wantsMale ? Math.max(0.70, voiceSpeed - 0.08) : Math.max(0.72, voiceSpeed - 0.04);
         utterance.pitch = wantsMale ? 0.86 : 1.08;
-        utterance.lang = activeSetup.language || "en-US";
+        utterance.lang = normalizeInterviewLanguage(activeSetup.language).code || "en-US";
 
         const preferred = preferredVoiceForRecruiter(voices, activeSetup);
         if (preferred) utterance.voice = preferred;
@@ -2375,9 +2796,7 @@ export default function InterviewPage() {
 
       window.setTimeout(() => {
         setQuestionIndex(1);
-        speakRecruiter(
-          `Hi ${safeGreetingName(activeSetup.candidateName)}. Let’s begin your interview for the ${activeSetup.targetRole} role. ${recruiterQuestions[0]}`,
-        );
+        speakRecruiter(localizedOpeningQuestion(activeSetup));
       }, 120);
     },
     [speakRecruiter],
@@ -2428,10 +2847,14 @@ export default function InterviewPage() {
 
         const releaseToFallback = (error: unknown) => {
           if (stopRequestedRef.current) return;
-          console.error("WORKZO VAPI FALLBACK TRIGGERED", error);
+          console.error("WORKZO VAPI CONNECTION FAILED", error);
           classifyVoiceError(error);
+          trackWorkZoErrorEvent("vapi_connection_failed", error, {
+            role: activeSetup.targetRole,
+            recruiter: activeSetup.recruiterName,
+          }, "high");
           setPremiumVoiceStatus("failed");
-          setPremiumVoiceError("Premium voice could not connect. Check the console for WORKZO VAPI details.");
+          setPremiumVoiceError("Premium voice could not connect. You can retry voice or continue with the text interview.");
           stopPremiumVoice();
         };
 
@@ -2539,7 +2962,7 @@ export default function InterviewPage() {
         });
 
         const variableValues = buildWorkZoVapiVariableValues({
-          workzoStrictGrounding: "You are WorkZo AI's realistic recruiter. Treat the CV/resume and job description as the only verified facts. Never accept unsupported claims as true. Before any positive follow-up, check whether the candidate's claim is supported by the CV/JD. If the candidate claims a company, role, title, years of experience, certification, degree, achievement, or metric that is not visible in the CV/JD, challenge it immediately and politely. Use this exact style: 'I need to pause there. I cannot verify that from your CV. Can you clarify whether this was official employment, freelance work, volunteer experience, transferable experience, or just an example scenario?' Example: if CV does not mention Tesla or 15 years and candidate says 'I have fifteen years of experience at Tesla', do not say thanks or ask achievements. Challenge the mismatch first. Do not validate fake or exaggerated inputs. Ask one concise follow-up at a time. Prioritize evidence, ownership, STAR structure, metrics, and role relevance. Before ending, ask one final closing challenge: why should we choose you over another candidate using one verified result. Do not end abruptly. Do not invent farewell names or phrases. End only with: 'Thank you for your time, {candidateName}. We will be in touch soon. Have a great day.'",
+          workzoStrictGrounding: `${buildLanguageInstruction(activeSetup)} ${buildContextQualityNotice(activeSetup)} Use the factual memory brief to ask CV/JD-specific follow-ups. You are WorkZo AI's realistic recruiter. Treat the CV/resume and job description as the only verified facts. Never accept unsupported claims as true. Before any positive follow-up, check whether the candidate's claim is supported by the CV/JD. If the candidate claims a company, role, title, years of experience, certification, degree, achievement, or metric that is not visible in the CV/JD, challenge it immediately and politely. Use this exact style: 'I need to pause there. I cannot verify that from your CV. Can you clarify whether this was official employment, freelance work, volunteer experience, transferable experience, or just an example scenario?' Example: if CV does not mention Tesla or 15 years and candidate says 'I have fifteen years of experience at Tesla', do not say thanks or ask achievements. Challenge the mismatch first. Do not validate fake or exaggerated inputs. Ask one concise follow-up at a time. Prioritize evidence, ownership, STAR structure, metrics, and role relevance. Before ending, ask one final closing challenge: why should we choose you over another candidate using one verified result. Do not end abruptly. Do not invent farewell names or phrases. End only with: 'Thank you for your time, {candidateName}. We will be in touch soon. Have a great day.'`,
           strictGroundingRules: "You are WorkZo AI's realistic recruiter. Treat the CV/resume and job description as the only verified facts. Never accept unsupported claims as true. Before any positive follow-up, check whether the candidate's claim is supported by the CV/JD. If the candidate claims a company, role, title, years of experience, certification, degree, achievement, or metric that is not visible in the CV/JD, challenge it immediately and politely. Use this exact style: 'I need to pause there. I cannot verify that from your CV. Can you clarify whether this was official employment, freelance work, volunteer experience, transferable experience, or just an example scenario?' Example: if CV does not mention Tesla or 15 years and candidate says 'I have fifteen years of experience at Tesla', do not say thanks or ask achievements. Challenge the mismatch first. Do not validate fake or exaggerated inputs. Ask one concise follow-up at a time. Prioritize evidence, ownership, STAR structure, metrics, and role relevance.",
           recruiterMustChallengeUnsupportedClaims: "true",
           antiHallucinationMode: "strict",
@@ -2552,15 +2975,57 @@ export default function InterviewPage() {
           companyName: activeSetup.targetCompany || "the company",
           recruiterPersonality: recruiterPersonalityInstructions(activeSetup),
           companyStyleInstructions: companyStyleInstructions(detectCompanyInterviewStyle(activeSetup)),
-          cvText: activeSetup.cvText || "",
-          jobDescription: activeSetup.jobDescription || "",
+          cvText: [
+            enforceSelectedLanguagePrefix(activeSetup),
+            buildFactualMemoryBrief(activeSetup),
+            "CV fact memory:",
+            JSON.stringify(extractCvFactMemory(activeSetup)),
+            "",
+            "Raw CV/resume context:",
+            activeSetup.cvText || "",
+          ].join("\n"),
+          jobDescription: [
+            enforceSelectedLanguagePrefix(activeSetup),
+            buildContextQualityNotice(activeSetup),
+            buildLanguageInstruction(activeSetup),
+            "JD fact memory:",
+            JSON.stringify(extractJdFactMemory(activeSetup)),
+            "",
+            "Raw job description context:",
+            activeSetup.jobDescription || "",
+          ].join("\n"),
         });
 
         vapiTimeoutRef.current = window.setTimeout(() => {
-          if (!vapiConnectedRef.current) {
-            releaseToFallback(new Error("Vapi connection timeout"));
+          if (!vapiConnectedRef.current && !stopRequestedRef.current) {
+            console.warn("WORKZO VAPI STILL CONNECTING", {
+              role: activeSetup.targetRole,
+              recruiter: activeSetup.recruiterName,
+            });
+            trackWorkZoFailureEvent("vapi_connection_slow", {
+              role: activeSetup.targetRole,
+              recruiter: activeSetup.recruiterName,
+            }, "medium");
+            setPremiumVoiceStatus("connecting");
+            setPremiumVoiceError("Voice is still connecting. You can wait, retry voice, or continue without voice.");
+
+            window.setTimeout(() => {
+              if (!vapiConnectedRef.current && !stopRequestedRef.current) {
+                console.warn("WORKZO VAPI CONNECTION TIMEOUT", {
+                  role: activeSetup.targetRole,
+                  recruiter: activeSetup.recruiterName,
+                });
+                trackWorkZoFailureEvent("vapi_connection_timeout", {
+                  role: activeSetup.targetRole,
+                  recruiter: activeSetup.recruiterName,
+                }, "high");
+                setPremiumVoiceStatus("failed");
+                setPremiumVoiceError("Voice connection is taking too long. Retry voice or continue with the text interview.");
+                stopPremiumVoice();
+              }
+            }, 18000);
           }
-        }, 9000);
+        }, 12000);
 
         await client.start(config.assistantId, {
           variableValues,
@@ -2704,6 +3169,8 @@ export default function InterviewPage() {
       recruiter: freshSetup.recruiterName,
       company: freshSetup.targetCompany || "",
       premiumVoiceEnabled: premiumVoiceEnabledRef.current,
+      hasCvContext: Boolean(freshSetup.cvText),
+      hasJobDescription: Boolean(freshSetup.jobDescription),
     });
 
     setElapsed(0);
@@ -3101,42 +3568,97 @@ export default function InterviewPage() {
 
                     <div className="space-y-3">
                       <section>
-                        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Recruiter</p>
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Recruiter</p>
+                          {!premiumUnlocked ? (
+                            <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-2 py-0.5 text-[10px] font-black text-amber-200">Premium available</span>
+                          ) : null}
+                        </div>
                         <div className="grid grid-cols-2 gap-2">
-                          {["Sarah", "Priya", "Daniel", "Markus"].map((name) => (
-                            <button
-                              key={name}
-                              type="button"
-                              className={`rounded-xl border px-3 py-1.5 text-left text-sm font-bold ${
-                                setup.recruiterName === name
-                                  ? "border-blue-400/60 bg-blue-500/15 text-white"
-                                  : "border-white/10 bg-white/[0.03] text-slate-300"
-                              }`}
-                            >
-                              {name}
-                            </button>
-                          ))}
+                          {([
+                            { id: "friendly_hr", name: "Sarah", label: "Friendly HR", premium: false },
+                            { id: "analytical_hiring_manager", name: "Daniel", label: "Analytical", premium: false },
+                            { id: "startup_recruiter", name: "Priya", label: "Startup", premium: true },
+                            { id: "german_corporate", name: "Markus", label: "Corporate", premium: true },
+                          ] as const).map((recruiter) => {
+                            const locked = recruiter.premium && !premiumUnlocked;
+                            const selected = setup.recruiterName === recruiter.name || setup.recruiterId === recruiter.id;
+
+                            return (
+                              <button
+                                key={recruiter.id}
+                                type="button"
+                                onClick={() => {
+                                  if (locked) {
+                                    handlePremiumGateClick(`recruiter_${recruiter.name.toLowerCase()}`);
+                                    return;
+                                  }
+
+                                  applyRecruiterFromSettings(recruiter.id);
+                                }}
+                                className={`rounded-xl border px-3 py-2 text-left text-sm font-bold ${
+                                  selected
+                                    ? "border-blue-400/60 bg-blue-500/15 text-white"
+                                    : locked
+                                      ? "border-amber-300/20 bg-amber-400/[0.06] text-amber-100/80"
+                                      : "border-white/10 bg-white/[0.03] text-slate-300"
+                                }`}
+                              >
+                                <span className="flex items-center justify-between gap-2">
+                                  <span>{recruiter.name}</span>
+                                  {locked ? <span className="text-[10px] text-amber-200">PRO</span> : null}
+                                </span>
+                                <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">{recruiter.label}</span>
+                              </button>
+                            );
+                          })}
                         </div>
                       </section>
 
                       <section>
-                        <p className="mb-2 text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Interview Atmosphere</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {(["Supportive", "Realistic", "Challenging", "Brutal"] as const).map((style) => (
-                            <button
-                              key={style}
-                              type="button"
-                              onClick={() => setInterviewStyle(style)}
-                              className={`rounded-xl border px-3 py-1.5 text-left text-sm font-bold ${
-                                interviewStyle === style
-                                  ? "border-violet-400/60 bg-violet-500/15 text-white"
-                                  : "border-white/10 bg-white/[0.03] text-slate-300"
-                              }`}
-                            >
-                              {style}
-                            </button>
-                          ))}
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Interview Atmosphere</p>
+                          {!premiumUnlocked ? (
+                            <span className="rounded-full border border-amber-300/20 bg-amber-400/10 px-2 py-0.5 text-[10px] font-black text-amber-200">Premium pressure</span>
+                          ) : null}
                         </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          {(["Supportive", "Realistic", "Challenging", "Brutal"] as const).map((style) => {
+                            const locked = (style === "Challenging" || style === "Brutal") && !premiumUnlocked;
+
+                            return (
+                              <button
+                                key={style}
+                                type="button"
+                                onClick={() => {
+                                  if (locked) {
+                                    handlePremiumGateClick(`atmosphere_${style.toLowerCase()}`);
+                                    return;
+                                  }
+
+                                  setInterviewStyle(style);
+                                }}
+                                className={`rounded-xl border px-3 py-2 text-left text-sm font-bold ${
+                                  interviewStyle === style
+                                    ? "border-violet-400/60 bg-violet-500/15 text-white"
+                                    : locked
+                                      ? "border-amber-300/20 bg-amber-400/[0.06] text-amber-100/80"
+                                      : "border-white/10 bg-white/[0.03] text-slate-300"
+                                }`}
+                              >
+                                <span className="flex items-center justify-between gap-2">
+                                  <span>{style}</span>
+                                  {locked ? <span className="text-[10px] text-amber-200">PRO</span> : null}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {!premiumUnlocked ? (
+                          <p className="mt-2 rounded-xl border border-amber-300/15 bg-amber-400/[0.06] p-2 text-xs leading-5 text-amber-100/80">
+                            Free interviews include Sarah, Daniel, Supportive, and Realistic. Premium unlocks Priya, Markus, Challenging, and Brutal interview pressure.
+                          </p>
+                        ) : null}
                       </section>
 
                       <section className="space-y-3">
@@ -3505,7 +4027,7 @@ export default function InterviewPage() {
                 </>
               ) : (
                 <div className="px-4 py-3 text-sm text-slate-400 sm:px-5">
-                  Transcript is collapsed to keep the recruiter and Live Copilot in focus.
+                  No transcript messages yet. Start the interview or wait for the recruiter question.
                 </div>
               )}
             </section>

@@ -110,3 +110,34 @@ export async function buildAndSaveInterviewSetup(input: {
     source: "latest-upload",
   });
 }
+
+
+export async function structureResumeProfileFromCv(input: {
+  cvText: string;
+  layoutText?: string;
+  jobDescription?: string;
+  targetRole?: string;
+  targetMarket?: string;
+}) {
+  const response = await fetch("/api/cv/structure", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      cvText: input.cvText || "",
+      layoutText: input.layoutText || "",
+      jobDescription: input.jobDescription || "",
+      targetRole: input.targetRole || "General Role",
+      targetMarket: input.targetMarket || "Global",
+    }),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data?.error || "CV structure extraction failed.");
+  }
+
+  return data;
+}

@@ -25,9 +25,10 @@ import {
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
 
 import { useInterviewStore } from "@/store/interviewStore";
-import { buildAndSaveInterviewSetup } from "@/lib/workzoCvClient";
+import { buildAndSaveInterviewSetup, structureResumeProfileFromCv } from "@/lib/workzoCvClient";
 import {
   extractResumeProfile,
+  extractResumeProfileComplex,
   normalizeResumeText,
   type ResumeProfile,
 } from "@/lib/workzoResumeParser";
@@ -52,6 +53,15 @@ type RecruiterKey =
   | "analytical_hiring_manager"
   | "startup_recruiter"
   | "german_corporate";
+
+type InterviewLanguage =
+  | "English"
+  | "German"
+  | "Dutch"
+  | "French"
+  | "Spanish"
+  | "Italian"
+  | "Portuguese";
 
 type SetupState = {
   [key: string]: unknown;
@@ -146,6 +156,29 @@ const recruiters: {
   },
 ];
 
+const interviewLanguages: { label: InterviewLanguage; nativeLabel: string; hint: string }[] = [
+  { label: "English", nativeLabel: "English", hint: "Global interview practice" },
+  { label: "German", nativeLabel: "Deutsch", hint: "Formal German-style practice" },
+  { label: "Dutch", nativeLabel: "Nederlands", hint: "Netherlands / Dutch practice" },
+  { label: "French", nativeLabel: "Français", hint: "French interview practice" },
+  { label: "Spanish", nativeLabel: "Español", hint: "Spanish interview practice" },
+  { label: "Italian", nativeLabel: "Italiano", hint: "Italian interview practice" },
+  { label: "Portuguese", nativeLabel: "Português", hint: "Portuguese interview practice" },
+];
+
+function normalizeInterviewLanguage(value?: unknown): InterviewLanguage {
+  if (typeof value !== "string") return "English";
+  const raw = value.trim().toLowerCase();
+
+  if (raw.includes("german") || raw.includes("deutsch") || raw === "de" || raw === "de-de") return "German";
+  if (raw.includes("dutch") || raw.includes("nederlands") || raw === "nl" || raw === "nl-nl") return "Dutch";
+  if (raw.includes("french") || raw.includes("français") || raw.includes("francais") || raw === "fr" || raw === "fr-fr") return "French";
+  if (raw.includes("spanish") || raw.includes("español") || raw.includes("espanol") || raw === "es" || raw === "es-es") return "Spanish";
+  if (raw.includes("italian") || raw.includes("italiano") || raw === "it" || raw === "it-it") return "Italian";
+  if (raw.includes("portuguese") || raw.includes("português") || raw.includes("portugues") || raw === "pt" || raw === "pt-pt" || raw === "pt-br") return "Portuguese";
+  return "English";
+}
+
 const waveform = [
   8, 14, 22, 12, 18, 26, 14, 20, 11, 24, 16, 28, 12, 20, 15, 23, 10, 19, 13, 26,
   14, 18, 9, 22,
@@ -215,6 +248,9 @@ function saveSetupToStore(nextSetup: SetupState, store: unknown) {
   const normalizedSetup: SetupState = {
     ...nextSetup,
     recruiterPersonality: normalizeRecruiterKey(nextSetup.recruiterPersonality),
+    language: normalizeInterviewLanguage(nextSetup.language || nextSetup.interviewLanguage || nextSetup.selectedLanguage),
+    interviewLanguage: normalizeInterviewLanguage(nextSetup.language || nextSetup.interviewLanguage || nextSetup.selectedLanguage),
+    selectedLanguage: normalizeInterviewLanguage(nextSetup.language || nextSetup.interviewLanguage || nextSetup.selectedLanguage),
     targetMarket: nextSetup.targetMarket || nextSetup.country || "Global",
     country: nextSetup.targetMarket || nextSetup.country || "Global",
   };
@@ -282,8 +318,9 @@ function buildCanonicalCvSetup(input: {
   companyStyle: string;
   recruiter: RecruiterKey;
   language: string;
+  profile?: ResumeProfile | null;
 }) {
-  const profile = extractResumeProfile(input.rawCvText);
+  const profile = input.profile || extractResumeProfileComplex(input.rawCvText);
 
   return {
     ...input.setup,
@@ -507,17 +544,28 @@ export default function OnboardingPage() {
   const [recruiter, setRecruiter] = useState<RecruiterKey>(
     normalizeRecruiterKey(setup.recruiterPersonality),
   );
+  const [interviewLanguage, setInterviewLanguage] = useState<InterviewLanguage>(
+    normalizeInterviewLanguage(setup.language),
+  );
+  const [aiResumeProfile, setAiResumeProfile] = useState<ResumeProfile | null>(
+    null,
+  );
+  const [aiCvStructuringStatus, setAiCvStructuringStatus] = useState<
+    "idle" | "structuring" | "ready" | "fallback"
+  >("idle");
 
   const resumeProfile = useMemo(() => {
+    if (aiResumeProfile) return aiResumeProfile;
+
     const source = normalizeResumeText(manualCv || setup.cvText || "");
     if (!source.trim()) return null;
-    return extractResumeProfile(source);
-  }, [manualCv, setup.cvText]);
+    return extractResumeProfileComplex(source);
+  }, [aiResumeProfile, manualCv, setup.cvText]);
 
   const readiness = useMemo(() => {
     const cvReady = Boolean((manualCv || setup.cvText || "").trim());
     const roleReady = Boolean(role.trim());
-    const preferencesReady = Boolean(market && companyStyle && recruiter);
+    const preferencesReady = Boolean(market && companyStyle && recruiter && interviewLanguage);
     const jdBonus = Boolean(jobDescription.trim());
     return Math.min(
       100,
@@ -531,6 +579,7 @@ export default function OnboardingPage() {
     market,
     companyStyle,
     recruiter,
+    interviewLanguage,
     jobDescription,
   ]);
 
@@ -570,7 +619,7 @@ export default function OnboardingPage() {
       title: "Recruiter behavior is being calibrated.",
       description:
         "Market, company style, and recruiter personality quietly shape the pressure, tone, and expectations.",
-      summary: `You are choosing ${recruiterLabel(recruiter)} with a ${companyStyle.toLowerCase()} interview style.`,
+      summary: `You are choosing ${recruiterLabel(recruiter)} with a ${companyStyle.toLowerCase()} interview style in ${interviewLanguage}.`,
     },
     4: {
       title: "Pressure and follow-up logic are prepared.",
@@ -602,7 +651,6 @@ export default function OnboardingPage() {
       companyStyle,
       recruiterStyle: companyStyle,
       recruiterPersonality: normalizeRecruiterKey(recruiter),
-      language: setup.language || "English",
       source: setup.source || "mobile-fast-onboarding",
       setupVersion: 4,
       setupId: setup.setupId || `setup_${Date.now()}`,
@@ -624,7 +672,7 @@ export default function OnboardingPage() {
         targetMarket: (draft.targetMarket as Market) || market,
         companyStyle: (draft.companyStyle as CompanyStyle) || companyStyle,
         recruiterPersonality: normalizeRecruiterKey(draft.recruiterPersonality),
-        language: draft.language || setup.language || "English",
+        language: normalizeInterviewLanguage(draft.language) || interviewLanguage,
       })
         .then((nextSetup) => {
           // Keep the canonical local CV parse as the source of truth.
@@ -646,7 +694,7 @@ export default function OnboardingPage() {
   function persistFast(nextStep?: number) {
     const draft = buildDraftSetup();
     const rawCvText = normalizeResumeText(draft.cvText || manualCv || "");
-    const profile = extractResumeProfile(rawCvText);
+    const profile = extractResumeProfileComplex(rawCvText);
 
     const canonicalSetup = {
       ...draft,
@@ -722,7 +770,7 @@ export default function OnboardingPage() {
           market,
           companyStyle,
           recruiter,
-          language: setup.language || "English",
+          language: interviewLanguage,
         })
       : ({
           ...setup,
@@ -735,7 +783,6 @@ export default function OnboardingPage() {
           companyStyle,
           recruiterStyle: companyStyle,
           recruiterPersonality: normalizeRecruiterKey(recruiter),
-          language: setup.language || "English",
           updatedAt: new Date().toISOString(),
         } as SetupState);
 
@@ -747,7 +794,6 @@ export default function OnboardingPage() {
         targetMarket: market,
         companyStyle,
         recruiterPersonality: normalizeRecruiterKey(recruiter),
-        language: setup.language || "English",
       })) as SetupState;
 
       nextSetup = {
@@ -763,6 +809,37 @@ export default function OnboardingPage() {
     saveCanonicalCvSetup(nextSetup, store);
 
     if (nextStep) setStep(nextStep);
+  }
+
+
+  async function structureCvWithAi(rawCvText: string) {
+    if (!rawCvText.trim()) return extractResumeProfileComplex(rawCvText);
+
+    setAiCvStructuringStatus("structuring");
+
+    try {
+      const data = await structureResumeProfileFromCv({
+        cvText: rawCvText,
+        jobDescription: jobDescription.trim(),
+        targetRole: role || "General Role",
+        targetMarket: market,
+      });
+
+      const profile =
+        data?.resumeProfile && typeof data.resumeProfile === "object"
+          ? (data.resumeProfile as ResumeProfile)
+          : extractResumeProfileComplex(rawCvText);
+
+      setAiResumeProfile(profile);
+      setAiCvStructuringStatus(data?.ok ? "ready" : "fallback");
+
+      return profile;
+    } catch {
+      const fallback = extractResumeProfileComplex(rawCvText);
+      setAiResumeProfile(fallback);
+      setAiCvStructuringStatus("fallback");
+      return fallback;
+    }
   }
 
   async function handleCvUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -814,11 +891,17 @@ export default function OnboardingPage() {
       debugCvText("onboarding.upload.cleaned_text", rawCvText, { fileName: file.name });
 
       const apiProfile = data?.resumeProfile || data?.profile;
-      const profile = apiProfile && typeof apiProfile === "object" && "basics" in apiProfile
+      const localProfile = apiProfile && typeof apiProfile === "object" && "basics" in apiProfile
         ? (apiProfile as ResumeProfile)
-        : extractResumeProfile(rawCvText);
+        : extractResumeProfileComplex(rawCvText);
+
+      setAiResumeProfile(localProfile);
+      setAiCvStructuringStatus("structuring");
+
+      const profile = await structureCvWithAi(rawCvText);
+
       debugCvProfile("onboarding.upload.profile_selected", profile, {
-        source: apiProfile ? "api_resumeProfile" : "client_extractResumeProfile",
+        source: profile === localProfile ? "local_profile" : "ai_structured_profile",
         fileName: file.name,
       });
 
@@ -835,8 +918,8 @@ export default function OnboardingPage() {
         market,
         companyStyle,
         recruiter: recruiter as RecruiterKey,
-        language: setup.language || "English",
-      });
+          language: interviewLanguage,
+        });
 
       saveCanonicalCvSetup(canonicalSetup, store);
       debugCvProfile("onboarding.upload.canonical_saved", canonicalSetup.resumeProfile, { setupId: canonicalSetup.setupId });
@@ -849,7 +932,6 @@ export default function OnboardingPage() {
         targetMarket: market,
         companyStyle,
         recruiterPersonality: normalizeRecruiterKey(recruiter),
-        language: setup.language || "English",
       })
         .then((nextSetup) => {
           const enrichedSetup = {
@@ -1127,6 +1209,16 @@ export default function OnboardingPage() {
                     </div>
                   )}
 
+                  {aiCvStructuringStatus !== "idle" && (
+                    <div className="mt-3 rounded-2xl border border-blue-300/15 bg-blue-500/8 px-4 py-3 text-xs font-bold leading-5 text-blue-100">
+                      {aiCvStructuringStatus === "structuring"
+                        ? "AI CV structuring is cleaning the CV layout globally..."
+                        : aiCvStructuringStatus === "ready"
+                          ? "AI-structured CV profile ready. Please review extracted details before continuing."
+                          : "AI CV structuring was unavailable, so WorkZo used the local parser fallback."}
+                    </div>
+                  )}
+
                   <ResumeProfileReview profile={resumeProfile} />
 
                   <details className="mt-3 rounded-2xl border border-white/10 bg-black/20 p-4">
@@ -1142,11 +1234,13 @@ export default function OnboardingPage() {
                       onChange={(event) => {
                         const nextCv = event.target.value;
                         setManualCv(nextCv);
+                        setAiResumeProfile(null);
+                        setAiCvStructuringStatus("idle");
 
                         const rawCvText = normalizeResumeText(nextCv);
                         if (!rawCvText.trim()) return;
 
-                        const profile = extractResumeProfile(rawCvText);
+                        const profile = extractResumeProfileComplex(rawCvText);
                         const canonicalSetup = buildCanonicalCvSetup({
                           setup,
                           rawCvText,
@@ -1156,8 +1250,8 @@ export default function OnboardingPage() {
                           market,
                           companyStyle,
                           recruiter: recruiter as RecruiterKey,
-                          language: setup.language || "English",
-                        });
+          language: interviewLanguage,
+        });
 
                         saveCanonicalCvSetup(canonicalSetup, store);
                       }}
@@ -1280,6 +1374,41 @@ export default function OnboardingPage() {
                     </section>
                   </div>
 
+
+                  <section className="mt-4 rounded-[26px] border border-white/10 bg-black/18 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.26em] text-slate-500">
+                          Interview language
+                        </p>
+                        <p className="mt-1 text-sm text-slate-400">
+                          Choose the language the recruiter should use during the interview.
+                        </p>
+                      </div>
+                      <span className="hidden rounded-full border border-blue-300/15 bg-blue-400/8 px-3 py-1.5 text-xs font-black text-blue-200 sm:inline-flex">
+                        {interviewLanguage}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                      {interviewLanguages.map((item) => (
+                        <button
+                          key={item.label}
+                          onClick={() => setInterviewLanguage(item.label)}
+                          className={cn(
+                            "rounded-2xl border px-3 py-3 text-left transition active:scale-[0.98]",
+                            interviewLanguage === item.label
+                              ? "border-blue-300/45 bg-blue-400/14 text-white shadow-[0_0_24px_rgba(59,130,246,0.16)]"
+                              : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.07]",
+                          )}
+                        >
+                          <span className="block text-sm font-black">{item.nativeLabel}</span>
+                          <span className="mt-1 block text-[11px] leading-4 text-slate-500">{item.hint}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+
                   <section className="mt-4 min-h-0 flex-1 rounded-[26px] border border-white/10 bg-black/18 p-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
@@ -1383,6 +1512,11 @@ export default function OnboardingPage() {
                           Icon: UserRound,
                         },
                         {
+                          label: "Interview Language",
+                          value: interviewLanguage,
+                          Icon: Globe2,
+                        },
+                        {
                           label: "Readiness",
                           value: `${readiness}%`,
                           Icon: Sparkles,
@@ -1417,7 +1551,7 @@ export default function OnboardingPage() {
                     </div>
                     <p className="mt-4 text-sm leading-6 text-slate-400">
                       The recruiter will adapt to your CV, target role, market,
-                      company style, and selected personality.
+                      company style, selected personality, and interview language.
                     </p>
                   </div>
                 </div>
@@ -1434,7 +1568,7 @@ export default function OnboardingPage() {
                     </h1>
                     <p className="mt-4 text-base leading-7 text-slate-400">
                       WorkZo will simulate a real recruiter using your CV, role,
-                      target market, company style, pressure logic, and memory.
+                      target market, company style, selected language, pressure logic, and memory.
                     </p>
 
                     <button

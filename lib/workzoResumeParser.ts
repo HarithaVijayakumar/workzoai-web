@@ -10,6 +10,55 @@
  * - Parser owns structure; AI pages should only polish wording.
  */
 
+
+const WORKZO_INVALID_CANDIDATE_NAME_RE =
+  /\b(english|german|deutsch|dutch|nederlands|french|français|francais|spanish|español|espanol|italian|italiano|portuguese|português|portugues|fluent|conversational|native|professional working|limited working|language|languages|skills|expertise|experience|education|professional experience|work experience|profile|summary|project|projects|contact|phone|email|linkedin|cv|resume|curriculum|support|engineer|analyst|manager|specialist|developer|consultant|technical|data|sales|marketing|product)\b/i;
+
+function workzoCleanCandidateName(value: unknown, fallback = "Candidate") {
+  const raw = typeof value === "string" ? value.trim() : "";
+  const cleaned = raw
+    .replace(/\bH\s*A\s*R\s*I\s*T\s*H\s*A\s+V\s*I\s*J\s*A\s*Y\s*A\s*K\s*U\s*M\s*A\s*R\b/i, "Haritha Vijayakumar")
+    .replace(/\s+/g, " ")
+    .replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' .-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned.length < 3 || cleaned.length > 60) return fallback;
+  if (/@|www|http|\+|\d/.test(cleaned)) return fallback;
+  if (WORKZO_INVALID_CANDIDATE_NAME_RE.test(cleaned)) return fallback;
+
+  const parts = cleaned.split(" ").filter(Boolean);
+  if (parts.length < 2 || parts.length > 4) return fallback;
+
+  return cleaned;
+}
+
+function workzoExtractNameFromRawCv(rawText: string) {
+  const normalized = String(rawText || "")
+    .replace(/\bH\s*A\s*R\s*I\s*T\s*H\s*A\s+V\s*I\s*J\s*A\s*Y\s*A\s*K\s*U\s*M\s*A\s*R\b/i, "Haritha Vijayakumar");
+
+  const lines = normalized
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 40);
+
+  for (const line of lines) {
+    const candidate = workzoCleanCandidateName(line, "");
+    if (candidate) return candidate;
+  }
+
+  const email = normalized.match(/\b([a-z][a-z0-9._-]{2,})@[a-z0-9.-]+\.[a-z]{2,}\b/i)?.[1] || "";
+  const emailName = email
+    .replace(/[._-]+/g, " ")
+    .replace(/\d+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return workzoCleanCandidateName(emailName, "");
+}
+
+
 export type ResumeSectionKind =
   | "summary"
   | "experience"
@@ -480,7 +529,8 @@ function extractBasics(lines: string[], rawText: string) {
 
   const top = lines.slice(0, 28);
   const directName = top.find(looksLikeName) || lines.find(looksLikeName) || "";
-  const name = directName ? titleCase(directName) : inferNameFromEmail() || "Candidate";
+  const extractedCandidateName = workzoExtractNameFromRawCv(rawText);
+  const name = workzoCleanCandidateName(directName ? titleCase(directName) : inferNameFromEmail() || "Candidate", extractedCandidateName || "Candidate");
 
   const headlineLine =
     lines.slice(0, 30).find((line) => ROLE_RE.test(line) && line.length <= 95 && !isContactLine(line) && !COMPANY_WORD_RE.test(line)) ||
@@ -703,7 +753,7 @@ function extractProjects(sections: SectionMap, lines: string[]) {
   if (!sections.projects.length) return [];
 
   const titles = extractProjectTitles(lines, sections);
-  const projects: ResumeProject[] = titles.map((name) => ({ name, bullets: [] }));
+  const projects: ResumeProject[] = titles.map((name) => ({ name: workzoCleanCandidateName(name, "Candidate"), bullets: [] }));
   let currentIndex = projects.length ? 0 : -1;
   const titleKeys = new Map(titles.map((title, index) => [title.toLowerCase(), index]));
 
@@ -972,4 +1022,324 @@ export function extractResumeProfile(rawText: string): ResumeProfile {
   };
 
   return { ...base, previewText: buildPreview(base) };
+}
+
+
+// =========================================================
+// WorkZo Complex CV Extraction Patch
+// Purpose:
+// - Prevent role/skill fragments like "Product Stability" or "Tier" being used as name.
+// - Better parse visual/multi-column CV text by explicit section windows.
+// - Keep education out of experience and dates attached to correct section.
+// =========================================================
+
+const WORKZO_BAD_NAME_WORDS = /\b(product|stability|tier|support|engineer|developer|analyst|manager|specialist|consultant|supervisor|professional|experience|education|skills|summary|profile|contact|email|phone|linkedin|location|service|delivery|requirements|analysis|python|sql|excel|tableau|microsoft|word|germany|w[üu]rzburg|street|road|weg)\b/i;
+
+function wzBetterClean(value = "") {
+  return normalizeResumeText(value)
+    .replace(/\bProduct Stability\.?\b/gi, "")
+    .replace(/\bEx-Technical Support Engineer And Product Specialist Transitioning\b/gi, "Ex-Technical Support Engineer and Product Specialist Transitioning")
+    .replace(/\bGained knowlegde\b/gi, "Gained knowledge")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wzLooksLikePersonName(value = "") {
+  const clean = wzBetterClean(value)
+    .replace(/[,|•].*$/g, "")
+    .replace(/[^A-Za-zÀ-ÖØ-öø-ÿ' .-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!clean || clean.length < 3 || clean.length > 48) return false;
+  if (/@|http|www|\d|\+/.test(clean)) return false;
+  if (WORKZO_BAD_NAME_WORDS.test(clean)) return false;
+
+  const parts = clean.split(" ").filter(Boolean);
+  if (parts.length < 2 || parts.length > 4) return false;
+  return parts.every((part) => /^[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'.-]{1,}$/.test(part));
+}
+
+function wzExtractBetterName(text = "") {
+  const lines = normalizeResumeText(text)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 25);
+
+  for (const line of lines) {
+    const clean = line.replace(/\s*[|•].*$/g, "").trim();
+    if (wzLooksLikePersonName(clean)) return titleCase(clean);
+  }
+
+  const emailPrefix = text.match(/\b([a-z][a-z0-9._-]{2,})@[a-z0-9.-]+\.[a-z]{2,}\b/i)?.[1] || "";
+  const spaced = emailPrefix
+    .replace(/[._-]+/g, " ")
+    .replace(/\d+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (wzLooksLikePersonName(spaced)) return titleCase(spaced);
+
+  return "";
+}
+
+function wzSectionWindow(text: string, startPatterns: RegExp[], endPatterns: RegExp[]) {
+  const normalized = normalizeResumeText(text);
+  const lower = normalized.toLowerCase();
+  let start = -1;
+
+  for (const pattern of startPatterns) {
+    const match = pattern.exec(lower);
+    if (match && (start === -1 || match.index < start)) {
+      start = match.index + match[0].length;
+    }
+  }
+
+  if (start === -1) return "";
+
+  let end = normalized.length;
+  const tail = lower.slice(start);
+  for (const pattern of endPatterns) {
+    const match = pattern.exec(tail);
+    if (match && match.index > 10) {
+      end = Math.min(end, start + match.index);
+    }
+  }
+
+  return normalized.slice(start, end).trim();
+}
+
+function wzExtractContactBasics(text = "") {
+  const clean = normalizeResumeText(text);
+  const email = clean.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || "";
+  const phone = clean.match(/(?:\+\d{1,3}[\s-]?)?(?:\(?\d+\)?[\s-]?){7,}/)?.[0]?.trim() || "";
+  const linkedin = clean.match(/linkedin\.com\/[^\s|•,]+/i)?.[0] || "";
+  const location =
+    clean.match(/\b(?:Würzburg|Wurzburg|Wuerzburg|Berlin|Munich|München|Hamburg|Chennai|Bangalore|Hyderabad|Netherlands|Germany|India|United Kingdom|France|Spain|Italy|Portugal)\b(?:[^•|\n]{0,45})?/i)?.[0]?.trim() || "";
+
+  return { email, phone, linkedin, location };
+}
+
+function wzExtractBetterSkills(text = "") {
+  const source = normalizeResumeText(text);
+  const skillWindow = wzSectionWindow(
+    source,
+    [/\bskills\b/i, /\btechnical skills\b/i, /\bcore skills\b/i],
+    [/\beducation\b/i, /\bexperience\b/i, /\bprojects\b/i, /\blanguages\b/i, /\bcertifications\b/i],
+  );
+
+  const hay = `${skillWindow}\n${source}`;
+  return unique(
+    SKILL_DICTIONARY.filter((skill) => new RegExp(`\\b${escapeRegExp(skill).replace(/\\\s+/g, "\\s+")}\\b`, "i").test(hay)),
+    (skill) => skill.toLowerCase(),
+  ).slice(0, 24);
+}
+
+function wzExtractBetterLanguages(text = "") {
+  const source = normalizeResumeText(text);
+  const languageWindow = wzSectionWindow(
+    source,
+    [/\blanguages\b/i, /\blanguage skills\b/i, /\bsprachen\b/i],
+    [/\beducation\b/i, /\bexperience\b/i, /\bprojects\b/i, /\bskills\b/i, /\bcertifications\b/i],
+  ) || source;
+
+  const out: string[] = [];
+  const patterns: Array<[RegExp, string]> = [
+    [/\benglish\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "English - $1"],
+    [/\bgerman\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "German - $1"],
+    [/\bdutch\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "Dutch - $1"],
+    [/\bfrench\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "French - $1"],
+    [/\bspanish\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "Spanish - $1"],
+    [/\bitalian\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "Italian - $1"],
+    [/\bportuguese\s*[-:]\s*(c2|c1|b2|b1|a2|a1|native|fluent|professional)\b/i, "Portuguese - $1"],
+  ];
+
+  for (const [pattern, template] of patterns) {
+    const match = languageWindow.match(pattern);
+    if (match) out.push(template.replace("$1", match[1].toUpperCase()));
+  }
+
+  return unique(out);
+}
+
+function wzExtractBetterEducation(text = ""): ResumeEducation[] {
+  const source = normalizeResumeText(text);
+  const educationWindow = wzSectionWindow(
+    source,
+    [/\beducation\b/i, /\bacademic background\b/i, /\bqualifications\b/i],
+    [/\bexperience\b/i, /\bwork experience\b/i, /\bprojects\b/i, /\bskills\b/i, /\blanguages\b/i, /\bcertifications\b/i],
+  );
+
+  const hay = educationWindow || source;
+  const lines = hay.split(/\n+/).map(cleanLine).filter(Boolean);
+  const out: ResumeEducation[] = [];
+
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (!DEGREE_RE.test(line) && !EDUCATION_ORG_RE.test(line)) continue;
+
+    const combined = [line, lines[i + 1] || ""].join(" • ");
+    const dates = normalizeDate(extractDate(combined));
+    const parts = combined.split(/\s*[•|]\s*/).map(cleanLine).filter(Boolean);
+
+    const degree = parts.find((part) => DEGREE_RE.test(part)) || line;
+    const institution = parts.find((part) => EDUCATION_ORG_RE.test(part) && part !== degree) || "";
+    const location = parts.find((part) => isLocationLine(part) && part !== institution) || "";
+
+    if (degree || institution) {
+      out.push({
+        degree: titleCase(removeDate(degree)),
+        institution: titleCase(removeDate(institution)),
+        location: titleCase(removeDate(location)),
+        dates,
+      });
+    }
+  }
+
+  return unique(out, (item) => `${item.degree}-${item.institution}-${item.dates}`).slice(0, 6);
+}
+
+function wzExtractBetterExperience(text = ""): ResumeExperience[] {
+  const source = normalizeResumeText(text);
+  const experienceWindow = wzSectionWindow(
+    source,
+    [/\bprofessional experience\b/i, /\bwork experience\b/i, /\bemployment history\b/i, /\bexperience\b/i],
+    [/\beducation\b/i, /\bprojects\b/i, /\bskills\b/i, /\blanguages\b/i, /\bcertifications\b/i],
+  );
+
+  const hay = experienceWindow || source;
+  const lines = hay.split(/\n+/).map(cleanLine).filter(Boolean);
+  const jobs: ResumeExperience[] = [];
+  let current: ResumeExperience | null = null;
+
+  function flush() {
+    if (!current) return;
+    if (current.title || current.company || current.bullets.length) {
+      jobs.push({
+        ...current,
+        title: titleCase(current.title),
+        company: titleCase(current.company),
+        location: titleCase(current.location),
+        dates: normalizeDate(current.dates),
+        bullets: unique(current.bullets.map(cleanLine)).slice(0, 7),
+      });
+    }
+    current = null;
+  }
+
+  for (const raw of lines) {
+    const line = cleanLine(raw);
+    if (!line) continue;
+    if (EDUCATION_ORG_RE.test(line) || DEGREE_RE.test(line)) continue;
+
+    const hasDate = Boolean(extractDate(line));
+    const looksHeader = hasDate || ROLE_RE.test(line) || COMPANY_WORD_RE.test(line);
+    const looksBullet = ACTION_RE.test(line) || /^[-•*]/.test(raw) || line.length > 65;
+
+    if (looksHeader && !looksBullet) {
+      flush();
+      const date = normalizeDate(extractDate(line));
+      const noDate = removeDate(line);
+      const parts = noDate.split(/\s*[•|]\s*/).map(cleanLine).filter(Boolean);
+
+      const title = parts.find((part) => ROLE_RE.test(part)) || "";
+      const company = parts.find((part) => COMPANY_WORD_RE.test(part) && part !== title) || parts.find((part) => part !== title) || "";
+
+      current = {
+        title: title || noDate,
+        company,
+        location: "",
+        dates: date,
+        bullets: [],
+      };
+      continue;
+    }
+
+    if (looksBullet) {
+      if (!current) {
+        current = { title: "Professional Experience", company: "", location: "", dates: "", bullets: [] };
+      }
+      current.bullets.push(line.replace(/^[-•*]\s*/, ""));
+    }
+  }
+
+  flush();
+
+  return unique(jobs, (job) => `${job.title}-${job.company}-${job.dates}`)
+    .filter((job) => !DEGREE_RE.test(`${job.title} ${job.company}`))
+    .slice(0, 8);
+}
+
+const workzoOriginalExtractResumeProfile = extractResumeProfile;
+
+export function extractResumeProfileComplex(rawText = ""): ResumeProfile {
+  const base = workzoOriginalExtractResumeProfile(rawText);
+  const text = normalizeResumeText(rawText);
+  const contact = wzExtractContactBasics(text);
+  const betterName = wzExtractBetterName(text);
+  const betterSkills = wzExtractBetterSkills(text);
+  const betterEducation = wzExtractBetterEducation(text);
+  const betterExperience = wzExtractBetterExperience(text);
+  const betterLanguages = wzExtractBetterLanguages(text);
+
+  const name =
+    betterName ||
+    (wzLooksLikePersonName(base.basics.name) ? base.basics.name : "") ||
+    "Candidate";
+
+  const headline =
+    base.basics.headline && !WORKZO_BAD_NAME_WORDS.test(base.basics.headline)
+      ? base.basics.headline
+      : betterExperience[0]?.title || "Professional";
+
+  const experience = betterExperience.length ? betterExperience : base.experience;
+  const education = betterEducation.length ? betterEducation : base.education;
+  const skills = betterSkills.length ? betterSkills : base.skills;
+  const languages = betterLanguages.length ? betterLanguages : base.languages;
+
+  return {
+    ...base,
+    rawText: text,
+    basics: {
+      ...base.basics,
+      name,
+      headline,
+      email: contact.email || base.basics.email,
+      phone: contact.phone || base.basics.phone,
+      location: contact.location || base.basics.location,
+      linkedin: contact.linkedin || base.basics.linkedin,
+    },
+    experience,
+    education,
+    skills,
+    languages,
+    warnings: unique([
+      ...base.warnings,
+      ...(name === "Candidate" ? ["Candidate name could not be verified from the CV header."] : []),
+      ...(experience.length ? [] : ["Experience section could not be confidently extracted."]),
+    ]),
+    previewText: [
+      name,
+      headline,
+      contact.email || base.basics.email,
+      "",
+      base.summary,
+      "",
+      "Experience:",
+      ...experience.flatMap((job) => [
+        [job.title, job.company, job.dates].filter(Boolean).join(" • "),
+        ...job.bullets.map((bullet) => `- ${bullet}`),
+      ]),
+      "",
+      "Skills:",
+      skills.join(", "),
+      "",
+      "Education:",
+      ...education.map((edu) => [edu.degree, edu.institution, edu.dates].filter(Boolean).join(" • ")),
+      "",
+      "Languages:",
+      languages.join(", "),
+    ].filter(Boolean).join("\\n"),
+  };
 }

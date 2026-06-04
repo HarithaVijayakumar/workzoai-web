@@ -14,6 +14,7 @@ import {
   UserRound,
   Zap,
 } from "lucide-react";
+import WorkZoFooter from "@/components/WorkZoFooter";
 
 const trustItems = [
   "CV + job based practice",
@@ -191,7 +192,7 @@ export default function LandingPage() {
             <a href="#features" className="transition hover:text-white">Features</a>
             <a href="#how" className="transition hover:text-white">How it works</a>
             <Link href="/pricing" className="transition hover:text-white">Pricing</Link>
-            <Link href="/resources" className="transition hover:text-white">Resources</Link>
+            <Link href="/changelog" className="transition hover:text-white">Updates</Link>
           </nav>
 
           <div className="flex items-center gap-2">
@@ -414,17 +415,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <footer className="border-t border-white/10 bg-[#050b14] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-          <p>© WorkZo AI · Beta</p>
-          <div className="flex flex-wrap gap-4">
-            <Link href="/privacy" className="hover:text-white">Privacy</Link>
-            <Link href="/terms" className="hover:text-white">Terms</Link>
-            <Link href="/resources" className="hover:text-white">Resources</Link>
-            <Link href="/login" className="hover:text-white">Login</Link>
-          </div>
-        </div>
-      </footer>
+      <WorkZoFooter />
     </main>
   );
 }
