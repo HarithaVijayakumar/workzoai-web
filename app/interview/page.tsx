@@ -27,6 +27,18 @@ import {
   Volume2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import UpgradeModal from "@/components/premium/UpgradeModal";
+import PremiumUsageBadge from "@/components/premium/PremiumUsageBadge";
+import {
+  checkWorkZoInterviewAllowed,
+  checkWorkZoTavusAllowed,
+  getWorkZoCurrentPlan,
+  recordWorkZoInterviewStarted,
+  recordWorkZoTavusInterviewStarted,
+} from "@/lib/workzoUsageTracker";
+import { getWorkZoPlanLimits } from "@/lib/workzoPlanLimits";
+import { buildWorkZoRecruiterReplyV2 } from "@/lib/workzoRecruiterIntelligenceV2";
+
 import {
   buildWorkZoVapiVariableValues,
   createWorkZoVapiClient,
@@ -687,34 +699,8 @@ function safeLocalStorageList(key: string) {
 }
 
 function isWorkZoPremiumUnlocked() {
-  if (typeof window === "undefined") return false;
-
-  try {
-    const directFlags = [
-      "workzo_premium_unlocked",
-      "workzoPremiumUnlocked",
-      "workzo_pro_unlocked",
-      "workzoProUnlocked",
-    ];
-
-    for (const key of directFlags) {
-      const value = window.localStorage.getItem(key);
-      if (value === "true" || value === "1" || value === "yes") return true;
-    }
-
-    const rawSubscription =
-      window.localStorage.getItem("workzo_subscription") ||
-      window.localStorage.getItem("workzoSubscription") ||
-      window.localStorage.getItem("subscription");
-
-    if (!rawSubscription) return false;
-
-    const subscription = JSON.parse(rawSubscription) as Record<string, unknown>;
-    const plan = String(subscription.plan || subscription.tier || subscription.status || "").toLowerCase();
-    return /premium|pro|paid|active/.test(plan);
-  } catch {
-    return false;
-  }
+  const limits = getWorkZoPlanLimits(getWorkZoCurrentPlan());
+  return limits.tavus || limits.advancedReports;
 }
 
 function pushWorkZoLocalEvent(key: string, eventName: string, payload: Record<string, unknown> = {}, limit = 500) {
@@ -1312,6 +1298,22 @@ function buildRecruiterReply(answer: string, questionIndex: number, setup: Inter
     return "Yes, I can hear you. Let’s begin properly. Give me a short overview of your background and why this role is relevant for you.";
   }
 
+  if (/(can you hear me|do you hear me|hello|hi|how are you)/i.test(lower) && wordCount <= 10) {
+    return "Yes, I can hear you. Let’s begin properly. Give me a short overview of your background and why this role is relevant for you.";
+  }
+
+  const intelligenceV2 = buildWorkZoRecruiterReplyV2({
+    answer,
+    currentQuestion: recruiterQuestions[Math.min(questionIndex, recruiterQuestions.length - 1)] || "",
+    setup,
+    memory,
+    currentTrust: memory.trustTimeline.at(-1)?.trust,
+  });
+
+  if (intelligenceV2.shouldOverride) {
+    return intelligenceV2.spokenReply;
+  }
+
   if (wordCount < 12) {
     return "I’m following you, but I need more detail before I can judge the fit. Give me one specific situation, what you personally did, and what changed after that.";
   }
@@ -1549,37 +1551,26 @@ function companyStyleInstructions(style: CompanyInterviewStyle) {
 }
 
 function normalizeInterviewLanguage(value?: string) {
-  const raw = safeText(value, "English").trim().toLowerCase();
+  const raw = safeText(value, "en-US").toLowerCase();
 
-  const matches = (...items: string[]) =>
-    items.some((item) => raw === item || raw.includes(item));
-
-  if (matches("german", "deutsch", "de-de", "deutschland", "germany") || raw === "de") {
-    return { code: "de-DE", label: "German", instruction: "Conduct the entire interview in German." };
+  if (raw.includes("de") || raw.includes("german") || raw.includes("deutsch")) {
+    return { code: "de-DE", label: "German", instruction: "Conduct the interview in German. Keep recruiter questions natural, professional, and concise." };
   }
 
-  if (matches("dutch", "nederlands", "nl-nl", "netherlands", "nederland") || raw === "nl") {
-    return { code: "nl-NL", label: "Dutch", instruction: "Conduct the entire interview in Dutch." };
+  if (raw.includes("nl") || raw.includes("dutch") || raw.includes("nederlands")) {
+    return { code: "nl-NL", label: "Dutch", instruction: "Conduct the interview in Dutch. Keep recruiter questions natural, professional, and concise." };
   }
 
-  if (matches("french", "français", "francais", "fr-fr", "france") || raw === "fr") {
-    return { code: "fr-FR", label: "French", instruction: "Conduct the entire interview in French." };
+  if (raw.includes("hi") || raw.includes("hindi")) {
+    return { code: "hi-IN", label: "Hindi", instruction: "Conduct the interview in Hindi when possible. If voice support is limited, use clear simple English with Hindi-friendly phrasing." };
   }
 
-  if (matches("spanish", "español", "espanol", "es-es", "spain") || raw === "es") {
-    return { code: "es-ES", label: "Spanish", instruction: "Conduct the entire interview in Spanish." };
+  if (raw.includes("ta") || raw.includes("tamil")) {
+    return { code: "ta-IN", label: "Tamil", instruction: "Conduct the interview in Tamil when possible. If voice support is limited, use clear simple English with Tamil-friendly phrasing." };
   }
 
-  if (matches("italian", "italiano", "it-it", "italy") || raw === "it") {
-    return { code: "it-IT", label: "Italian", instruction: "Conduct the entire interview in Italian." };
-  }
-
-  if (matches("portuguese", "português", "portugues", "pt-pt", "pt-br", "portugal", "brazil") || raw === "pt") {
-    return {
-      code: raw.includes("brazil") || raw === "pt-br" ? "pt-BR" : "pt-PT",
-      label: "Portuguese",
-      instruction: "Conduct the entire interview in Portuguese.",
-    };
+  if (raw.includes("auto")) {
+    return { code: "en-US", label: "Auto", instruction: "Use the candidate's selected or detected language. If unsure, default to English." };
   }
 
   return { code: "en-US", label: "English", instruction: "Conduct the interview in English." };
@@ -1639,14 +1630,15 @@ function buildLanguageInstruction(setup: InterviewSetup) {
   return [
     `MANDATORY INTERVIEW LANGUAGE: ${language.label}.`,
     language.instruction,
-    "All recruiter questions, follow-ups, transcript messages, browser TTS replies, and Vapi replies must use this selected language.",
+    "All recruiter questions, follow-ups, clarifications, pressure moments, transcript messages, and fallback TTS replies must use this selected language.",
     "Do not default to English unless the selected language is English or the candidate explicitly asks to switch.",
+    "Evaluate internally however needed, but speak to the candidate in the selected language.",
   ].join(" ");
 }
 
 function localizedOpeningQuestion(setup: InterviewSetup) {
   const language = normalizeInterviewLanguage(setup.language);
-  const name = safeGreetingName(normalizeCandidateName(setup.candidateName) || "Candidate");
+  const name = safeGreetingName(setup.candidateName);
   const role = setup.targetRole || "this role";
 
   if (language.code === "de-DE") {
@@ -1657,27 +1649,15 @@ function localizedOpeningQuestion(setup: InterviewSetup) {
     return `Hallo ${name}. Laten we beginnen met je interview voor de rol ${role}. Kun je kort je achtergrond toelichten en uitleggen waarom deze rol relevant voor je is?`;
   }
 
-  if (language.code === "fr-FR") {
-    return `Bonjour ${name}. Commençons ton entretien pour le poste ${role}. Peux-tu me présenter brièvement ton parcours et expliquer pourquoi ce poste est pertinent pour toi ?`;
+  if (language.code === "hi-IN") {
+    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Hindi or English, whichever feels natural. ${recruiterQuestions[0]}`;
   }
 
-  if (language.code === "es-ES") {
-    return `Hola ${name}. Empecemos tu entrevista para el puesto ${role}. ¿Puedes resumir tu trayectoria y explicar por qué este puesto es relevante para ti?`;
+  if (language.code === "ta-IN") {
+    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Tamil or English, whichever feels natural. ${recruiterQuestions[0]}`;
   }
 
-  if (language.code === "it-IT") {
-    return `Ciao ${name}. Iniziamo il colloquio per il ruolo ${role}. Puoi raccontarmi brevemente il tuo percorso e spiegare perché questo ruolo è rilevante per te?`;
-  }
-
-  if (language.code === "pt-BR") {
-    return `Olá ${name}. Vamos começar sua entrevista para a função ${role}. Você pode resumir sua trajetória e explicar por que essa função é relevante para você?`;
-  }
-
-  if (language.code === "pt-PT") {
-    return `Olá ${name}. Vamos começar a tua entrevista para a função ${role}. Podes resumir o teu percurso e explicar porque esta função é relevante para ti?`;
-  }
-
-  return `Hi ${name}. Let’s begin your interview for the ${role} role. Can you walk me through your background and what makes you interested in this role?`;
+  return `Hi ${name}. Let’s begin your interview for the ${role} role. ${recruiterQuestions[0]}`;
 }
 
 function buildContextQualityNotice(setup: InterviewSetup) {
@@ -1958,6 +1938,18 @@ function buildMemoryAwareFollowUp(
   const unsupported = extractUnsupportedClaimReason(answer, setup);
   if (unsupported) {
     return buildUnsupportedClaimChallenge(answer, setup);
+  }
+
+  const intelligenceV2 = buildWorkZoRecruiterReplyV2({
+    answer,
+    currentQuestion: recruiterQuestions[Math.min(questionIndex, recruiterQuestions.length - 1)] || "",
+    setup,
+    memory,
+    currentTrust: memory.trustTimeline.at(-1)?.trust,
+  });
+
+  if (intelligenceV2.shouldOverride) {
+    return intelligenceV2.spokenReply;
   }
 
   const style = detectCompanyInterviewStyle(setup);
@@ -2243,6 +2235,9 @@ export default function InterviewPage() {
     };
   }, []);
   const [setupLoaded, setSetupLoaded] = useState(false);
+
+  const [upgradeModalFeature, setUpgradeModalFeature] = useState<string>("");
+  const upgradeModalOpen = Boolean(upgradeModalFeature);
   const [setup, setSetup] = useState<InterviewSetup>({
     candidateName: "Candidate",
     targetRole: "Interview Role",
@@ -2802,8 +2797,39 @@ export default function InterviewPage() {
     [speakRecruiter],
   );
 
+  
+  function openUpgradeModal(feature: string) {
+    setUpgradeModalFeature(feature);
+  }
+
+  function closeUpgradeModal() {
+    setUpgradeModalFeature("");
+  }
+
+  function handleUpgradeInterest() {
+    setUpgradeModalFeature("");
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "workzo_pending_upgrade_route",
+        JSON.stringify({
+          feature: upgradeModalFeature || "premium",
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    }
+  }
+
   const startPremiumVoice = useCallback(
     async (activeSetup: InterviewSetup) => {
+    const tavusCheck = checkWorkZoTavusAllowed();
+    if (!tavusCheck.allowed) {
+      openUpgradeModal("tavus");
+      setPremiumVoiceStatus("fallback");
+      return;
+    }
+
+    recordWorkZoTavusInterviewStarted();
+
       if (vapiStartingRef.current || vapiConnectedRef.current) return true;
 
       // Reset stale client/call state first, then mark this new Vapi start attempt.
@@ -3536,7 +3562,8 @@ export default function InterviewPage() {
                 className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-red-500/40 px-3 text-sm font-black text-red-300 sm:h-10 sm:gap-2 sm:px-4 lg:px-5"
               >
                 <PhoneOff className="h-4 w-4" />
-                End Interview
+                <PremiumUsageBadge compact />
+              End Interview
               </button>
             )}
 
@@ -4048,7 +4075,14 @@ export default function InterviewPage() {
                       <>
                         <div className="text-sm font-black uppercase tracking-[0.14em] text-blue-100">Ready</div>
                         <div className="text-[10px] text-slate-400">first answer</div>
-                      </>
+                      
+      <UpgradeModal
+        open={upgradeModalOpen}
+        feature={upgradeModalFeature}
+        onClose={closeUpgradeModal}
+        onUpgrade={handleUpgradeInterest}
+      />
+</>
                     )}
                     {scoreFlash ? (
                       <div className={`mt-1 text-[10px] font-black uppercase ${scoreFlash === "up" ? "text-emerald-300" : "text-amber-300"}`}>
