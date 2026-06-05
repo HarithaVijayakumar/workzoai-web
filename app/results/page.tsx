@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -132,11 +132,16 @@ function PremiumLockedCard({ onUnlock }: { onUnlock: () => void }) {
 
 
 function FreePreviewGateResults({ children }: { children: React.ReactNode }) {
-  const isPremium =
-    typeof window !== "undefined" &&
-    getWorkZoPlanLimits(getWorkZoCurrentPlan()).advancedReports;
+  const [mounted, setMounted] = useState(false);
+  const [isPremium, setIsPremium] = useState(true);
 
-  if (isPremium) return <>{children}</>;
+  useEffect(() => {
+    setIsPremium(getWorkZoPlanLimits(getWorkZoCurrentPlan()).advancedReports);
+    setMounted(true);
+  }, []);
+
+  // Avoid hydration mismatch: server render and first client render must match.
+  if (!mounted || isPremium) return <>{children}</>;
 
   return (
     <div className="relative overflow-hidden rounded-[2rem]">
@@ -164,15 +169,17 @@ export default function ResultsPage() {
   const [upgradeFeature, setUpgradeFeature] = useState("");
   const [result] = useState<StoredResult>(() => readResultFromStorage());
 
-  const plan = typeof window !== "undefined" ? getWorkZoCurrentPlan() : "free";
-  const limits = getWorkZoPlanLimits(plan);
-  const isPremium = limits.advancedReports;
+  const [isMounted, setIsMounted] = useState(false);
+  const [plan, setPlan] = useState("free");
 
-  useMemo(() => {
-    if (typeof window !== "undefined") {
-      recordWorkZoReportViewed();
-    }
+  useEffect(() => {
+    setPlan(getWorkZoCurrentPlan());
+    recordWorkZoReportViewed();
+    setIsMounted(true);
   }, []);
+
+  const limits = getWorkZoPlanLimits(plan);
+  const isPremium = isMounted && limits.advancedReports;
 
   const overallScore = numberOr(result.overallScore, 72);
   const strengths = normalizeList(result.strengths, [
@@ -226,11 +233,11 @@ export default function ResultsPage() {
       <FreePreviewGateResults><div className="mx-auto max-w-6xl">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <Link
-            href="/dashboard"
+            href="/"
             className="inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-black text-slate-200 hover:bg-white/10"
           >
             <ArrowLeft className="h-4 w-4" />
-            Dashboard
+            Back home
           </Link>
 
           <div className="flex items-center gap-3">
@@ -389,33 +396,6 @@ export default function ResultsPage() {
           )}
         </div>
       </div></FreePreviewGateResults>
-
-        <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-2xl font-black text-white">What would you like to do next?</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                Retry the interview with the same setup, or go back to your dashboard.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/interview"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-400"
-              >
-                Retry Interview
-                <RefreshCcw className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/dashboard"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/10 px-5 py-3 text-sm font-black text-slate-200 transition hover:bg-white/10"
-              >
-                Go To Dashboard
-                <ArrowLeft className="h-4 w-4 rotate-180" />
-              </Link>
-            </div>
-          </div>
-        </section>
 
       <UpgradeModal
         open={Boolean(upgradeFeature)}
