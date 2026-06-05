@@ -10,8 +10,10 @@ import {
   Building2,
   Check,
   ChevronRight,
+  FileCheck,
   FileText,
   Globe2,
+  Loader2,
   Lock,
   Mic,
   Radar,
@@ -386,19 +388,19 @@ function ResumeProfileReview({ profile }: { profile: ResumeProfile | null }) {
   const languages = profile.languages.slice(0, 6);
 
   return (
-    <section className="mt-4 space-y-4 rounded-3xl border border-white/10 bg-[#050b16] p-4">
+    <section className="mt-4 space-y-4 overflow-hidden rounded-3xl border border-white/10 bg-[#050b16] p-4">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="text-xs font-black uppercase tracking-[0.24em] text-cyan-200">
             Review your professional profile
           </p>
-          <h2 className="mt-2 break-words text-2xl font-black text-white">
+          <h2 className="mt-2 break-all text-2xl font-black text-white">
             {basics.name || "Candidate"}
           </h2>
-          <p className="mt-1 text-sm font-bold text-blue-100">
+          <p className="mt-1 truncate text-sm font-bold text-blue-100">
             {basics.headline || "Professional"}
           </p>
-          <p className="mt-2 break-words text-xs leading-5 text-slate-400">
+          <p className="mt-2 break-all text-xs leading-5 text-slate-400">
             {[basics.email, basics.phone, basics.location, basics.linkedin]
               .filter(Boolean)
               .join(" • ")}
@@ -414,7 +416,7 @@ function ResumeProfileReview({ profile }: { profile: ResumeProfile | null }) {
           <p className="text-xs font-black uppercase tracking-[0.22em] text-slate-500">
             Summary
           </p>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
+          <p className="mt-2 break-all text-sm leading-6 text-slate-300 line-clamp-5">
             {profile.summary}
           </p>
         </div>
@@ -431,14 +433,14 @@ function ResumeProfileReview({ profile }: { profile: ResumeProfile | null }) {
                 key={`experience-${job.company || "company"}-${job.title || "title"}-${job.dates || "dates"}-${index}`}
                 className="rounded-2xl bg-black/20 p-3"
               >
-                <p className="font-black text-white">{job.title || "Role"}</p>
-                <p className="mt-1 text-sm font-bold text-blue-100">
+                <p className="break-all font-black text-white">{job.title || "Role"}</p>
+                <p className="mt-1 break-all text-sm font-bold text-blue-100">
                   {[job.company, job.dates].filter(Boolean).join(" • ")}
                 </p>
                 {job.bullets.length ? (
                   <ul className="mt-2 space-y-1 text-sm leading-5 text-slate-400">
                     {job.bullets.slice(0, 3).map((bullet, bulletIndex) => (
-                      <li key={`bullet-${index}-${bulletIndex}`}>• {bullet}</li>
+                      <li key={`bullet-${index}-${bulletIndex}`} className="break-all">• {bullet}</li>
                     ))}
                   </ul>
                 ) : null}
@@ -504,9 +506,9 @@ function ResumeProfileReview({ profile }: { profile: ResumeProfile | null }) {
                 key={`project-${project.name || "project"}-${index}`}
                 className="rounded-2xl bg-black/20 p-3"
               >
-                <p className="font-black text-white">{project.name}</p>
+                <p className="break-all font-black text-white">{project.name}</p>
                 {project.bullets[0] ? (
-                  <p className="mt-2 text-xs leading-5 text-slate-400">
+                  <p className="mt-2 break-all text-xs leading-5 text-slate-400">
                     {project.bullets[0]}
                   </p>
                 ) : null}
@@ -527,7 +529,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
-  const [fileName, setFileName] = useState("");
+  const [fileName, setFileName] = useState(setup.cvText ? "Previously uploaded CV" : "");
   const [manualCv, setManualCv] = useState(setup.cvText || "");
   const [role, setRole] = useState(setup.targetRole || "");
   const [jobDescription, setJobDescription] = useState(
@@ -966,6 +968,14 @@ export default function OnboardingPage() {
     }
   }
 
+  function handleCvClear() {
+    setFileName("");
+    setManualCv("");
+    setUploadError("");
+    setAiResumeProfile(null);
+    setAiCvStructuringStatus("idle");
+  }
+
   function next() {
     persistFast(Math.min(5, step + 1));
   }
@@ -1148,9 +1158,9 @@ export default function OnboardingPage() {
           </p>
         </div>
 
-        <section className="grid flex-1 items-start gap-4 overflow-visible py-3 xl:grid-cols-[1fr_0.68fr]">
-          <div className="flex flex-col overflow-visible rounded-[22px] border border-white/10 bg-white/[0.032] shadow-[0_18px_60px_rgba(0,0,0,0.24)] backdrop-blur-2xl xl:rounded-[26px]">
-            <div className="flex-1 overflow-visible p-4 pb-28 xl:p-5">
+        <section className="grid flex-1 items-start gap-4 overflow-hidden py-3 xl:grid-cols-[1fr_0.68fr]">
+          <div className="flex flex-col overflow-hidden rounded-[22px] border border-white/10 bg-white/[0.032] shadow-[0_18px_60px_rgba(0,0,0,0.24)] backdrop-blur-2xl xl:rounded-[26px]">
+            <div className="flex-1 overflow-hidden p-4 pb-28 xl:p-5">
               {step === 1 && (
                 <div className="flex min-h-[520px] flex-col">
                   <div className="flex items-center gap-4">
@@ -1168,54 +1178,124 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  <label className="mt-4 flex h-[138px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-blue-300/30 bg-blue-500/8 p-5 text-center transition hover:bg-blue-500/12">
-                    <Upload className="h-8 w-8 text-blue-200" />
-                    <p className="mt-3 text-lg font-black">
-                      {uploading ? "Reading CV..." : "Choose CV file"}
-                    </p>
-                    <p className="mt-1.5 text-sm text-slate-400">
-                      PDF, DOCX, or TXT. Manual paste is available below.
-                    </p>
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.txt"
-                      onChange={handleCvUpload}
-                      className="hidden"
-                    />
-                  </label>
+                  {/* Upload zone — shown only when no file selected yet */}
+                  {!fileName && (
+                    uploading ? (
+                      <div className="mt-4 flex h-[138px] shrink-0 flex-col items-center justify-center rounded-3xl border border-blue-300/40 bg-blue-500/10 p-5 text-center">
+                        <Loader2 className="h-8 w-8 animate-spin text-blue-300" />
+                        <p className="mt-3 text-lg font-black text-white">Reading CV...</p>
+                      </div>
+                    ) : (
+                      <label className="mt-4 flex h-[138px] shrink-0 cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-blue-300/30 bg-blue-500/8 p-5 text-center transition hover:bg-blue-500/12">
+                        <Upload className="h-8 w-8 text-blue-200" />
+                        <p className="mt-3 text-lg font-black">Choose CV file</p>
+                        <p className="mt-1.5 text-sm text-slate-400">PDF, DOCX, or TXT. Manual paste is available below.</p>
+                        <input type="file" accept=".pdf,.doc,.docx,.txt" onChange={handleCvUpload} className="hidden" />
+                      </label>
+                    )
+                  )}
 
+                  {/* File status card — shown after a file is selected */}
                   {fileName && (
-                    <div className="mt-3 flex shrink-0 items-center justify-between rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <FileText className="h-5 w-5 text-red-300" />
-                        <div>
-                          <p className="text-sm font-bold">{fileName}</p>
-                          <p className="text-xs text-slate-500">
-                            {manualCv
-                              ? "CV text ready"
-                              : "Waiting for readable text"}
+                    <div className={cn(
+                      "mt-4 overflow-hidden rounded-3xl border transition-all",
+                      uploading
+                        ? "border-blue-300/30 bg-blue-500/8"
+                        : aiCvStructuringStatus === "structuring"
+                        ? "border-blue-300/30 bg-blue-500/8"
+                        : aiCvStructuringStatus === "fallback"
+                        ? "border-amber-300/25 bg-amber-500/7"
+                        : uploadError
+                        ? "border-red-300/25 bg-red-500/8"
+                        : "border-emerald-300/25 bg-emerald-500/7"
+                    )}>
+                      <div className="flex min-w-0 items-center gap-3 p-4">
+                        {/* Icon */}
+                        <div className={cn(
+                          "grid h-11 w-11 shrink-0 place-items-center rounded-2xl",
+                          uploading || aiCvStructuringStatus === "structuring" ? "bg-blue-500/15" :
+                          aiCvStructuringStatus === "fallback" ? "bg-amber-500/15" :
+                          uploadError ? "bg-red-500/15" :
+                          "bg-emerald-500/15"
+                        )}>
+                          {uploading || aiCvStructuringStatus === "structuring"
+                            ? <Loader2 className="h-5 w-5 animate-spin text-blue-300" />
+                            : uploadError
+                            ? <FileText className="h-5 w-5 text-red-300" />
+                            : <FileCheck className="h-5 w-5 text-emerald-300" />
+                          }
+                        </div>
+
+                        {/* File info */}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-black text-white">{fileName}</p>
+                          <p className={cn(
+                            "mt-0.5 text-xs font-bold",
+                            uploading || aiCvStructuringStatus === "structuring" ? "text-blue-300" :
+                            aiCvStructuringStatus === "fallback" ? "text-amber-300" :
+                            uploadError ? "text-red-300" :
+                            "text-emerald-300"
+                          )}>
+                            {uploading
+                              ? "Reading file..."
+                              : aiCvStructuringStatus === "structuring"
+                              ? "AI structuring CV..."
+                              : aiCvStructuringStatus === "fallback"
+                              ? "Parsed locally · ready"
+                              : uploadError
+                              ? "Upload failed"
+                              : manualCv
+                              ? "CV extracted · ready"
+                              : "Waiting for text..."}
                           </p>
                         </div>
+
+                        {/* Change / Remove file buttons */}
+                        {!uploading && (
+                          <div className="flex shrink-0 gap-1.5">
+                            <label className="cursor-pointer rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-slate-300 transition hover:bg-white/10">
+                              Change
+                              <input
+                                type="file"
+                                accept=".pdf,.doc,.docx,.txt"
+                                onChange={handleCvUpload}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              onClick={handleCvClear}
+                              className="rounded-xl border border-red-300/15 bg-red-500/8 px-3 py-1.5 text-xs font-bold text-red-300 transition hover:bg-red-500/15"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {manualCv && (
-                        <Check className="h-5 w-5 text-emerald-300" />
+
+                      {/* Character count bar — shown when text is ready */}
+                      {!uploading && manualCv && aiCvStructuringStatus !== "structuring" && (
+                        <div className="border-t border-white/8 px-4 pb-4 pt-3">
+                          <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
+                            <div
+                              className={cn(
+                                "h-full rounded-full transition-all duration-700",
+                                aiCvStructuringStatus === "fallback" ? "bg-amber-400/60" : "bg-emerald-400/60"
+                              )}
+                              style={{ width: `${Math.min(100, Math.round((manualCv.length / 3000) * 100))}%` }}
+                            />
+                          </div>
+                          <p className="mt-1.5 text-xs text-slate-500">
+                            {manualCv.length.toLocaleString()} characters · ~{Math.round(manualCv.length / 5).toLocaleString()} words extracted
+                          </p>
+                        </div>
                       )}
-                    </div>
-                  )}
 
-                  {uploadError && (
-                    <div className="mt-3 shrink-0 rounded-2xl border border-amber-300/20 bg-amber-500/10 p-3 text-sm leading-6 text-amber-100">
-                      {uploadError}
-                    </div>
-                  )}
-
-                  {aiCvStructuringStatus !== "idle" && (
-                    <div className="mt-3 rounded-2xl border border-blue-300/15 bg-blue-500/8 px-4 py-3 text-xs font-bold leading-5 text-blue-100">
-                      {aiCvStructuringStatus === "structuring"
-                        ? "AI CV structuring is cleaning the CV layout globally..."
-                        : aiCvStructuringStatus === "ready"
-                          ? "AI-structured CV profile ready. Please review extracted details before continuing."
-                          : "AI CV structuring was unavailable, so WorkZo used the local parser fallback."}
+                      {/* Upload error message */}
+                      {uploadError && (
+                        <div className="border-t border-red-300/15 px-4 pb-4 pt-3 text-xs leading-5 text-red-200">
+                          {uploadError}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1606,10 +1686,9 @@ export default function OnboardingPage() {
                     persistFast();
                     router.push("/dashboard");
                   }}
-                  className="inline-flex h-10 items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-500 via-cyan-400 to-indigo-500 px-5 text-sm font-black text-white shadow-[0_10px_28px_rgba(37,99,235,0.26)] transition hover:scale-[1.02] xl:h-11 xl:px-6"
+                  className="text-sm font-bold text-slate-400 transition hover:text-slate-200"
                 >
                   Go to Dashboard
-                  <ChevronRight className="h-4 w-4" />
                 </button>
               )}
             </div>

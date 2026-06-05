@@ -3,6 +3,7 @@ import {
   decideUnifiedRecruiterResponse,
   type TranscriptItem,
 } from "@/lib/unifiedRecruiterIntelligence";
+import { enhanceWorkZoDecisionV2 } from "@/lib/workzoRecruiterIntelligenceV2";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -774,7 +775,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const decision = await decideUnifiedRecruiterResponse({
+    const baseDecision = await decideUnifiedRecruiterResponse({
       answer,
       currentQuestion: text(body.currentQuestion, 360),
       transcript: compactTranscript(body.transcript),
@@ -792,6 +793,23 @@ export async function POST(request: Request) {
           ? { summary: text(body.recruiterMemorySummary, 280) }
           : undefined,
         jobMemoryProfile: undefined,
+      },
+    });
+
+    const decision = enhanceWorkZoDecisionV2({
+      decision: baseDecision,
+      answer,
+      currentQuestion: text(body.currentQuestion, 360),
+      transcript: compactTranscript(body.transcript),
+      currentTrust: typeof body.recruiterTrust === "number" ? body.recruiterTrust : 58,
+      setup: {
+        cvText: compactCv,
+        jobDescription: compactJob,
+        targetRole: text(body.targetRole || setup.targetRole, 120),
+        targetMarket: text(body.targetMarket || setup.targetMarket, 80),
+        companyStyle: text(body.companyStyle || setup.companyStyle, 120),
+        recruiterPersonality: text(body.recruiterPersonality || setup.recruiterPersonality, 80),
+        language: text(setup.language, 40),
       },
     });
 
@@ -820,6 +838,7 @@ export async function POST(request: Request) {
       socialSignals: decision.socialSignals || null,
       cinematicRealism: decision.cinematicRealism || null,
       conversationStage: decision.conversationStage || null,
+      workzoIntelligenceV2: decision.workzoIntelligenceV2 || null,
       interruption: {
         shouldInterrupt:
           decision.intent === "nonsense" ||
@@ -872,7 +891,7 @@ export async function POST(request: Request) {
         {
           type: decision.trustDelta < 0 ? "drop" : decision.trustDelta > 0 ? "gain" : "steady",
           delta: decision.trustDelta,
-          reason: decision.pressure?.reason || decision.feedback,
+          reason: decision.workzoIntelligenceV2?.trust?.reason || decision.pressure?.reason || decision.feedback,
         },
       ],
     });

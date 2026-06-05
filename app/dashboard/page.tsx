@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import FeatureGate from "@/components/gates/FeatureGate";
 import {
   ArrowRight,
   BarChart3,
@@ -23,9 +24,9 @@ import {
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: Home, active: true },
-  { label: "Improve CV", href: "/cv", icon: FileText },
-  { label: "Cover Letter", href: "/cover-letter", icon: Mail },
-  { label: "Find Jobs", href: "/jobs", icon: Briefcase },
+  { label: "Improve CV", href: "/pricing?intent=upgrade", icon: FileText },
+  { label: "Cover Letter", href: "/pricing?intent=upgrade", icon: Mail },
+  { label: "Find Jobs", href: "/pricing?intent=upgrade", icon: Briefcase },
   { label: "Real Interview AI", href: "/interview", icon: Mic },
   { label: "Results", href: "/results", icon: BarChart3 },
   { label: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -35,7 +36,7 @@ const actionCards = [
   {
     title: "Improve CV",
     detail: "ATS score: 85 · 3 fixes available",
-    href: "/cv",
+    href: "/pricing?intent=upgrade",
     icon: FileText,
     tone: "emerald",
     cta: "Review CV",
@@ -43,7 +44,7 @@ const actionCards = [
   {
     title: "Cover Letter",
     detail: "Create a focused letter from CV + job context",
-    href: "/cover-letter",
+    href: "/pricing?intent=upgrade",
     icon: Mail,
     tone: "violet",
     cta: "Create letter",
@@ -51,7 +52,7 @@ const actionCards = [
   {
     title: "Find Jobs",
     detail: "12 matching roles prepared from your profile",
-    href: "/jobs",
+    href: "/pricing?intent=upgrade",
     icon: Search,
     tone: "blue",
     cta: "Find roles",
@@ -85,9 +86,9 @@ const insights = [
 
 const quickLinks = [
   { label: "Interview history", href: "/history", icon: Clock3 },
-  { label: "Saved cover letters", href: "/cover-letter", icon: FileText },
-  { label: "Job matches", href: "/jobs", icon: Briefcase },
-  { label: "Recommended roles", href: "/jobs", icon: Star },
+  { label: "Saved cover letters", href: "/pricing?intent=upgrade", icon: FileText },
+  { label: "Job matches", href: "/pricing?intent=upgrade", icon: Briefcase },
+  { label: "Recommended roles", href: "/pricing?intent=upgrade", icon: Star },
 ];
 
 function toneClasses(tone: string) {
@@ -134,6 +135,9 @@ function MiniTrendChart() {
 }
 
 export default function DashboardPage() {
+  const userName = "Candidate";
+  const userSubtitle = "WorkZo AI User";
+
   return (
     <main className="min-h-screen bg-[#050b14] text-white">
       <div className="flex min-h-screen">
@@ -183,8 +187,8 @@ export default function DashboardPage() {
             <div className="flex items-center gap-2 border-t border-white/10 pt-2">
               <div className="h-7 w-7 rounded-full bg-gradient-to-br from-amber-100 to-slate-300" />
               <div className="min-w-0">
-                <div className="truncate text-xs font-black">Haritha Vijayakumar</div>
-                <div className="truncate text-[10px] text-slate-400">Data Science Enthusiast</div>
+                <div className="truncate text-xs font-black">{userName}</div>
+                <div className="truncate text-[10px] text-slate-400">{userSubtitle}</div>
               </div>
             </div>
           </div>
@@ -194,7 +198,7 @@ export default function DashboardPage() {
           <header className="flex flex-col gap-4 border-b border-white/10 pb-4 xl:flex-row xl:items-start xl:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.42em] text-cyan-200">Career Workspace</p>
-              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Welcome back, Haritha! 👋</h1>
+              <h1 className="mt-2 text-3xl font-black tracking-[-0.04em] sm:text-4xl">Welcome back! 👋</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">Your focused workspace for interview practice, CV improvement, and job preparation.</p>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row">
@@ -206,6 +210,25 @@ export default function DashboardPage() {
               </Link>
             </div>
           </header>
+            <div className="mt-5 rounded-[1.5rem] border border-blue-300/20 bg-blue-500/10 p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-200">Free plan active</p>
+                  <h2 className="mt-2 text-xl font-black text-white">Upgrade to unlock Premium tools</h2>
+                  <p className="mt-1 text-sm leading-6 text-slate-300">
+                    Premium unlocks AI Video Recruiter, full interview history, advanced reports, Improve CV, Cover Letter, and Job Assist.
+                  </p>
+                </div>
+                <Link
+                  href="/pricing?intent=upgrade"
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400"
+                >
+                  Upgrade
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+
 
           <div className="mt-5 grid gap-4 xl:grid-cols-[1.35fr_0.65fr]">
             <section className="rounded-[24px] border border-blue-300/15 bg-gradient-to-br from-blue-500/[0.13] via-[#0b1527] to-[#0a1020] p-5">

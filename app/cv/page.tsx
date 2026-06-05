@@ -323,7 +323,7 @@ export default function CvWorkspacePage() {
             </div>
           </div>
 
-          <div className="h-[860px] overflow-auto rounded-[1.5rem] border border-white/10 bg-white">
+          <div className="max-h-[60vh] overflow-auto rounded-[1.5rem] border border-white/10 bg-white sm:max-h-[75vh] xl:h-[860px] xl:max-h-none">
             <iframe title="CV template preview" srcDoc={htmlPreview} className="h-[1120px] w-full bg-white" />
           </div>
         </div>

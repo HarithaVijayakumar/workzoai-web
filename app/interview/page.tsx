@@ -37,6 +37,7 @@ import {
   recordWorkZoTavusInterviewStarted,
 } from "@/lib/workzoUsageTracker";
 import { getWorkZoPlanLimits } from "@/lib/workzoPlanLimits";
+import { buildWorkZoRecruiterReplyV2 } from "@/lib/workzoRecruiterIntelligenceV2";
 
 import {
   buildWorkZoVapiVariableValues,
@@ -1297,6 +1298,22 @@ function buildRecruiterReply(answer: string, questionIndex: number, setup: Inter
     return "Yes, I can hear you. Let’s begin properly. Give me a short overview of your background and why this role is relevant for you.";
   }
 
+  if (/(can you hear me|do you hear me|hello|hi|how are you)/i.test(lower) && wordCount <= 10) {
+    return "Yes, I can hear you. Let’s begin properly. Give me a short overview of your background and why this role is relevant for you.";
+  }
+
+  const intelligenceV2 = buildWorkZoRecruiterReplyV2({
+    answer,
+    currentQuestion: recruiterQuestions[Math.min(questionIndex, recruiterQuestions.length - 1)] || "",
+    setup,
+    memory,
+    currentTrust: memory.trustTimeline.at(-1)?.trust,
+  });
+
+  if (intelligenceV2.shouldOverride) {
+    return intelligenceV2.spokenReply;
+  }
+
   if (wordCount < 12) {
     return "I’m following you, but I need more detail before I can judge the fit. Give me one specific situation, what you personally did, and what changed after that.";
   }
@@ -1534,37 +1551,26 @@ function companyStyleInstructions(style: CompanyInterviewStyle) {
 }
 
 function normalizeInterviewLanguage(value?: string) {
-  const raw = safeText(value, "English").trim().toLowerCase();
+  const raw = safeText(value, "en-US").toLowerCase();
 
-  const matches = (...items: string[]) =>
-    items.some((item) => raw === item || raw.includes(item));
-
-  if (matches("german", "deutsch", "de-de", "deutschland", "germany") || raw === "de") {
-    return { code: "de-DE", label: "German", instruction: "Conduct the entire interview in German." };
+  if (raw.includes("de") || raw.includes("german") || raw.includes("deutsch")) {
+    return { code: "de-DE", label: "German", instruction: "Conduct the interview in German. Keep recruiter questions natural, professional, and concise." };
   }
 
-  if (matches("dutch", "nederlands", "nl-nl", "netherlands", "nederland") || raw === "nl") {
-    return { code: "nl-NL", label: "Dutch", instruction: "Conduct the entire interview in Dutch." };
+  if (raw.includes("nl") || raw.includes("dutch") || raw.includes("nederlands")) {
+    return { code: "nl-NL", label: "Dutch", instruction: "Conduct the interview in Dutch. Keep recruiter questions natural, professional, and concise." };
   }
 
-  if (matches("french", "français", "francais", "fr-fr", "france") || raw === "fr") {
-    return { code: "fr-FR", label: "French", instruction: "Conduct the entire interview in French." };
+  if (raw.includes("hi") || raw.includes("hindi")) {
+    return { code: "hi-IN", label: "Hindi", instruction: "Conduct the interview in Hindi when possible. If voice support is limited, use clear simple English with Hindi-friendly phrasing." };
   }
 
-  if (matches("spanish", "español", "espanol", "es-es", "spain") || raw === "es") {
-    return { code: "es-ES", label: "Spanish", instruction: "Conduct the entire interview in Spanish." };
+  if (raw.includes("ta") || raw.includes("tamil")) {
+    return { code: "ta-IN", label: "Tamil", instruction: "Conduct the interview in Tamil when possible. If voice support is limited, use clear simple English with Tamil-friendly phrasing." };
   }
 
-  if (matches("italian", "italiano", "it-it", "italy") || raw === "it") {
-    return { code: "it-IT", label: "Italian", instruction: "Conduct the entire interview in Italian." };
-  }
-
-  if (matches("portuguese", "português", "portugues", "pt-pt", "pt-br", "portugal", "brazil") || raw === "pt") {
-    return {
-      code: raw.includes("brazil") || raw === "pt-br" ? "pt-BR" : "pt-PT",
-      label: "Portuguese",
-      instruction: "Conduct the entire interview in Portuguese.",
-    };
+  if (raw.includes("auto")) {
+    return { code: "en-US", label: "Auto", instruction: "Use the candidate's selected or detected language. If unsure, default to English." };
   }
 
   return { code: "en-US", label: "English", instruction: "Conduct the interview in English." };
@@ -1624,14 +1630,15 @@ function buildLanguageInstruction(setup: InterviewSetup) {
   return [
     `MANDATORY INTERVIEW LANGUAGE: ${language.label}.`,
     language.instruction,
-    "All recruiter questions, follow-ups, transcript messages, browser TTS replies, and Vapi replies must use this selected language.",
+    "All recruiter questions, follow-ups, clarifications, pressure moments, transcript messages, and fallback TTS replies must use this selected language.",
     "Do not default to English unless the selected language is English or the candidate explicitly asks to switch.",
+    "Evaluate internally however needed, but speak to the candidate in the selected language.",
   ].join(" ");
 }
 
 function localizedOpeningQuestion(setup: InterviewSetup) {
   const language = normalizeInterviewLanguage(setup.language);
-  const name = safeGreetingName(normalizeCandidateName(setup.candidateName) || "Candidate");
+  const name = safeGreetingName(setup.candidateName);
   const role = setup.targetRole || "this role";
 
   if (language.code === "de-DE") {
@@ -1642,27 +1649,15 @@ function localizedOpeningQuestion(setup: InterviewSetup) {
     return `Hallo ${name}. Laten we beginnen met je interview voor de rol ${role}. Kun je kort je achtergrond toelichten en uitleggen waarom deze rol relevant voor je is?`;
   }
 
-  if (language.code === "fr-FR") {
-    return `Bonjour ${name}. Commençons ton entretien pour le poste ${role}. Peux-tu me présenter brièvement ton parcours et expliquer pourquoi ce poste est pertinent pour toi ?`;
+  if (language.code === "hi-IN") {
+    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Hindi or English, whichever feels natural. ${recruiterQuestions[0]}`;
   }
 
-  if (language.code === "es-ES") {
-    return `Hola ${name}. Empecemos tu entrevista para el puesto ${role}. ¿Puedes resumir tu trayectoria y explicar por qué este puesto es relevante para ti?`;
+  if (language.code === "ta-IN") {
+    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Tamil or English, whichever feels natural. ${recruiterQuestions[0]}`;
   }
 
-  if (language.code === "it-IT") {
-    return `Ciao ${name}. Iniziamo il colloquio per il ruolo ${role}. Puoi raccontarmi brevemente il tuo percorso e spiegare perché questo ruolo è rilevante per te?`;
-  }
-
-  if (language.code === "pt-BR") {
-    return `Olá ${name}. Vamos começar sua entrevista para a função ${role}. Você pode resumir sua trajetória e explicar por que essa função é relevante para você?`;
-  }
-
-  if (language.code === "pt-PT") {
-    return `Olá ${name}. Vamos começar a tua entrevista para a função ${role}. Podes resumir o teu percurso e explicar porque esta função é relevante para ti?`;
-  }
-
-  return `Hi ${name}. Let’s begin your interview for the ${role} role. Can you walk me through your background and what makes you interested in this role?`;
+  return `Hi ${name}. Let’s begin your interview for the ${role} role. ${recruiterQuestions[0]}`;
 }
 
 function buildContextQualityNotice(setup: InterviewSetup) {
@@ -1945,6 +1940,18 @@ function buildMemoryAwareFollowUp(
     return buildUnsupportedClaimChallenge(answer, setup);
   }
 
+  const intelligenceV2 = buildWorkZoRecruiterReplyV2({
+    answer,
+    currentQuestion: recruiterQuestions[Math.min(questionIndex, recruiterQuestions.length - 1)] || "",
+    setup,
+    memory,
+    currentTrust: memory.trustTimeline.at(-1)?.trust,
+  });
+
+  if (intelligenceV2.shouldOverride) {
+    return intelligenceV2.spokenReply;
+  }
+
   const style = detectCompanyInterviewStyle(setup);
   const analysis = analyzeAnswerSignals(answer, setup);
 
@@ -2188,6 +2195,8 @@ function isProgressWorthyRecruiterTurn(text: string) {
 
 
 export default function InterviewPage() {
+
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -2499,7 +2508,7 @@ export default function InterviewPage() {
     // Keep visible transcript clean. System connection messages should not appear here.
     if (item.role === "system") return;
 
-    // Ignore short STT fragments like "Swinging" that Vapi may emit before final text.
+    // Ignore short STT fragments like "Swinging" that AI voice may emit before final text.
     if (item.role === "candidate" && isTinyVisibleSpeechFragment(cleanedText)) return;
 
     const cleanedItem = {
@@ -2653,7 +2662,7 @@ export default function InterviewPage() {
         text,
       });
 
-      // Block browser TTS only while Vapi is actually starting/connected.
+      // Block browser TTS only while AI voice is actually starting/connected.
       // When status is fallback, browser TTS must be audible.
       if (
         premiumVoiceEnabledRef.current &&
@@ -2763,8 +2772,8 @@ export default function InterviewPage() {
   }, []);
 
   const analyzeVapiUserAnswer = useCallback((answer: string) => {
-    // Transcript-only Vapi path for now.
-    // Browser/local interview logic remains the scoring source, so Vapi instability cannot break scoring.
+    // Transcript-only AI voice path for now.
+    // Browser/local interview logic remains the scoring source, so AI voice instability cannot break scoring.
     if (!answer.trim()) return;
   }, []);
 
@@ -2825,7 +2834,7 @@ export default function InterviewPage() {
 
       if (vapiStartingRef.current || vapiConnectedRef.current) return true;
 
-      // Reset stale client/call state first, then mark this new Vapi start attempt.
+      // Reset stale client/call state first, then mark this new AI voice start attempt.
       stopPremiumVoice();
       vapiStartingRef.current = true;
 
@@ -3120,7 +3129,7 @@ export default function InterviewPage() {
       setPremiumVoiceError("");
 
       // Important: restored interviews must not auto-drop into browser TTS fallback.
-      // Recovery restores state first; Vapi should reconnect only through the normal
+      // Recovery restores state first; AI voice should reconnect only through the normal
       // premium voice path, and if it cannot reconnect we keep the interview idle.
       vapiFallbackStartedRef.current = false;
       vapiStartingRef.current = false;
@@ -3314,6 +3323,14 @@ export default function InterviewPage() {
   );
 
   const endInterview = useCallback(() => {
+    window.setTimeout(() => { window.location.href = "/results"; }, 250);
+
+    listeningRef.current = false;
+    try { recognitionRef.current?.stop?.(); } catch {}
+    if (typeof window !== "undefined") window.speechSynthesis.cancel();
+
+    setStatus("ended");
+
     stopRequestedRef.current = true;
     stopListening();
     stopPremiumVoice();
@@ -3390,7 +3407,7 @@ export default function InterviewPage() {
 
     // Do not auto-start after restore. Auto-start was forcing the restored session
     // into browser TTS fallback on some devices. The user can tap Start to reconnect
-    // Vapi through the normal voice path.
+    // AI voice through the normal voice path.
     vapiFallbackStartedRef.current = false;
     vapiStartingRef.current = false;
     vapiConnectedRef.current = false;
@@ -3420,7 +3437,7 @@ export default function InterviewPage() {
 
   if (!setupLoaded) {
     return (
-      <main className="min-h-screen overflow-x-hidden bg-[#050b14] text-white">
+    <main className="min-h-screen overflow-x-hidden bg-[#050b14] text-white">
         <div className="grid min-h-screen place-items-center px-5">
           <section className="w-full max-w-md rounded-[2rem] border border-white/10 bg-white/[0.03] p-6 shadow-2xl">
             <div className="flex items-center gap-4">
@@ -3436,10 +3453,10 @@ export default function InterviewPage() {
             <div className="mt-6 space-y-3">
               <div className="h-3 w-3/4 animate-pulse rounded-full bg-white/10" />
               <div className="h-3 w-1/2 animate-pulse rounded-full bg-white/10" />
-              <div className="h-24 animate-pulse rounded-2xl border border-white/10 bg-black/20" />
+              <div className="min-h-[220px] animate-pulse rounded-2xl border border-white/10 bg-black/20" />
             </div>
 
-            <p className="mt-5 text-sm leading-6 text-slate-400">
+            <p className="mt-5 text-base leading-6 text-white leading-7 font-medium">
               WorkZo is loading your selected recruiter and interview setup before showing the room.
             </p>
           </section>
@@ -3450,38 +3467,7 @@ export default function InterviewPage() {
 
   return (
     <main className="min-h-screen overflow-x-hidden bg-[#050b14] text-white lg:h-screen lg:overflow-hidden">
-      <style jsx global>{`
-
-        .workzo-hide-scrollbar {
-          scrollbar-width: none;
-          -ms-overflow-style: none;
-        }
-
-        .workzo-hide-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-
-        @media (max-width: 1023px) {
-          html,
-          body {
-            overflow-x: hidden;
-          }
-
-          main {
-            min-height: 100dvh;
-          }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .,
-          .,
-          .workzo-status-pulse {
-            animation: none !important;
-          }
-        }
-      `}</style>
-
-      <section className="grid min-h-screen grid-rows-[64px_1fr] lg:h-full lg:min-h-0 lg:grid-rows-[70px_1fr]">
+<section className="grid min-h-screen grid-rows-[64px_1fr] lg:h-full lg:min-h-0 lg:grid-rows-[70px_1fr]">
         <header className="flex items-center justify-between gap-2 border-b border-white/10 px-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-2 sm:gap-5">
             <div className="flex shrink-0 items-center gap-2 sm:gap-3">
@@ -3564,7 +3550,7 @@ export default function InterviewPage() {
               onClick={() => setAudioEnabled((value) => !value)}
               className="hidden h-10 w-12 place-items-center rounded-xl border border-white/10 bg-white/[0.03] sm:grid"
             >
-              <Volume2 className={`h-5 w-5 ${audioEnabled ? "" : "text-slate-500"}`} />
+              <Volume2 className={`h-5 w-5 ${audioEnabled ? "" : "text-slate-200"}`} />
             </button>
             <div className="relative hidden sm:block">
                 <button
@@ -3628,7 +3614,7 @@ export default function InterviewPage() {
                                   <span>{recruiter.name}</span>
                                   {locked ? <span className="text-[10px] text-amber-200">PRO</span> : null}
                                 </span>
-                                <span className="mt-0.5 block text-[11px] font-semibold text-slate-500">{recruiter.label}</span>
+                                <span className="mt-0.5 block text-[11px] font-semibold text-slate-200">{recruiter.label}</span>
                               </button>
                             );
                           })}
@@ -3696,7 +3682,7 @@ export default function InterviewPage() {
                           onClick={() => setPremiumVoiceEnabled((value) => !value)}
                           className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm"
                         >
-                          <span>Premium Voice (Vapi)</span>
+                          <span>Premium Voice (AI voice)</span>
                           <span className="text-slate-400">{premiumVoiceEnabled ? "On" : "Off"}</span>
                         </button>
                         <label className="block rounded-xl border border-white/10 bg-white/[0.03] px-3 py-1.5 text-sm">
@@ -3842,7 +3828,7 @@ export default function InterviewPage() {
                         className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-200 hover:bg-white/[0.06]"
                       >
                         {item}
-                        <ChevronRight className="h-4 w-4 text-slate-500" />
+                        <ChevronRight className="h-4 w-4 text-slate-200" />
                       </button>
                     ))}
                   </div>
@@ -3850,7 +3836,7 @@ export default function InterviewPage() {
               </div>
             {premiumVoiceStatus !== "not_configured" && premiumVoiceStatus !== "idle" ? (
               <div className="hidden items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-slate-300 lg:flex">
-                <span className="text-slate-500">Voice:</span>
+                <span className="text-slate-200">Voice:</span>
                 <span
                   className={
                     premiumVoiceStatus === "connected"
@@ -3973,17 +3959,17 @@ export default function InterviewPage() {
                 <div className="flex items-center gap-3">
                   <h2 className="text-lg font-black">Live Transcript</h2>
                   <span className="h-2 w-2 rounded-full bg-red-400" />
-                  <span className="text-sm text-slate-300">{transcriptMessageCount} message{transcriptMessageCount === 1 ? "" : "s"}</span>
+                  <span className="text-base text-white leading-7 font-medium">{transcriptMessageCount} message{transcriptMessageCount === 1 ? "" : "s"}</span>
                 </div>
-                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-black text-blue-200">
+                <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-black text-blue-200 lg:hidden">
                   {showTranscript ? "Collapse" : "Expand"}
                 </span>
               </button>
 
-              {showTranscript ? (
+              {showTranscript || (typeof window !== "undefined" && window.innerWidth >= 1024) ? (
                 <>
                   <div className="hidden h-10 items-center justify-end border-b border-white/10 px-5 sm:flex">
-                    <div className="flex items-center gap-3 text-sm text-slate-300">
+                    <div className="flex items-center gap-3 text-base text-white leading-7 font-medium">
                       Auto-scroll
                       <button
                         type="button"
@@ -4030,7 +4016,7 @@ export default function InterviewPage() {
                         <div ref={transcriptEndRef} />
                       </div>
                     ) : (
-                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-sm leading-6 text-slate-300">
+                      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-base leading-6 text-white leading-7 font-medium">
                         <p className="font-bold text-slate-100">Interview transcript will appear here.</p>
                         <p className="mt-1">The recruiter will ask the first question after you press Start.</p>
                         <div ref={transcriptEndRef} />
@@ -4046,8 +4032,8 @@ export default function InterviewPage() {
                   </div>
                 </>
               ) : (
-                <div className="px-4 py-3 text-sm text-slate-400 sm:px-5">
-                  No transcript messages yet. Start the interview or wait for the recruiter question.
+                <div className="px-4 py-3 text-base text-white sm:px-5 leading-7 font-medium">
+                  Transcript will appear here as the recruiter and candidate speak.
                 </div>
               )}
             </section>
@@ -4158,7 +4144,7 @@ export default function InterviewPage() {
             <section className="rounded-2xl border border-white/10 bg-[#0b1527] p-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-black">Interview Progress</h2>
-                <span className="text-sm text-slate-300">
+                <span className="text-base text-white leading-7 font-medium">
                   Question {visibleQuestionNumber} of 12
                 </span>
               </div>
