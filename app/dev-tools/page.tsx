@@ -24,6 +24,36 @@ export default function DevToolsPage() {
     setPlan(getWorkZoCurrentPlan());
   }
 
+  function clearPremiumCheckoutState() {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem("workzo_pending_checkout");
+    window.localStorage.removeItem("workzo_selected_plan_intent");
+    window.localStorage.removeItem("workzo_pending_upgrade_route");
+  }
+
+  function testAsFreeCustomer() {
+    disableWorkZoFounderTestMode();
+    setWorkZoCurrentPlan("free");
+    resetWorkZoTestingUsage();
+    clearPremiumCheckoutState();
+    refresh();
+  }
+
+  function testAsPremiumCustomer() {
+    disableWorkZoFounderTestMode();
+    setWorkZoCurrentPlan("premium");
+    resetWorkZoTestingUsage();
+    clearPremiumCheckoutState();
+    refresh();
+  }
+
+  function testAsFounderUnlimited() {
+    enableWorkZoFounderTestMode();
+    setWorkZoCurrentPlan("premium");
+    resetWorkZoTestingUsage();
+    refresh();
+  }
+
   useEffect(() => {
     setMounted(true);
     refresh();
@@ -37,7 +67,7 @@ export default function DevToolsPage() {
 
   return (
     <main className="min-h-screen bg-[#050a12] px-5 py-8 text-white">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
         <Link href="/" className="text-sm font-black text-slate-300 hover:text-white">
           ← Back home
         </Link>
@@ -46,90 +76,51 @@ export default function DevToolsPage() {
           <p className="text-sm font-black uppercase tracking-[0.22em] text-cyan-200">
             Founder testing
           </p>
-          <h1 className="mt-3 text-4xl font-black">WorkZo Test Mode</h1>
-          <p className="mt-3 text-sm leading-6 text-slate-300">
-            Use this page only during development. It lets you test Free, Premium, and repeated interviews without changing public launch limits.
+          <h1 className="mt-3 text-4xl font-black">WorkZo Dev Tools</h1>
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
+            Test Free customer mode, Premium customer mode, and Founder unlimited mode without Stripe.
           </p>
 
-          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200">
+          <div className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200 sm:grid-cols-2 lg:grid-cols-5">
             <p>Current plan: <strong>{displayPlan}</strong></p>
-            <p>Test mode: <strong>{displayTestMode}</strong></p>
-            <p>Interviews used: <strong>{interviewsUsed}</strong></p>
-            <p>Interviews remaining: <strong>{interviewsRemaining}</strong></p>
-            <p>Video recruiter remaining: <strong>{videoRemaining}</strong></p>
+            <p>Founder mode: <strong>{displayTestMode}</strong></p>
+            <p>Used: <strong>{interviewsUsed}</strong></p>
+            <p>Interviews left: <strong>{interviewsRemaining}</strong></p>
+            <p>Video left: <strong>{videoRemaining}</strong></p>
           </div>
 
-          <div className="mt-6 grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => {
-                enableWorkZoFounderTestMode();
-                refresh();
-              }}
-              className="rounded-2xl bg-blue-500 px-5 py-4 text-sm font-black text-white hover:bg-blue-400"
-            >
-              Enable founder test mode
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            <button type="button" onClick={testAsFreeCustomer} className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-5 text-left hover:bg-emerald-400/15">
+              <p className="text-lg font-black text-emerald-100">Test as Free Customer</p>
+              <p className="mt-2 text-sm leading-6 text-emerald-50/80">Free plan, founder mode off, usage reset.</p>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                disableWorkZoFounderTestMode();
-                refresh();
-              }}
-              className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10"
-            >
-              Disable test mode
+            <button type="button" onClick={testAsPremiumCustomer} className="rounded-2xl border border-blue-300/20 bg-blue-400/10 p-5 text-left hover:bg-blue-400/15">
+              <p className="text-lg font-black text-blue-100">Test as Premium Customer</p>
+              <p className="mt-2 text-sm leading-6 text-blue-50/80">Premium plan, founder mode off, realistic paid-customer dashboard.</p>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                resetWorkZoTestingUsage();
-                refresh();
-              }}
-              className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 px-5 py-4 text-sm font-black text-emerald-100 hover:bg-emerald-400/15"
-            >
-              Reset usage
+            <button type="button" onClick={testAsFounderUnlimited} className="rounded-2xl border border-violet-300/20 bg-violet-400/10 p-5 text-left hover:bg-violet-400/15">
+              <p className="text-lg font-black text-violet-100">Founder Unlimited Test</p>
+              <p className="mt-2 text-sm leading-6 text-violet-50/80">Premium with test mode enabled for repeated testing.</p>
+            </button>
+          </div>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <button type="button" onClick={() => { resetWorkZoTestingUsage(); refresh(); }} className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10">
+              Reset usage only
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setWorkZoCurrentPlan("free");
-                resetWorkZoTestingUsage();
-                refresh();
-              }}
-              className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10"
-            >
-              Test as Free user
-            </button>
+            <Link href="/dashboard" className="rounded-2xl bg-white px-5 py-4 text-center text-sm font-black text-slate-950 hover:bg-slate-200">Open Dashboard</Link>
+            <Link href="/results" className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10">Open Results</Link>
+            <Link href="/interview?test=1" className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10">Open Interview</Link>
+            <Link href="/pricing?intent=interview&test=1" className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-5 py-4 text-center text-sm font-black text-cyan-100 hover:bg-cyan-400/15 lg:col-span-2">Test Pricing Flow</Link>
+            <Link href="/onboarding" className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-5 py-4 text-center text-sm font-black text-cyan-100 hover:bg-cyan-400/15 lg:col-span-2">Open Onboarding</Link>
+          </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setWorkZoCurrentPlan("premium");
-                enableWorkZoFounderTestMode();
-                refresh();
-              }}
-              className="rounded-2xl border border-blue-300/20 bg-blue-400/10 px-5 py-4 text-sm font-black text-blue-100 hover:bg-blue-400/15"
-            >
-              Test as Premium user
-            </button>
-
-            <Link
-              href="/pricing?intent=interview&test=1"
-              className="rounded-2xl border border-violet-300/20 bg-violet-400/10 px-5 py-4 text-center text-sm font-black text-violet-100 hover:bg-violet-400/15"
-            >
-              Open pricing test flow
-            </Link>
-
-            <Link
-              href="/interview?test=1"
-              className="rounded-2xl bg-white px-5 py-4 text-center text-sm font-black text-slate-950 hover:bg-slate-200"
-            >
-              Start interview in test mode
-            </Link>
+          <div className="mt-6 rounded-2xl border border-amber-300/20 bg-amber-400/10 p-4 text-sm leading-6 text-amber-50/90">
+            <p className="font-black text-amber-100">Before launch</p>
+            <p className="mt-1">Use this on local or Vercel preview only, or protect this route before public launch.</p>
           </div>
         </section>
       </div>
