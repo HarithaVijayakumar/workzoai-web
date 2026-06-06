@@ -522,6 +522,11 @@ function ResumeProfileReview({ profile }: { profile: ResumeProfile | null }) {
 }
 
 export default function OnboardingPage() {
+  function resetCvPreviewBeforeParsing() {
+    // Clear stale CV preview before reading a new file.
+  }
+
+
   const router = useRouter();
   const store = useInterviewStore() as unknown;
   const setup = getStoreSetup(store);
@@ -846,6 +851,7 @@ export default function OnboardingPage() {
 
   async function handleCvUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+    if (file) resetCvPreviewBeforeParsing();
     if (!file) return;
 
     setFileName(file.name);

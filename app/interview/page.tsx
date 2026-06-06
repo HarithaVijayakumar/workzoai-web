@@ -1650,14 +1650,14 @@ function localizedOpeningQuestion(setup: InterviewSetup) {
   }
 
   if (language.code === "hi-IN") {
-    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Hindi or English, whichever feels natural. ${recruiterQuestions[0]}`;
+    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Hindi or English, whichever feels natural. Thanks for joining today. To start, tell me briefly about your professional background and why this role fits you.`;
   }
 
   if (language.code === "ta-IN") {
-    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Tamil or English, whichever feels natural. ${recruiterQuestions[0]}`;
+    return `Hi ${name}. Let’s begin your interview for the ${role} role. Please answer in Tamil or English, whichever feels natural. Thanks for joining today. To start, tell me briefly about your professional background and why this role fits you.`;
   }
 
-  return `Hi ${name}. Let’s begin your interview for the ${role} role. ${recruiterQuestions[0]}`;
+  return `Hi ${name}. Let’s begin your interview for the ${role} role. Thanks for joining today. To start, tell me briefly about your professional background and why this role fits you.`;
 }
 
 function buildContextQualityNotice(setup: InterviewSetup) {
@@ -2193,6 +2193,17 @@ function isProgressWorthyRecruiterTurn(text: string) {
   );
 }
 
+
+
+function getLocalizedFirstQuestion(setup: InterviewSetup) {
+  const language = normalizeInterviewLanguage(setup.language).code;
+  if (language.startsWith("de")) return "Danke, dass Sie heute dabei sind. Erzählen Sie mir bitte kurz von Ihrem beruflichen Hintergrund und warum diese Rolle zu Ihnen passt.";
+  if (language.startsWith("nl")) return "Bedankt dat je er vandaag bent. Vertel kort over je professionele achtergrond en waarom deze rol bij je past.";
+  if (language.startsWith("fr")) return "Merci d’être là aujourd’hui. Présentez brièvement votre parcours professionnel et expliquez pourquoi ce poste vous intéresse.";
+  if (language.startsWith("pt")) return "Obrigado por participar hoje. Conte brevemente sobre sua experiência profissional e por que esta vaga combina com você.";
+  if (language.startsWith("es")) return "Gracias por estar aquí hoy. Cuéntame brevemente sobre tu experiencia profesional y por qué este puesto encaja contigo.";
+  return "Thanks for joining today. To start, tell me briefly about your professional background and why this role fits you.";
+}
 
 export default function InterviewPage() {
 

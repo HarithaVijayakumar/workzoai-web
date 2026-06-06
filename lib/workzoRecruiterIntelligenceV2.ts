@@ -260,12 +260,22 @@ function isClaimSupported(claim: string, setup: RecruiterIntelligenceSetup) {
 function detectContradictions(answer: string, memory: RecruiterMemoryV2) {
   const contradictions: string[] = [];
   const low = lower(answer);
+  const priorText = lower([
+    ...memory.claims,
+    ...memory.companies.map((item) => `company:${item}`),
+    ...memory.roles.map((item) => `role:${item}`),
+    ...memory.metrics.map((item) => `metric:${item}`),
+  ].join(" | "));
 
-  if (/\b(i lied|i made that up|not true|false|fake|i exaggerated|i was lying)\b/i.test(low)) {
+  if (/\b(i lied|i made that up|i made it up|not true|wasn't true|that is false|false|fake|i exaggerated|i was lying|sorry.*lie|i just lied)\b/i.test(low)) {
     contradictions.push("Candidate admitted that a previous claim was false or exaggerated.");
   }
 
-  if (/\bnever worked|no experience|did not work|haven't worked|have not worked\b/i.test(low)) {
+  if (/\b(never worked|no experience|did not work|didn't work|haven't worked|have not worked|never had experience|no real experience)\b/i.test(low)) {
+    if (memory.companies.length || memory.roles.length || memory.skills.length) {
+      contradictions.push("Candidate now denies experience after previously claiming companies, roles, or skills.");
+    }
+
     for (const company of memory.companies) {
       if (new RegExp(`\\b${company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(low)) {
         contradictions.push(`Candidate now denies or weakens earlier company claim: ${company}.`);
@@ -279,11 +289,40 @@ function detectContradictions(answer: string, memory: RecruiterMemoryV2) {
     }
   }
 
-  if (/\bnot mine|team did|someone else|my manager did|not personally\b/i.test(low)) {
-    contradictions.push("Candidate reduced personal ownership after previously describing the work as their own.");
+  const currentYears = Array.from(low.matchAll(/\b(\d{1,2})\s*(?:\+?\s*)?(?:years?|yrs?)\b/g)).map((match) => Number(match[1]));
+  const priorYears = Array.from(priorText.matchAll(/\b(\d{1,2})\s*(?:\+?\s*)?(?:years?|yrs?)\b/g)).map((match) => Number(match[1]));
+  for (const current of currentYears) {
+    for (const prior of priorYears) {
+      if (Math.abs(current - prior) >= 2) {
+        contradictions.push(`Candidate changed years of experience from about ${prior} to ${current}.`);
+      }
+    }
   }
 
-  return unique(contradictions, 6);
+  const currentTeam = Array.from(low.matchAll(/\b(?:managed|led|handled|supervised)\s+(?:a\s+)?(?:team\s+of\s+)?(\d{1,4})\b/g)).map((match) => Number(match[1]));
+  const priorTeam = Array.from(priorText.matchAll(/\b(?:managed|led|handled|supervised)\s+(?:a\s+)?(?:team\s+of\s+)?(\d{1,4})\b/g)).map((match) => Number(match[1]));
+
+  if (/\b(worked alone|completely alone|no team|individual contributor|not a manager|did not manage|didn't manage|never managed)\b/i.test(low)) {
+    if (priorTeam.some((value) => value >= 2) || /\b(managed|led|supervised)\b/i.test(priorText)) {
+      contradictions.push("Candidate now says they worked alone after earlier implying team leadership or management.");
+    }
+  }
+
+  for (const current of currentTeam) {
+    for (const prior of priorTeam) {
+      if (Math.abs(current - prior) >= 5) {
+        contradictions.push(`Candidate changed team size claim from about ${prior} to ${current}.`);
+      }
+    }
+  }
+
+  if (/\b(not mine|team did|someone else|my manager did|not personally|i only watched|i was not involved)\b/i.test(low)) {
+    if (/\b(i|my|personally|owned|built|handled|created|led|resolved|analyzed|analysed|improved|reduced|increased|implemented|designed|managed|coordinated|delivered)\b/i.test(priorText)) {
+      contradictions.push("Candidate reduced personal ownership after previously describing the work as their own.");
+    }
+  }
+
+  return unique(contradictions, 8);
 }
 
 function detectWeakAnswerReasons(answer: string) {
@@ -437,6 +476,60 @@ export function createRecruiterMemoryV2(
   };
 }
 
+
+function buildRecruiterMemoryFromTranscript(
+  transcript?: TranscriptItem[],
+  setup: RecruiterIntelligenceSetup = {},
+): RecruiterMemoryV2 {
+  const items = Array.isArray(transcript) ? transcript : [];
+  const candidateAnswers = items
+    .filter((item) => item?.role === "candidate" && text(item.text))
+    .map((item) => text(item.text));
+
+  let memory = createRecruiterMemoryV2();
+
+  for (const answer of candidateAnswers) {
+    memory = updateRecruiterMemoryV2(memory, answer, setup);
+  }
+
+  return memory;
+}
+
+function mergeRecruiterMemoryV2(...memories: Array<unknown>): RecruiterMemoryV2 {
+  return memories.reduce<RecruiterMemoryV2>((merged, item) => {
+    const current = createRecruiterMemoryV2(item);
+    return {
+      companies: unique([...merged.companies, ...current.companies], 30),
+      roles: unique([...merged.roles, ...current.roles], 30),
+      skills: unique([...merged.skills, ...current.skills], 40),
+      projects: unique([...merged.projects, ...current.projects], 25),
+      metrics: unique([...merged.metrics, ...current.metrics], 25),
+      claims: unique([...merged.claims, ...current.claims], 50),
+      contradictions: unique([...merged.contradictions, ...current.contradictions], 25),
+      evidenceRequests: unique([...merged.evidenceRequests, ...current.evidenceRequests], 25),
+      weakAnswerReasons: unique([...merged.weakAnswerReasons, ...current.weakAnswerReasons], 35),
+      trustEvents: [...merged.trustEvents, ...current.trustEvents].slice(-40),
+      nextProbeTopic: current.nextProbeTopic || merged.nextProbeTopic,
+    };
+  }, createRecruiterMemoryV2());
+}
+
+function contradictionClarifyingQuestion(reason: string, memory: RecruiterMemoryV2) {
+  const earlier = memory.claims.slice(-5).join("; ");
+  const context = earlier ? ` Earlier I noted: ${earlier}.` : "";
+
+  if (/lied|false|fake|exaggerated|made/i.test(reason)) {
+    return `I need to pause here. You just indicated that something may not be true.${context} Which exact part was inaccurate, and what is the verified version I should use from your real experience?`;
+  }
+
+  if (/ownership|personally/i.test(reason)) {
+    return `I want to clarify ownership.${context} Earlier the answer sounded like you personally handled it, but now you're reducing your role. What exactly did you personally do, and what was done by the team or someone else?`;
+  }
+
+  return `I need to clarify a possible inconsistency.${context} Can you reconcile the earlier claim with what you just said and tell me the accurate version?`;
+}
+
+
 export function updateRecruiterMemoryV2(
   memory: Partial<RecruiterMemoryV2> | unknown | undefined,
   answer: string,
@@ -495,7 +588,8 @@ export function decideRecruiterResponseV2(input: {
 }): RecruiterDecisionV2 {
   const answer = text(input.answer);
   const setup = input.setup || {};
-  const previousMemory = createRecruiterMemoryV2(input.memory);
+  const transcriptMemory = buildRecruiterMemoryFromTranscript(input.transcript, setup);
+  const previousMemory = mergeRecruiterMemoryV2(transcriptMemory, input.memory);
   const memory = updateRecruiterMemoryV2(previousMemory, answer, setup);
 
   const contradictions = detectContradictions(answer, previousMemory);
@@ -512,9 +606,9 @@ export function decideRecruiterResponseV2(input: {
 
   if (contradictions.length) {
     concern = contradictions[0];
-    reply = "I need to pause there. That seems inconsistent with something you said earlier. Can you reconcile both statements clearly and tell me which version is accurate?";
-    trustDelta = -14;
-    interestDelta = -4;
+    reply = contradictionClarifyingQuestion(contradictions[0], previousMemory);
+    trustDelta = -18;
+    interestDelta = -6;
   } else if (unsupportedClaims.length) {
     concern = `Unsupported claim: ${unsupportedClaims[0]}`;
     reply = `I need to verify that. ${unsupportedClaims[0]} is not clearly supported by your CV or job context. Was this official work, freelance work, a project, or a transferable example?`;
@@ -771,6 +865,9 @@ export function buildWorkZoRecruiterReplyV2(input: {
   });
 
   return {
+    shouldOverride: true,
+    spokenReply: decision.reply,
+    privateInstruction: decision.concern,
     reply: decision.reply,
     question: decision.reply,
     text: decision.reply,

@@ -299,7 +299,7 @@ export default function LandingPage() {
             <Link href="/changelog" className="transition hover:text-white">Updates</Link>
           </nav>
 
-          <Link href="/login" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur transition hover:bg-white/20">
+          <Link href="/pricing?intent=interview" className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur transition hover:bg-white/20">
             Login
             <ArrowRight className="h-4 w-4" />
           </Link>
@@ -322,7 +322,7 @@ export default function LandingPage() {
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href="/pricing?intent=interview" className="inline-flex items-center justify-center gap-2 rounded-2xl bg-white px-7 py-4 text-base font-black text-slate-900 shadow-xl shadow-black/20 transition hover:scale-[1.02] hover:bg-blue-50">
-                Start Free Interview
+                Start Interview
                 <ArrowRight className="h-5 w-5" />
               </Link>
               <Link href="/demo" className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-7 py-4 text-base font-black text-white backdrop-blur transition hover:bg-white/20">

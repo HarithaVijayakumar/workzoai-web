@@ -1,72 +1,18 @@
-export type WorkZoPlanType = "free" | "premium";
+# WorkZo AI - restore getWorkZoPlanUpgradeCopy export
+# Run from project root: C:\Projects\workzo-web
 
-export type WorkZoPlanLimits = {
-  id: WorkZoPlanType;
-  label: string;
-  priceLabel: string;
-  interviewsPerMonth: number;
-  voiceInterviewsPerMonth: number;
-  videoRecruiter: boolean;
-  videoRecruiterInterviewsPerMonth: number;
-  tavus: boolean;
-  tavusInterviewsPerMonth: number;
-  tavusMinutesPerMonth: number;
-  advancedReports: boolean;
-  interviewHistory: boolean;
-  improveCv: boolean;
-  coverLetter: boolean;
-  jobAssist: boolean;
-  exports: boolean;
-};
+$ErrorActionPreference = "Stop"
 
-export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
-  free: {
-    id: "free",
-    label: "Free",
-    priceLabel: "€0",
-    interviewsPerMonth: 2,
-    voiceInterviewsPerMonth: 2,
-    videoRecruiter: false,
-    videoRecruiterInterviewsPerMonth: 0,
-    tavus: false,
-    tavusInterviewsPerMonth: 0,
-    tavusMinutesPerMonth: 0,
-    advancedReports: false,
-    interviewHistory: false,
-    improveCv: false,
-    coverLetter: false,
-    jobAssist: false,
-    exports: false,
-  },
-  premium: {
-    id: "premium",
-    label: "Premium",
-    priceLabel: "€14.99/month",
-    interviewsPerMonth: 25,
-    voiceInterviewsPerMonth: 25,
-    videoRecruiter: true,
-    videoRecruiterInterviewsPerMonth: 5,
-    tavus: true,
-    tavusInterviewsPerMonth: 5,
-    tavusMinutesPerMonth: 60,
-    advancedReports: true,
-    interviewHistory: true,
-    improveCv: true,
-    coverLetter: true,
-    jobAssist: true,
-    exports: true,
-  },
-};
+$path = "lib\workzoPlanLimits.ts"
 
-export function normalizeWorkZoPlan(value: unknown): WorkZoPlanType {
-  const raw = String(value || "").toLowerCase();
-  if (raw.includes("premium") || raw.includes("paid") || raw.includes("pro")) return "premium";
-  return "free";
+if (!(Test-Path $path)) {
+  throw "Missing $path"
 }
 
-export function getWorkZoPlanLimits(plan: unknown): WorkZoPlanLimits {
-  return WORKZO_PLAN_LIMITS[normalizeWorkZoPlan(plan)];
-}
+$content = Get-Content $path -Raw
+
+if ($content -notmatch "export function getWorkZoPlanUpgradeCopy") {
+  $append = @'
 
 export function getWorkZoPlanUpgradeCopy(feature?: string) {
   const normalized = String(feature || "premium").toLowerCase();
@@ -165,3 +111,16 @@ export function getWorkZoPlanUpgradeCopy(feature?: string) {
     cta: "Upgrade to Premium",
   };
 }
+'@
+
+  Add-Content -Path $path -Value $append
+  Write-Host "Added getWorkZoPlanUpgradeCopy export to $path" -ForegroundColor Green
+} else {
+  Write-Host "getWorkZoPlanUpgradeCopy already exists in $path" -ForegroundColor Cyan
+}
+
+Select-String -Path $path -Pattern "getWorkZoPlanUpgradeCopy"
+
+Write-Host ""
+Write-Host "Now run:" -ForegroundColor Cyan
+Write-Host "npm run build"
