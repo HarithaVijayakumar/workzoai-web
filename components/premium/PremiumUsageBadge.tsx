@@ -1,22 +1,42 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Crown } from "lucide-react";
 import { getWorkZoUsageSummary } from "@/lib/workzoUsageTracker";
 
-export default function PremiumUsageBadge({ compact = false }: { compact?: boolean }) {
-  const summary = typeof window !== "undefined" ? getWorkZoUsageSummary() : null;
+type UsageSummary = ReturnType<typeof getWorkZoUsageSummary>;
 
-  if (!summary) return null;
+export default function PremiumUsageBadge({ compact = false }: { compact?: boolean }) {
+  const [mounted, setMounted] = useState(false);
+  const [summary, setSummary] = useState<UsageSummary | null>(null);
+
+  useEffect(() => {
+    setSummary(getWorkZoUsageSummary());
+    setMounted(true);
+  }, []);
+
+  // Hydration-safe placeholder: server and first client render match.
+  if (!mounted || !summary) {
+    return (
+      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-slate-300">
+        <Crown className="h-4 w-4 text-slate-400" />
+        <span>Plan</span>
+        {!compact ? <span className="text-slate-500">loading</span> : null}
+      </div>
+    );
+  }
+
+  const isFounderMode = summary.testMode;
+  const label = isFounderMode ? "Founder Test Mode" : summary.limits.label;
+  const remaining = isFounderMode
+    ? "Usage limits disabled"
+    : `${summary.interviewsRemaining}/${summary.limits.interviewsPerMonth} interviews left`;
 
   return (
     <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-xs font-black text-slate-200">
-      <Crown className="h-4 w-4 text-amber-200" />
-      <span>{summary.limits.label}</span>
-      {!compact ? (
-        <span className="text-slate-400">
-          {summary.interviewsRemaining}/{summary.limits.interviewsPerMonth} interviews left
-        </span>
-      ) : null}
+      <Crown className={isFounderMode ? "h-4 w-4 text-violet-200" : "h-4 w-4 text-amber-200"} />
+      <span>{label}</span>
+      {!compact ? <span className="text-slate-400">{remaining}</span> : null}
     </div>
   );
 }
