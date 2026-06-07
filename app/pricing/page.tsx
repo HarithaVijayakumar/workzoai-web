@@ -337,18 +337,6 @@ export default function PricingPage() {
           </div>
         </section>
 
-        <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Plan comparison</p>
-              <h3 className="mt-2 text-2xl font-black text-white">Simple now. More power when you need it.</h3>
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-400/10 px-3 py-2 text-xs font-black text-cyan-100">
-              <Zap className="h-3.5 w-3.5" />
-              No third plan during launch
-            </div>
-          </div>
-
           <div className="mt-5 overflow-hidden rounded-3xl border border-white/10">
             {comparisonRows.map((row, index) => (
               <div
