@@ -4,6 +4,11 @@ import {
   type TranscriptItem,
 } from "@/lib/unifiedRecruiterIntelligence";
 import { enhanceWorkZoDecisionV2 } from "@/lib/workzoRecruiterIntelligenceV2";
+import {
+  applyInterviewIntelligence95ToDecision,
+  buildInterviewIntelligence95,
+  decorateJobContextWithCompanyDNA,
+} from "@/lib/workzoInterviewIntelligence95";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -664,6 +669,20 @@ export async function POST(request: Request) {
       650,
     );
 
+    const intelligence95 = buildInterviewIntelligence95({
+      answer,
+      currentQuestion: text(body.currentQuestion, 360),
+      transcript: compactTranscript(body.transcript),
+      cvText: cvGroundingEvidence || compactCv,
+      jobDescription: compactJob,
+      targetRole: text(body.targetRole || setup.targetRole, 120),
+      companyName: text((setup as any).companyName || (body as any).companyName, 120),
+      companyStyle: text(body.companyStyle || setup.companyStyle, 120),
+      recruiterPersonality: text(body.recruiterPersonality || setup.recruiterPersonality, 80),
+    });
+
+    const companyDecoratedJob = decorateJobContextWithCompanyDNA(compactJob, intelligence95.companyDNA);
+
     const claimValidation = validateCandidateCompanyClaim({
       answer,
       setup,
@@ -783,7 +802,7 @@ export async function POST(request: Request) {
       recruiterState: body.recruiterState || null,
       setup: {
         cvText: compactCv,
-        jobDescription: compactJob,
+        jobDescription: companyDecoratedJob,
         targetRole: text(body.targetRole || setup.targetRole, 120),
         targetMarket: text(body.targetMarket || setup.targetMarket, 80),
         companyStyle: text(body.companyStyle || setup.companyStyle, 120),
@@ -796,7 +815,7 @@ export async function POST(request: Request) {
       },
     });
 
-    const decision = enhanceWorkZoDecisionV2({
+    const enhancedDecision = enhanceWorkZoDecisionV2({
       decision: baseDecision,
       answer,
       currentQuestion: text(body.currentQuestion, 360),
@@ -804,7 +823,7 @@ export async function POST(request: Request) {
       currentTrust: typeof body.recruiterTrust === "number" ? body.recruiterTrust : 58,
       setup: {
         cvText: compactCv,
-        jobDescription: compactJob,
+        jobDescription: companyDecoratedJob,
         targetRole: text(body.targetRole || setup.targetRole, 120),
         targetMarket: text(body.targetMarket || setup.targetMarket, 80),
         companyStyle: text(body.companyStyle || setup.companyStyle, 120),
@@ -812,6 +831,8 @@ export async function POST(request: Request) {
         language: text(setup.language, 40),
       },
     });
+
+    const decision = applyInterviewIntelligence95ToDecision(enhancedDecision, intelligence95);
 
     return NextResponse.json({
       question: decision.spokenReply,
@@ -839,6 +860,14 @@ export async function POST(request: Request) {
       cinematicRealism: decision.cinematicRealism || null,
       conversationStage: decision.conversationStage || null,
       workzoIntelligenceV2: decision.workzoIntelligenceV2 || null,
+      workzoInterviewIntelligence95: decision.workzoInterviewIntelligence95 || null,
+      companyDNA: decision.companyDNA || null,
+      deterministicScore: decision.deterministicScore || null,
+      contradictionChallenge: decision.contradictionChallenge || null,
+      latencyCue: decision.latencyCue || null,
+      whatRecruiterHeard: decision.whatRecruiterHeard || null,
+      benchmark: decision.benchmark || null,
+      answerRewrites: decision.answerRewrites || [],
       interruption: {
         shouldInterrupt:
           decision.intent === "nonsense" ||
@@ -851,18 +880,21 @@ export async function POST(request: Request) {
             : "low",
       },
       scores: {
-        relevance: decision.shouldCountAsAnswer ? Math.max(40, Math.min(92, decision.psychology.interest)) : 0,
-        clarity: decision.intent === "interview_answer" ? Math.max(38, Math.min(90, decision.psychology.engagement)) : 0,
-        structure: decision.intent === "interview_answer" ? Math.max(34, Math.min(88, decision.psychology.patience)) : 0,
-        evidence:
+        relevance: decision.deterministicScore?.relevance ?? (decision.shouldCountAsAnswer ? Math.max(40, Math.min(92, decision.psychology.interest)) : 0),
+        clarity: decision.deterministicScore?.clarity ?? (decision.intent === "interview_answer" ? Math.max(38, Math.min(90, decision.psychology.engagement)) : 0),
+        structure: decision.deterministicScore?.structure ?? (decision.intent === "interview_answer" ? Math.max(34, Math.min(88, decision.psychology.patience)) : 0),
+        evidence: decision.deterministicScore?.evidence ?? (
           decision.intent === "possible_exaggeration" || decision.intent === "contradiction" || decision.intent === "nonsense"
             ? 22
             : decision.shouldCountAsAnswer
               ? Math.max(42, Math.min(90, decision.psychology.confidenceInCandidate))
-              : 0,
-        confidence: decision.psychology.confidenceInCandidate,
+              : 0),
+        confidence: decision.deterministicScore?.confidence ?? decision.psychology.confidenceInCandidate,
+        ownership: decision.deterministicScore?.ownership ?? null,
+        roleFit: decision.deterministicScore?.roleFit ?? null,
+        companyFit: decision.deterministicScore?.companyFit ?? null,
         pressure: decision.pressure?.level ?? 45,
-        overall: decision.psychology.trust,
+        overall: decision.deterministicScore?.overall ?? decision.psychology.trust,
       },
       liveUiState: {
         label:

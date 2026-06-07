@@ -15,11 +15,11 @@ function canUseFeature(feature: FeatureGateProps["feature"]) {
   const limits = getWorkZoPlanLimits(getWorkZoCurrentPlan());
 
   if (feature === "results") return limits.advancedReports;
-  if (feature === "dashboard") return limits.fullHistory;
+  if (feature === "dashboard") return limits.interviewHistory || limits.advancedReports;
   if (feature === "improveCv") return limits.improveCv;
   if (feature === "coverLetter") return limits.coverLetter;
   if (feature === "jobAssist") return limits.jobAssist;
-  if (feature === "history") return limits.fullHistory;
+  if (feature === "history") return (limits.interviewHistory || limits.advancedReports);
 
   return false;
 }

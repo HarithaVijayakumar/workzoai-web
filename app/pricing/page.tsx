@@ -1,139 +1,370 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
-import { ArrowLeft, ArrowRight, CheckCircle2, Lock, Sparkles } from "lucide-react";
-import { enableWorkZoFounderTestMode, resetWorkZoTestingUsage, setWorkZoCurrentPlan } from "@/lib/workzoUsageTracker";
-import { WORKZO_PLAN_LIMITS } from "@/lib/workzoPlanLimits";
+import { useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Gift,
+  Lock,
+  ShieldCheck,
+  Sparkles,
+  Tag,
+  Video,
+  Zap,
+} from "lucide-react";
+import {
+  disableWorkZoFounderTestMode,
+  recordWorkZoUpgradeClick,
+  resetWorkZoTestingUsage,
+  setWorkZoCurrentPlan,
+} from "@/lib/workzoUsageTracker";
 
-function continueFree() {
-  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "1") {
-    enableWorkZoFounderTestMode();
-    resetWorkZoTestingUsage();
-  }
-  setWorkZoCurrentPlan("free");
+type PromoState = {
+  code: string;
+  valid: boolean;
+  message: string;
+  discountLabel: string;
+};
 
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem("workzo_selected_plan_intent", "free_interview");
-    window.location.href = "/onboarding";
-  }
-}
+const PREMIUM_REGULAR_PRICE = "€29.99";
+const PREMIUM_OPENING_PRICE = "€14.99";
+const PREMIUM_SAVING = "Save 50%";
 
-function continuePremium() {
-  if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test") === "1") {
-    enableWorkZoFounderTestMode();
-    resetWorkZoTestingUsage();
-  }
-  setWorkZoCurrentPlan("premium");
+const VALID_PROMOS: Record<string, { message: string; discountLabel: string }> = {
+  EARLYACCESS: {
+    message: "Early access code applied. Your discount will be carried into checkout when payments are enabled.",
+    discountLabel: "Early access discount",
+  },
+  WORKZOEARLY: {
+    message: "WorkZo early-user code applied. Your discount will be carried into checkout when payments are enabled.",
+    discountLabel: "Early-user discount",
+  },
+  FOUNDERFRIEND: {
+    message: "Founder friend code applied for testing. This stores your promo for checkout.",
+    discountLabel: "Founder friend access",
+  },
+};
 
-  if (typeof window !== "undefined") {
-    window.localStorage.setItem(
-      "workzo_pending_checkout",
-      JSON.stringify({
-        plan: "premium",
-        source: "pricing",
-        next: "/onboarding",
-        createdAt: new Date().toISOString(),
-      }),
-    );
+const freeFeatures = [
+  "Upload CV and job context",
+  "2 realistic AI voice interviews",
+  "CV + job-aware recruiter questions",
+  "Adaptive follow-up questions",
+  "Free recruiter-style results snapshot",
+  "Premium report previews with locked insights",
+];
 
-    // Production flow: Premium -> Login -> Stripe Checkout -> Confirm -> Onboarding -> Interview.
-    // Stripe can replace this with a real checkout route later.
-    window.location.href = "/login?next=/onboarding&plan=premium";
-  }
+const premiumFeatures = [
+  "25 recruiter-style interviews per month",
+  "AI Voice + Video Recruiters",
+  "Company-specific interview modes",
+  "Full recruiter timeline and transcript",
+  "Trust score and contradiction audit",
+  "Answer rewrites and recruiter interpretation",
+  "Interview history and progress tracking",
+  "Improve CV, Cover Letter, and Job Assistant",
+];
+
+const comparisonRows = [
+  { label: "Recruiter-style interviews", free: "2/month", premium: "25/month" },
+  { label: "CV + JD aware questions", free: "Included", premium: "Included" },
+  { label: "Free score snapshot", free: "Included", premium: "Included" },
+  { label: "Full timeline report", free: "Preview only", premium: "Unlocked" },
+  { label: "Trust + contradiction audit", free: "Locked", premium: "Unlocked" },
+  { label: "Answer rewrites", free: "Locked", premium: "Unlocked" },
+];
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
 }
 
 export default function PricingPage() {
-  const intent = useMemo(() => {
-    if (typeof window === "undefined") return "interview";
-    return new URLSearchParams(window.location.search).get("intent") || "interview";
-  }, []);
+  const [promoInput, setPromoInput] = useState("");
+  const [promo, setPromo] = useState<PromoState>({
+    code: "",
+    valid: false,
+    message: "",
+    discountLabel: "",
+  });
+
+  const normalizedPromo = useMemo(
+    () => promoInput.trim().toUpperCase().replace(/\s+/g, ""),
+    [promoInput],
+  );
+
+  function applyPromo() {
+    if (!normalizedPromo) {
+      setPromo({
+        code: "",
+        valid: false,
+        message: "Enter a promo code.",
+        discountLabel: "",
+      });
+      return;
+    }
+
+    const match = VALID_PROMOS[normalizedPromo];
+
+    if (!match) {
+      setPromo({
+        code: normalizedPromo,
+        valid: false,
+        message: "This promo code is not valid.",
+        discountLabel: "",
+      });
+      return;
+    }
+
+    setPromo({
+      code: normalizedPromo,
+      valid: true,
+      message: match.message,
+      discountLabel: match.discountLabel,
+    });
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "workzo_promo_code",
+        JSON.stringify({
+          code: normalizedPromo,
+          discountLabel: match.discountLabel,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+    }
+  }
+
+  function startFreeInterview() {
+    disableWorkZoFounderTestMode();
+    setWorkZoCurrentPlan("free");
+    resetWorkZoTestingUsage();
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "workzo_selected_plan_intent",
+        JSON.stringify({
+          plan: "free",
+          source: "pricing",
+          next: "/onboarding",
+          createdAt: new Date().toISOString(),
+        }),
+      );
+
+      window.location.href = "/onboarding";
+    }
+  }
+
+  function choosePremiumBeforeStripe() {
+    recordWorkZoUpgradeClick();
+
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        "workzo_pending_checkout",
+        JSON.stringify({
+          plan: "premium",
+          source: "pricing",
+          next: "/onboarding",
+          regularPrice: `${PREMIUM_REGULAR_PRICE}/month`,
+          openingOfferPrice: `${PREMIUM_OPENING_PRICE}/month`,
+          promoCode: promo.valid ? promo.code : "",
+          promoLabel: promo.valid ? promo.discountLabel : "",
+          status: "stripe_not_connected_yet",
+          createdAt: new Date().toISOString(),
+        }),
+      );
+
+      window.location.href = "/login?next=/pricing&plan=premium";
+    }
+  }
 
   return (
-    <main className="min-h-screen bg-[#050a12] px-5 py-8 text-white">
+    <main className="min-h-screen overflow-hidden bg-[#050a12] px-5 py-8 text-white">
+      <div className="pointer-events-none fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.13),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.14),transparent_34%),linear-gradient(180deg,rgba(15,23,42,0.2),rgba(2,6,23,0.95))]" />
+
       <div className="mx-auto max-w-6xl">
-        <header className="flex items-center justify-between gap-4">
-          <Link href="/" className="inline-flex items-center gap-2 text-sm font-bold text-slate-300 hover:text-white">
-            <ArrowLeft className="h-4 w-4" />
-            Back
-          </Link>
+        <Link href="/" className="inline-flex items-center gap-2 text-sm font-black text-slate-300 hover:text-white">
+          <ArrowLeft className="h-4 w-4" />
+          Back home
+        </Link>
 
-          <Link href="/demo" className="rounded-2xl border border-white/10 px-5 py-3 text-sm font-black text-slate-200 hover:bg-white/10">
-            Try Demo
-          </Link>
-        </header>
-
-        <section className="mt-10 max-w-3xl">
-          <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-sm font-black text-cyan-100">
+        <section className="mt-10 text-center">
+          <div className="mx-auto inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-400/10 px-4 py-2 text-xs font-black uppercase tracking-[0.24em] text-cyan-100">
             <Sparkles className="h-4 w-4" />
-            Choose your interview plan
+            Opening offer for early users
           </div>
 
-          <h1 className="mt-5 text-5xl font-black tracking-tight">
-            Start free, then upgrade when you want the full WorkZo experience.
+          <h1 className="mx-auto mt-5 max-w-4xl text-4xl font-black tracking-[-0.05em] sm:text-6xl">
+            Start free. Unlock the full recruiter intelligence when you are ready.
           </h1>
-
-          <p className="mt-5 text-lg leading-8 text-slate-300">
-            Free users get 2 full voice interviews with CV and job context. Premium unlocks 25 interviews/month,
-            AI video recruiter interviews, full reports, interview history, and career tools.
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-slate-300 sm:text-base">
+            Practice with a realistic AI recruiter, then upgrade for the full timeline, trust audit, contradiction analysis, answer rewrites, and company-specific coaching.
           </p>
         </section>
 
-        <section className="mt-10 grid gap-5 lg:grid-cols-2">
-          <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-slate-400">Free</p>
-            <p className="mt-4 text-4xl font-black">€0</p>
-            <p className="mt-2 text-sm text-slate-400">Best for trying the real CV-based interview.</p>
+        <section className="mx-auto mt-8 max-w-3xl rounded-[2rem] border border-white/10 bg-white/[0.04] p-5 shadow-2xl shadow-black/20">
+          <div className="flex items-start gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-cyan-400/10 text-cyan-200">
+              <Tag className="h-5 w-5" />
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-black text-white">Have a promo code?</p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">
+                Enter your code here. It will be saved and used when Premium checkout is connected.
+              </p>
+              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                <input
+                  value={promoInput}
+                  onChange={(event) => setPromoInput(event.target.value)}
+                  placeholder="Enter promo code"
+                  className="min-h-12 flex-1 rounded-2xl border border-white/10 bg-black/30 px-4 text-sm font-bold text-white outline-none placeholder:text-slate-500 focus:border-cyan-300/50"
+                />
+                <button
+                  type="button"
+                  onClick={applyPromo}
+                  className="rounded-2xl bg-cyan-400 px-5 py-3 text-sm font-black text-slate-950 transition hover:bg-cyan-300"
+                >
+                  Apply code
+                </button>
+              </div>
+              {promo.message ? (
+                <p className={cn("mt-3 text-sm font-bold", promo.valid ? "text-emerald-300" : "text-rose-300")}>
+                  {promo.message}
+                </p>
+              ) : null}
+            </div>
+          </div>
+        </section>
 
-            <ul className="mt-6 space-y-3 text-sm leading-6 text-slate-200">
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />2 full voice interviews</li>
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />CV + job based interview</li>
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />Results preview</li>
-              <li className="flex gap-2"><Lock className="mt-0.5 h-4 w-4 text-slate-400" />Full history and premium tools locked</li>
+        <section className="mt-10 grid gap-5 lg:grid-cols-[0.92fr_1.08fr]">
+          <div className="rounded-[2rem] border border-emerald-300/20 bg-emerald-400/[0.06] p-7 shadow-2xl shadow-black/20">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-black uppercase tracking-[0.22em] text-emerald-300">Free trial</p>
+                <h2 className="mt-3 text-3xl font-black">2 AI Voice Interviews</h2>
+                <p className="mt-3 text-sm leading-7 text-slate-300">
+                  Try the core recruiter experience with your CV and target role before paying.
+                </p>
+              </div>
+              <div className="rounded-2xl bg-emerald-400/10 px-4 py-3 text-2xl font-black text-emerald-100">€0</div>
+            </div>
+
+            <ul className="mt-7 space-y-3">
+              {freeFeatures.map((item) => (
+                <li key={item} className="flex gap-3 text-sm leading-6 text-slate-200">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
 
             <button
               type="button"
-              onClick={continueFree}
-              className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 text-sm font-black text-slate-950 hover:bg-slate-200"
+              onClick={startFreeInterview}
+              className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 py-4 text-sm font-black text-slate-950 transition hover:bg-slate-200"
             >
               Start Free Interview
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="rounded-[2rem] border border-blue-300/30 bg-blue-500/10 p-6 shadow-2xl">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-200">Premium</p>
-            <p className="mt-4 text-4xl font-black">{WORKZO_PLAN_LIMITS.premium.priceLabel}</p>
-            <p className="mt-2 text-sm text-blue-100">For serious interview preparation.</p>
+          <div className="relative overflow-hidden rounded-[2rem] border border-blue-300/25 bg-gradient-to-br from-blue-500/25 via-blue-500/[0.12] to-cyan-400/[0.08] p-7 shadow-2xl shadow-blue-950/25">
+            <div className="absolute inset-x-0 top-0 h-2 bg-gradient-to-r from-cyan-300 via-blue-400 to-violet-500" />
+            <div className="absolute right-5 top-5 rounded-full border border-emerald-300/25 bg-emerald-400/10 px-3 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-emerald-100">
+              Early Access • 50% Off
+            </div>
 
-            <ul className="mt-6 space-y-3 text-sm leading-6 text-slate-100">
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-blue-200" />25 interviews/month</li>
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-blue-200" />AI video recruiter interviews</li>
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-blue-200" />Full reports, history, and progress tracking</li>
-              <li className="flex gap-2"><CheckCircle2 className="mt-0.5 h-4 w-4 text-blue-200" />Improve CV, cover letter, job assist</li>
+            <div className="pr-24">
+              <p className="text-sm font-black uppercase tracking-[0.22em] text-blue-100">Premium</p>
+              <h2 className="mt-3 text-3xl font-black">Full recruiter intelligence</h2>
+
+              <div className="mt-5 flex flex-wrap items-center gap-3">
+                <span className="text-lg font-black text-slate-400 line-through decoration-2">
+                  {PREMIUM_REGULAR_PRICE}/month
+                </span>
+                <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-black uppercase tracking-[0.16em] text-emerald-200">
+                  Opening offer
+                </span>
+              </div>
+
+              <p className="mt-2 text-5xl font-black tracking-[-0.04em]">
+                {PREMIUM_OPENING_PRICE}<span className="text-xl text-white/55">/month</span>
+              </p>
+              <p className="mt-2 text-sm font-black text-emerald-300">
+                {PREMIUM_SAVING} as an early WorkZo AI user.
+              </p>
+              <p className="mt-1 text-xs leading-5 text-slate-400">
+                Price is planned to increase to {PREMIUM_REGULAR_PRICE}/month after Early Access ends.
+              </p>
+
+              {promo.valid ? (
+                <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-200">
+                  <Gift className="h-3.5 w-3.5" />
+                  {promo.discountLabel} applied
+                </p>
+              ) : null}
+            </div>
+
+            <ul className="mt-7 grid gap-3 sm:grid-cols-2">
+              {premiumFeatures.map((item) => (
+                <li key={item} className="flex gap-3 rounded-2xl border border-white/10 bg-black/15 p-3 text-sm leading-6 text-slate-100">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-blue-200" />
+                  <span>{item}</span>
+                </li>
+              ))}
             </ul>
 
             <button
               type="button"
-              onClick={continuePremium}
-              className="mt-7 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 text-sm font-black text-white hover:bg-blue-400"
+              onClick={choosePremiumBeforeStripe}
+              className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-400"
             >
-              Upgrade to Premium
-              <ArrowRight className="h-4 w-4" />
+              Get Premium Opening Offer
+              <Lock className="h-4 w-4" />
             </button>
 
-            <p className="mt-3 text-center text-xs text-blue-100/80">
-              You will log in, complete payment, then continue to onboarding.
-            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <p className="flex items-center gap-2 text-xs leading-5 text-slate-400">
+                <Video className="h-3.5 w-3.5 shrink-0" />
+                Secure checkout will connect to this button.
+              </p>
+              <p className="flex items-center gap-2 text-xs leading-5 text-slate-400 sm:justify-end">
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                Cancel anytime after billing is enabled.
+              </p>
+            </div>
           </div>
         </section>
 
-        {intent === "interview" ? (
-          <p className="mt-6 text-center text-sm text-slate-400">
-            Not ready to choose? <Link href="/demo" className="font-black text-cyan-200">Try the voice demo first</Link>.
-          </p>
-        ) : null}
+        <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.035] p-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-slate-500">Plan comparison</p>
+              <h3 className="mt-2 text-2xl font-black text-white">Simple now. More power when you need it.</h3>
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/15 bg-cyan-400/10 px-3 py-2 text-xs font-black text-cyan-100">
+              <Zap className="h-3.5 w-3.5" />
+              No third plan during launch
+            </div>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-3xl border border-white/10">
+            {comparisonRows.map((row, index) => (
+              <div
+                key={row.label}
+                className={cn(
+                  "grid gap-3 p-4 text-sm sm:grid-cols-[1.3fr_0.7fr_0.7fr]",
+                  index % 2 === 0 ? "bg-white/[0.025]" : "bg-transparent",
+                )}
+              >
+                <p className="font-bold text-white">{row.label}</p>
+                <p className="text-slate-400">Free: {row.free}</p>
+                <p className="font-black text-blue-100">Premium: {row.premium}</p>
+              </div>
+            ))}
+          </div>
+        </section>
       </div>
     </main>
   );
