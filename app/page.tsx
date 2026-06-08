@@ -33,13 +33,6 @@ const quickFeatures = [
   { title: "Recruiter Feedback", text: "See score, trust, verdict, and weak answers.", icon: BarChart3 },
 ];
 
-const steps = [
-  ["01", "Add CV", "Paste or upload your resume."],
-  ["02", "Add Job", "Add the target role or job description."],
-  ["03", "Practice", "Start a realistic AI recruiter interview."],
-  ["04", "Improve", "Review verdict, trust, and weakest answer."],
-];
-
 // Module-level constant — not recreated on every TrustTimeline render
 const FIXED_TRUST_PTS = [[0,42],[20,36],[40,39],[60,28],[80,23],[110,26]];
 
@@ -257,6 +250,27 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-sm font-black uppercase tracking-[0.20em] text-white/50">{children}</p>;
 }
 
+function FaqItem({ question, answer }: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-2xl border border-white/[0.10] bg-black/20 backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
+      >
+        <span className="text-sm font-black text-white">{question}</span>
+        <ChevronDown className={`h-4 w-4 shrink-0 text-white/40 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && (
+        <div className="border-t border-white/[0.08] px-5 pb-4 pt-3">
+          <p className="text-sm leading-6 text-white/60">{answer}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LandingPage() {
   const localizedPrice = useMemo(() => getWorkZoDisplayPrice(), []);
   const glowRef = useRef<HTMLDivElement>(null);
@@ -282,6 +296,7 @@ export default function LandingPage() {
     <main className="relative min-h-screen overflow-x-hidden bg-[#020a18] text-white">
       {/* Cursor glow overlay */}
       <div ref={glowRef} className="pointer-events-none fixed inset-0 z-50 transition-[background] duration-200 ease-out" />
+
       {/* ── Hero ── */}
       <section className="relative isolate overflow-hidden">
         {/* Cinematic glow — deep blue spotlight from above, fades to nothing */}
@@ -406,42 +421,265 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Trust strip ── */}
-      <section className="border-y border-white/[0.08] bg-black/10 px-4 py-6 backdrop-blur-sm sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-7xl gap-3 sm:grid-cols-3">
-          {[
-            ["Built for global job seekers", "Role, country, and job context can shape the interview."],
-            ["Not a question bank", "The recruiter reacts to what you actually say."],
-            ["Designed for confidence", "Practice pressure before it matters."],
-          ].map(([title, text]) => (
-            <div key={title} className="rounded-2xl border border-white/[0.10] bg-black/20 p-5 backdrop-blur-sm">
-              <p className="font-black text-white">{title}</p>
-              <p className="mt-2 text-sm leading-6 text-white/60">{text}</p>
-            </div>
-          ))}
+      {/* ── Trust Bar ── */}
+      <section className="px-4 py-8 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+            {[
+              ["66+", "Beta Testers"],
+              ["500+", "AI Interviews Practiced"],
+              ["10+", "Countries Represented"],
+              ["4", "AI Recruiters"],
+            ].map(([number, label]) => (
+              <div key={label} className="rounded-2xl border border-white/[0.10] bg-black/20 p-6 text-center backdrop-blur-sm">
+                <p className="text-4xl font-black text-white">{number}</p>
+                <p className="mt-1 text-sm text-white/50">{label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-center text-xs text-white/40">
+            Helping candidates prepare smarter before real interviews.
+          </p>
         </div>
       </section>
 
-      {/* ── How it works ── */}
-      <section id="how" className="px-4 py-20 sm:px-6 lg:px-8">
+      {/* ── Real Interview Walkthrough ── */}
+      <section id="how" className="px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-2xl">
+          <div className="text-center">
+            <SectionLabel>See it in action</SectionLabel>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+              See How WorkZo Works
+            </h2>
+            <p className="mt-4 text-lg leading-8 text-white/60">
+              A realistic recruiter conversation with live trust analysis.
+            </p>
+          </div>
+
+          <div className="relative mt-10">
+            {/* Vertical connector line */}
+            <div className="absolute left-[15px] top-4 h-[calc(100%-2rem)] w-px bg-white/[0.08]" />
+
+            <div className="space-y-4">
+              {/* Step 1: Recruiter Question */}
+              <div className="relative flex gap-5">
+                <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-500 ring-4 ring-blue-500/20">
+                  <span className="text-[9px] font-black text-white">01</span>
+                </div>
+                <div className="flex-1 rounded-2xl border border-blue-400/30 bg-blue-500/[0.07] px-4 py-3 backdrop-blur-sm">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-blue-300">Recruiter Question</p>
+                  <p className="mt-1.5 text-sm leading-6 text-white/80">
+                    Tell me about a difficult customer situation you handled.
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 2: Candidate Answer */}
+              <div className="relative flex gap-5">
+                <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/20 ring-4 ring-white/[0.08]">
+                  <span className="text-[9px] font-black text-white/80">02</span>
+                </div>
+                <div className="flex-1 rounded-2xl border border-white/[0.10] bg-black/20 px-4 py-3 backdrop-blur-sm">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/50">Candidate Answer</p>
+                  <p className="mt-1.5 text-sm leading-6 text-white/60 italic">
+                    &ldquo;I handled many difficult customers and always tried to resolve issues quickly.&rdquo;
+                  </p>
+                </div>
+              </div>
+
+              {/* Step 3: WorkZo Analysis */}
+              <div className="relative flex gap-5">
+                <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-400 ring-4 ring-emerald-400/20">
+                  <span className="text-[9px] font-black text-white">03</span>
+                </div>
+                <div className="flex-1 overflow-hidden rounded-2xl border border-emerald-400/30 bg-emerald-500/[0.07] backdrop-blur-sm">
+                  <div className="flex items-center justify-between gap-3 px-4 py-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.18em] text-emerald-300">WorkZo Analysis</p>
+                    <span className="shrink-0 rounded-full border border-red-400/30 bg-red-500/15 px-2.5 py-0.5 text-[11px] font-black text-red-300">
+                      Trust −18%
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 divide-x divide-white/[0.06] border-t border-white/[0.06]">
+                    <div className="px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-red-300/80">Why it dropped</p>
+                      <p className="mt-1 text-xs leading-5 text-white/60">No evidence, no ownership, too generic</p>
+                    </div>
+                    <div className="px-4 py-3">
+                      <p className="text-[10px] font-black uppercase tracking-[0.14em] text-emerald-300">Fix</p>
+                      <p className="mt-1 text-xs leading-5 text-white/60">Use STAR · add metrics · show ownership</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── Why Good Candidates Get Rejected ── */}
+      <section className="px-4 py-14 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
-          <SectionLabel>How it works</SectionLabel>
+          <SectionLabel>The problem</SectionLabel>
           <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
-            From CV to interview feedback in minutes.
+            Why Good Candidates Still Get Rejected
           </h2>
           <p className="mt-4 text-lg leading-8 text-white/60">
-            Start with your own material, or try the demo without uploading anything.
+            Most candidates are rejected for communication problems, not technical ability.
           </p>
         </div>
 
-        <div className="mx-auto mt-12 grid max-w-7xl gap-4 md:grid-cols-4">
-          {steps.map(([number, title, text]) => (
-            <div key={number} className="rounded-3xl border border-white/[0.10] bg-black/20 p-6 backdrop-blur-sm transition hover:bg-black/30">
-              <p className="text-2xl font-black text-white/30">{number}</p>
-              <h3 className="mt-4 text-xl font-black">{title}</h3>
-              <p className="mt-2 text-sm leading-6 text-white/60">{text}</p>
+        <div className="mx-auto mt-8 grid max-w-7xl gap-5 md:grid-cols-2">
+          {[
+            {
+              title: "No Evidence",
+              candidate: "I improved customer satisfaction.",
+              recruiter: "By how much?",
+            },
+            {
+              title: "Weak Ownership",
+              candidate: "We worked on it.",
+              recruiter: "What exactly did YOU do?",
+            },
+            {
+              title: "Generic Answers",
+              candidate: "I am hardworking.",
+              recruiter: "Everyone says that.",
+            },
+            {
+              title: "No Structure",
+              candidate: "Candidate rambles.",
+              recruiter: "Recruiter loses confidence.",
+            },
+          ].map((card) => (
+            <div key={card.title} className="rounded-3xl border border-white/[0.10] bg-black/20 p-6 backdrop-blur-sm">
+              <p className="mb-4 text-sm font-black uppercase tracking-[0.18em] text-white/40">{card.title}</p>
+              <div className="space-y-3">
+                <div className="rounded-xl bg-white/[0.05] p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/40">Candidate</p>
+                  <p className="mt-1 text-sm leading-5 text-white/70">&ldquo;{card.candidate}&rdquo;</p>
+                </div>
+                <div className="rounded-xl border border-red-400/20 bg-red-500/[0.07] p-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-red-300">Recruiter</p>
+                  <p className="mt-1 text-sm leading-5 text-white/70">{card.recruiter}</p>
+                </div>
+              </div>
             </div>
           ))}
+        </div>
+
+        <p className="mx-auto mt-8 max-w-xl text-center text-sm leading-7 text-white/50">
+          WorkZo catches these mistakes before the real interview.
+        </p>
+      </section>
+
+      {/* ── Results Preview ── */}
+      <section className="px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>Your report</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+            See What Happens After Every Interview
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-white/60">
+            WorkZo shows exactly where recruiter confidence increased or dropped.
+          </p>
+        </div>
+
+        <div className="mx-auto mt-8 max-w-7xl">
+          <div className="overflow-hidden rounded-3xl border border-blue-400/[0.22] bg-black/30 shadow-[0_0_60px_rgba(59,130,246,0.08)] backdrop-blur-sm">
+            {/* Card header */}
+            <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-3.5">
+              <p className="text-sm font-black">Interview Report</p>
+              <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-2.5 py-0.5 text-[11px] font-black text-emerald-200">
+                Engaged
+              </span>
+            </div>
+
+            {/* Card body */}
+            <div className="grid gap-5 p-5 md:grid-cols-2">
+              {/* Left — Trust Score + Timeline */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-4">
+                  <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full border-[8px] border-blue-500/50 bg-blue-500/10">
+                    <p className="text-4xl font-black">71</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-white">Recruiter Trust Score</p>
+                    <p className="mt-0.5 text-xs text-white/40">/ 100</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
+                    Trust Timeline
+                  </p>
+                  <div className="space-y-2.5">
+                    {[
+                      { q: "Q1", v: 92, color: "bg-blue-400/60", drop: false },
+                      { q: "Q2", v: 84, color: "bg-blue-400/60", drop: false },
+                      { q: "Q3", v: 61, color: "bg-amber-400/60", drop: true },
+                      { q: "Q4", v: 58, color: "bg-red-400/60", drop: true },
+                      { q: "Q5", v: 74, color: "bg-blue-400/60", drop: false },
+                    ].map(({ q, v, color, drop }) => (
+                      <div key={q} className="flex items-center gap-3">
+                        <p className="w-5 shrink-0 text-[11px] text-white/40">{q}</p>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                          <div className={`h-full rounded-full ${color}`} style={{ width: `${v}%` }} />
+                        </div>
+                        <div className="flex w-14 items-center justify-end gap-1">
+                          <p className={`text-[11px] font-black ${drop ? "text-red-300" : "text-white/60"}`}>{v}%</p>
+                          {drop && <span className="text-[10px] text-red-300">↓</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Right — Weakest Answer, Recruiter Thoughts, Improvement Plan */}
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-amber-300/20 bg-amber-400/[0.07] p-4">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
+                    Weakest Answer
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-white/70">
+                    You described responsibilities but gave no measurable proof.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.04] p-4">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-white/40">
+                    Recruiter Thoughts
+                  </p>
+                  <p className="text-sm text-white/70">Candidate sounds experienced.</p>
+                  <p className="mt-1 text-sm text-white/50">Evidence is missing.</p>
+                </div>
+
+                <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.07] p-4">
+                  <p className="mb-2 text-[10px] font-black uppercase tracking-[0.16em] text-emerald-300">
+                    Improvement Plan
+                  </p>
+                  <ul className="space-y-1.5">
+                    {["Add measurable outcomes", "Demonstrate ownership", "Use STAR structure"].map((item) => (
+                      <li key={item} className="flex items-center gap-2 text-xs text-white/70">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400/70" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-8 text-center">
+            <Link
+              href="/pricing?intent=interview"
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-7 py-4 text-base font-black text-slate-900 shadow-xl shadow-black/20 transition hover:scale-[1.02] hover:bg-blue-50"
+            >
+              Start Your Interview
+              <ArrowRight className="h-5 w-5" />
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -471,7 +709,49 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* ── Why WorkZo Is Different ── */}
+      <section className="px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>The difference</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+            Built For Real Interviews
+          </h2>
+        </div>
 
+        <div className="mx-auto mt-8 max-w-4xl overflow-hidden rounded-3xl border border-white/[0.10] bg-black/20 backdrop-blur-sm">
+          {/* Table header */}
+          <div className="grid grid-cols-[1fr_110px_120px] border-b border-white/[0.08] bg-white/[0.04] px-5 py-3.5">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/40">Feature</p>
+            <p className="text-center text-[11px] font-black uppercase tracking-[0.18em] text-blue-300">WorkZo AI</p>
+            <p className="text-center text-[11px] font-black uppercase tracking-[0.18em] text-white/30">Typical Apps</p>
+          </div>
+
+          {[
+            ["CV-Aware Interviews", "YES", "LIMITED"],
+            ["Job Description Awareness", "YES", "LIMITED"],
+            ["Recruiter Trust Analysis", "YES", "NO"],
+            ["Dynamic Follow-Ups", "YES", "LIMITED"],
+            ["Weakest Answer Detection", "YES", "NO"],
+            ["Recruiter Personalities", "YES", "NO"],
+            ["Trust Timeline", "YES", "NO"],
+            ["Improvement Plan", "DETAILED", "BASIC"],
+          ].map(([feature, workzo, typical], i) => (
+            <div
+              key={feature}
+              className={`grid grid-cols-[1fr_110px_120px] items-center border-b border-white/[0.05] px-5 py-3.5 last:border-0 ${i % 2 === 1 ? "bg-white/[0.02]" : ""}`}
+            >
+              <p className="text-sm text-white/80">{feature}</p>
+              <div className="flex items-center justify-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <p className="text-sm font-black text-emerald-300">{workzo}</p>
+              </div>
+              <p className={`text-center text-sm font-black ${typical === "NO" ? "text-red-300/70" : typical === "BASIC" ? "text-amber-300/60" : "text-amber-300/60"}`}>
+                {typical}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
 
       {/* ── Pricing ── */}
       <section className="px-4 py-20 sm:px-6 lg:px-8">
@@ -540,6 +820,30 @@ export default function LandingPage() {
               Upgrade to Premium
               <ArrowRight className="h-4 w-4" />
             </Link>
+          </div>
+        </div>
+      </section>
+
+      {/* ── FAQ ── */}
+      <section className="px-4 py-14 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl">
+          <div className="mb-10 text-center">
+            <SectionLabel>FAQ</SectionLabel>
+            <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+              Common Questions
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {[
+              ["Is WorkZo just a question bank?", "No. WorkZo is a dynamic AI recruiter that reacts to exactly what you say — follow-up questions, pressure, and trust scores change based on your answers."],
+              ["How realistic are the AI recruiters?", "Each recruiter has a distinct personality based on real hiring patterns — they push for evidence, ownership, and specifics just like real interviewers do."],
+              ["What does the trust score measure?", "Recruiter confidence in your answers across the full interview, updated question by question. A drop means the recruiter needed more proof or specifics."],
+              ["Can I use my actual CV?", "Yes. Paste or upload your resume and WorkZo tailors every question to your real background and the target role."],
+              ["What is in a full interview report?", "Trust timeline per question, weakest answer, recruiter thoughts on your performance, and a detailed improvement plan."],
+              ["Which languages are supported?", "English. More languages are on the roadmap."],
+            ].map(([question, answer]) => (
+              <FaqItem key={question} question={question} answer={answer} />
+            ))}
           </div>
         </div>
       </section>
