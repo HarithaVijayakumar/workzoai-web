@@ -3614,7 +3614,7 @@ const [questionIndex, setQuestionIndex] = useState(0);
                 <ArrowLeft className="h-5 w-5" />
               </button>
 
-              <Link href="/dashboard" className="flex items-center gap-3">
+              <Link href="/" className="flex items-center gap-3">
                 <Image
                   src="/workzo_icon.png"
                   alt="WorkZo AI"
