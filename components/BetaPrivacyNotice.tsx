@@ -1,14 +1,14 @@
 import { ShieldCheck, Sparkles } from "lucide-react";
 
-type BetaPrivacyNoticeProps = {
+type PrivacyNoticeProps = {
   compact?: boolean;
   className?: string;
 };
 
-export default function BetaPrivacyNotice({
+export default function PrivacyNotice({
   compact = false,
   className = "",
-}: BetaPrivacyNoticeProps) {
+}: PrivacyNoticeProps) {
   return (
     <div
       className={`rounded-2xl border border-cyan-300/20 bg-cyan-400/8 p-4 text-cyan-50 ${className}`}
@@ -18,9 +18,9 @@ export default function BetaPrivacyNotice({
           {compact ? <ShieldCheck className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
         </div>
         <div>
-          <p className="font-black">Beta notice</p>
+          <p className="font-black">Privacy notice</p>
           <p className="mt-1 text-sm leading-6 text-cyan-100/85">
-            WorkZo AI is in beta. Interview feedback, CV insights, and recruiter scoring may be incomplete or imperfect.
+            WorkZo AI uses AI to generate interview feedback and scoring. Results are for practice only — always validate important feedback independently.
             Please review outputs before using them for real applications.
           </p>
           {!compact && (

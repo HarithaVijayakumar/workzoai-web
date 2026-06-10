@@ -24,7 +24,7 @@ export default function Page() {
             Help center
           </div>
           <h1 className="mt-4 max-w-3xl text-3xl font-black tracking-[-0.04em] sm:text-5xl">Help Center</h1>
-          <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">Quick support for onboarding, CV uploads, interviews, results, pricing, and beta usage.</p>
+          <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 sm:text-base">Quick support for onboarding, CV uploads, interviews, results, and pricing.</p>
         </section>
 
         <section className="mt-6 grid gap-5 md:grid-cols-3">

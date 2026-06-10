@@ -79,7 +79,6 @@ export default function WorkZoFooter() {
 
           <div className="mt-5 flex flex-wrap gap-2">
             <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-xs font-black text-cyan-100">
-              Beta
             </span>
             <span className="rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1 text-xs font-black text-emerald-100">
               Global job seekers
@@ -103,7 +102,7 @@ export default function WorkZoFooter() {
       </div>
 
       <div className="mx-auto mt-10 flex max-w-7xl flex-col gap-3 border-t border-white/10 pt-6 text-xs leading-5 text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-        <p>© 2026 WorkZo AI · Beta</p>
+        <p>© 2026 WorkZo AI</p>
         <p className="max-w-3xl">
           Interview preparation support. WorkZo AI does not guarantee interviews, job offers, or employment outcomes.
         </p>

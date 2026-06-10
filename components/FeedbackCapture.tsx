@@ -22,11 +22,11 @@ export default function FeedbackCapture({
     };
 
     try {
-      const existing = JSON.parse(window.localStorage.getItem("workzo-beta-feedback") || "[]") as unknown[];
+      const existing = JSON.parse(window.localStorage.getItem("workzo-feedback") || "[]") as unknown[];
       existing.push(payload);
-      window.localStorage.setItem("workzo-beta-feedback", JSON.stringify(existing.slice(-300)));
+      window.localStorage.setItem("workzo-feedback", JSON.stringify(existing.slice(-300)));
     } catch {
-      window.localStorage.setItem("workzo-beta-feedback", JSON.stringify([payload]));
+      window.localStorage.setItem("workzo-feedback", JSON.stringify([payload]));
     }
 
     trackWorkZoLaunchEvent({
@@ -60,7 +60,7 @@ export default function FeedbackCapture({
       </div>
 
       <p className="mt-2 text-sm leading-6 text-slate-400">
-        Join the beta list or leave quick feedback after testing.
+        Leave quick feedback to help us improve.
       </p>
 
       <input

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   disableWorkZoFounderTestMode,
   enableWorkZoFounderTestMode,
@@ -10,38 +10,73 @@ import {
   resetWorkZoTestingUsage,
   setWorkZoCurrentPlan,
 } from "@/lib/workzoUsageTracker";
+import { getWorkZoPlanLimits, normalizeWorkZoPlan, type WorkZoPlanType } from "@/lib/workzoPlanLimits";
 
 type DevSummary = ReturnType<typeof getWorkZoUsageSummary>;
+
+const TEST_USAGE_KEY = "workzo_usage_state_v2";
+const CHECKOUT_KEYS = [
+  "workzo_pending_checkout",
+  "workzo_selected_plan_intent",
+  "workzo_pending_upgrade_route",
+  "workzo_allow_standard_start_once",
+  "workzo_after_login",
+];
+
+function cn(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
+function safeNumber(value: unknown, fallback = 0) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function setUsagePatch(patch: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+
+  try {
+    const raw = window.localStorage.getItem(TEST_USAGE_KEY);
+    const existing = raw ? JSON.parse(raw) : {};
+    window.localStorage.setItem(
+      TEST_USAGE_KEY,
+      JSON.stringify({
+        ...existing,
+        monthKey:
+          existing?.monthKey ||
+          `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
+        ...patch,
+        lastUpdatedAt: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // Ignore localStorage errors in dev tools.
+  }
+}
 
 export default function DevToolsPage() {
   const [mounted, setMounted] = useState(false);
   const [summary, setSummary] = useState<DevSummary | null>(null);
-  const [plan, setPlan] = useState("free");
+  const [plan, setPlan] = useState<WorkZoPlanType>("free");
 
   function refresh() {
     if (typeof window === "undefined") return;
-    setSummary(getWorkZoUsageSummary());
-    setPlan(getWorkZoCurrentPlan());
+    const currentPlan = normalizeWorkZoPlan(getWorkZoCurrentPlan());
+    setSummary(getWorkZoUsageSummary(currentPlan));
+    setPlan(currentPlan);
   }
 
   function clearCheckoutState() {
     if (typeof window === "undefined") return;
-    window.localStorage.removeItem("workzo_pending_checkout");
-    window.localStorage.removeItem("workzo_selected_plan_intent");
-    window.localStorage.removeItem("workzo_pending_upgrade_route");
-  }
-
-  function testAsFreeCustomer() {
-    disableWorkZoFounderTestMode();
-    setWorkZoCurrentPlan("free");
-    resetWorkZoTestingUsage();
-    clearCheckoutState();
+    for (const key of CHECKOUT_KEYS) {
+      window.localStorage.removeItem(key);
+    }
+    document.cookie = "workzo_after_login=; Max-Age=0; Path=/; SameSite=Lax";
     refresh();
   }
 
-  function testAsPremiumCustomer() {
+  function setPlanForTesting(nextPlan: WorkZoPlanType) {
     disableWorkZoFounderTestMode();
-    setWorkZoCurrentPlan("premium");
+    setWorkZoCurrentPlan(nextPlan);
     resetWorkZoTestingUsage();
     clearCheckoutState();
     refresh();
@@ -49,8 +84,46 @@ export default function DevToolsPage() {
 
   function testAsFounderUnlimited() {
     enableWorkZoFounderTestMode();
-    setWorkZoCurrentPlan("premium");
+    setWorkZoCurrentPlan("premium_pro");
     resetWorkZoTestingUsage();
+    clearCheckoutState();
+    refresh();
+  }
+
+  function resetOnlyTavusMinutes() {
+    setUsagePatch({
+      tavusInterviewsStarted: 0,
+      tavusMinutesUsed: 0,
+    });
+    refresh();
+  }
+
+  function simulateFreeLimitReached() {
+    setWorkZoCurrentPlan("free");
+    setUsagePatch({
+      interviewsStarted: 2,
+      tavusInterviewsStarted: 0,
+      tavusMinutesUsed: 0,
+    });
+    refresh();
+  }
+
+  function simulatePremiumLimitReached() {
+    setWorkZoCurrentPlan("premium");
+    setUsagePatch({
+      interviewsStarted: 50,
+      tavusInterviewsStarted: 0,
+      tavusMinutesUsed: 0,
+    });
+    refresh();
+  }
+
+  function simulateProTavusExpired() {
+    setWorkZoCurrentPlan("premium_pro");
+    setUsagePatch({
+      tavusInterviewsStarted: 999,
+      tavusMinutesUsed: 60,
+    });
     refresh();
   }
 
@@ -59,58 +132,242 @@ export default function DevToolsPage() {
     refresh();
   }, []);
 
+  const limits = useMemo(() => getWorkZoPlanLimits(plan), [plan]);
+  const summaryAny = summary as any;
+
   const displayPlan = mounted ? plan : "free";
-  const founderMode = mounted && summary?.testMode ? "enabled" : "disabled";
-  const used = mounted ? summary?.usage.interviewsStarted ?? 0 : 0;
-  const remaining = mounted ? summary?.interviewsRemaining ?? 0 : 0;
-  const videoRemaining = mounted ? summary?.tavusInterviewsRemaining ?? 0 : 0;
+  const founderMode = mounted && summaryAny?.testMode ? "enabled" : "disabled";
+  const usage = summaryAny?.usage || {};
+  const interviewsUsed = safeNumber(usage.interviewsStarted);
+  const interviewsLeft = safeNumber(summaryAny?.interviewsRemaining);
+  const tavusUsed = safeNumber(usage.tavusMinutesUsed);
+  const tavusLimit = safeNumber(limits.tavusMinutesPerMonth);
+  const tavusLeft = Math.max(0, tavusLimit - tavusUsed);
+  const voiceLimit = limits.unlimitedVoiceInterviews ? "Unlimited" : String(limits.voiceInterviewsPerMonth);
+
+  const planCards: Array<{
+    plan: WorkZoPlanType;
+    title: string;
+    description: string;
+    tone: string;
+  }> = [
+    {
+      plan: "free",
+      title: "Test Free",
+      description: "2 voice interviews, basic report, locked premium tools.",
+      tone: "border-emerald-300/20 bg-emerald-400/10 text-emerald-100",
+    },
+    {
+      plan: "premium",
+      title: "Test Premium",
+      description: "50 voice interviews, CV tools, Job Assist, Career Brain.",
+      tone: "border-blue-300/20 bg-blue-400/10 text-blue-100",
+    },
+    {
+      plan: "premium_pro",
+      title: "Test Premium Pro",
+      description: "Unlimited voice interviews, 60 Tavus minutes, Career Coach.",
+      tone: "border-violet-300/20 bg-violet-400/10 text-violet-100",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-[#050a12] px-5 py-8 text-white">
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <Link href="/" className="text-sm font-black text-slate-300 hover:text-white">
           ← Back home
         </Link>
 
         <section className="mt-8 rounded-[2rem] border border-white/10 bg-white/[0.04] p-6">
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-cyan-200">Founder testing</p>
+          <p className="text-sm font-black uppercase tracking-[0.22em] text-cyan-200">
+            Founder testing
+          </p>
           <h1 className="mt-3 text-4xl font-black">WorkZo Dev Tools</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300">
-            Test Free, Premium, Founder mode, dashboard gating, results gating, and interview limits before Stripe.
+            Switch between Free, Premium, and Premium Pro without Stripe. Use this page to test dashboard gating,
+            onboarding recruiter locks, interview limits, results gating, Tavus minute behavior, and Premium Pro features.
           </p>
 
-          <div className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200 sm:grid-cols-2 lg:grid-cols-5">
-            <p>Plan: <strong>{displayPlan}</strong></p>
-            <p>Founder mode: <strong>{founderMode}</strong></p>
-            <p>Used: <strong>{used}</strong></p>
-            <p>Interviews left: <strong>{remaining}</strong></p>
-            <p>Video left: <strong>{videoRemaining}</strong></p>
+          <div className="mt-6 grid gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 text-sm leading-7 text-slate-200 sm:grid-cols-2 lg:grid-cols-6">
+            <p>
+              Plan: <strong>{displayPlan}</strong>
+            </p>
+            <p>
+              Founder mode: <strong>{founderMode}</strong>
+            </p>
+            <p>
+              Voice used: <strong>{interviewsUsed}</strong>
+            </p>
+            <p>
+              Voice limit: <strong>{voiceLimit}</strong>
+            </p>
+            <p>
+              Voice left: <strong>{limits.unlimitedVoiceInterviews ? "∞" : interviewsLeft}</strong>
+            </p>
+            <p>
+              Tavus: <strong>{tavusUsed}/{tavusLimit}</strong>
+            </p>
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            <button type="button" onClick={testAsFreeCustomer} className="rounded-2xl border border-emerald-300/20 bg-emerald-400/10 p-5 text-left hover:bg-emerald-400/15">
-              <p className="text-lg font-black text-emerald-100">Test Free Customer</p>
-              <p className="mt-2 text-sm leading-6 text-emerald-50/80">2 interviews, locked premium tools, results preview.</p>
-            </button>
+            {planCards.map((card) => (
+              <button
+                key={card.plan}
+                type="button"
+                onClick={() => setPlanForTesting(card.plan)}
+                className={cn(
+                  "rounded-2xl border p-5 text-left transition hover:scale-[1.01]",
+                  card.tone,
+                  plan === card.plan && "ring-2 ring-white/30",
+                )}
+              >
+                <p className="text-lg font-black">{card.title}</p>
+                <p className="mt-2 text-sm leading-6 opacity-80">{card.description}</p>
+                <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] opacity-70">
+                  {plan === card.plan ? "Current test plan" : "Switch plan"}
+                </p>
+              </button>
+            ))}
+          </div>
 
-            <button type="button" onClick={testAsPremiumCustomer} className="rounded-2xl border border-blue-300/20 bg-blue-400/10 p-5 text-left hover:bg-blue-400/15">
-              <p className="text-lg font-black text-blue-100">Test Premium Customer</p>
-              <p className="mt-2 text-sm leading-6 text-blue-50/80">Paid-user state without Stripe.</p>
-            </button>
+          <div className="mt-6 rounded-2xl border border-violet-300/15 bg-violet-500/[0.06] p-5">
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-violet-200">
+              Premium Pro Tavus testing
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tavus minutes used</p>
+                <p className="mt-2 text-3xl font-black">{tavusUsed}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tavus monthly limit</p>
+                <p className="mt-2 text-3xl font-black">{tavusLimit}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Tavus minutes left</p>
+                <p className="mt-2 text-3xl font-black">{tavusLeft}</p>
+              </div>
+            </div>
 
-            <button type="button" onClick={testAsFounderUnlimited} className="rounded-2xl border border-violet-300/20 bg-violet-400/10 p-5 text-left hover:bg-violet-400/15">
-              <p className="text-lg font-black text-violet-100">Founder Unlimited Test</p>
-              <p className="mt-2 text-sm leading-6 text-violet-50/80">Unlimited testing for you and trusted freelancers.</p>
-            </button>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={resetOnlyTavusMinutes}
+                className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10"
+              >
+                Reset Tavus Minutes
+              </button>
+              <button
+                type="button"
+                onClick={simulateProTavusExpired}
+                className="rounded-2xl border border-red-300/20 bg-red-500/10 px-5 py-4 text-sm font-black text-red-100 hover:bg-red-500/15"
+              >
+                Simulate Tavus Expired
+              </button>
+              <Link
+                href="/interview?test=1&mode=tavus"
+                className="rounded-2xl border border-violet-300/20 bg-violet-400/10 px-5 py-4 text-center text-sm font-black text-violet-100 hover:bg-violet-400/15"
+              >
+                Test Tavus Room
+              </Link>
+            </div>
+          </div>
+
+          <div className="mt-6 rounded-2xl border border-white/10 bg-black/20 p-5">
+            <p className="text-sm font-black uppercase tracking-[0.2em] text-slate-300">
+              Limit simulation
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <button
+                type="button"
+                onClick={simulateFreeLimitReached}
+                className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-sm font-black text-amber-100 hover:bg-amber-400/15"
+              >
+                Simulate Free Limit
+              </button>
+              <button
+                type="button"
+                onClick={simulatePremiumLimitReached}
+                className="rounded-2xl border border-amber-300/20 bg-amber-400/10 px-5 py-4 text-sm font-black text-amber-100 hover:bg-amber-400/15"
+              >
+                Simulate Premium Limit
+              </button>
+              <button
+                type="button"
+                onClick={testAsFounderUnlimited}
+                className="rounded-2xl border border-violet-300/20 bg-violet-400/10 px-5 py-4 text-sm font-black text-violet-100 hover:bg-violet-400/15"
+              >
+                Founder Unlimited
+              </button>
+            </div>
           </div>
 
           <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <button type="button" onClick={() => { resetWorkZoTestingUsage(); refresh(); }} className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10">Reset usage</button>
-            <Link href="/pricing?intent=interview&test=1" className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-5 py-4 text-center text-sm font-black text-cyan-100 hover:bg-cyan-400/15">Pricing flow</Link>
-            <Link href="/onboarding" className="rounded-2xl bg-white px-5 py-4 text-center text-sm font-black text-slate-950 hover:bg-slate-200">Upload CV</Link>
-            <Link href="/interview?test=1" className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10">Interview</Link>
-            <Link href="/results" className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10">Results</Link>
-            <Link href="/dashboard" className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10">Dashboard</Link>
+            <button
+              type="button"
+              onClick={() => {
+                resetWorkZoTestingUsage();
+                refresh();
+              }}
+              className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10"
+            >
+              Reset All Usage
+            </button>
+            <button
+              type="button"
+              onClick={clearCheckoutState}
+              className="rounded-2xl border border-white/10 px-5 py-4 text-sm font-black text-slate-200 hover:bg-white/10"
+            >
+              Clear Checkout State
+            </button>
+            <Link
+              href="/pricing?intent=interview&test=1"
+              className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 px-5 py-4 text-center text-sm font-black text-cyan-100 hover:bg-cyan-400/15"
+            >
+              Pricing Flow
+            </Link>
+            <Link
+              href="/billing/checkout?plan=premium&billing=monthly"
+              className="rounded-2xl border border-blue-300/20 bg-blue-400/10 px-5 py-4 text-center text-sm font-black text-blue-100 hover:bg-blue-400/15"
+            >
+              Premium Checkout
+            </Link>
+            <Link
+              href="/billing/checkout?plan=premium_pro&billing=monthly"
+              className="rounded-2xl border border-violet-300/20 bg-violet-400/10 px-5 py-4 text-center text-sm font-black text-violet-100 hover:bg-violet-400/15"
+            >
+              Pro Checkout
+            </Link>
+            <Link
+              href="/onboarding"
+              className="rounded-2xl bg-white px-5 py-4 text-center text-sm font-black text-slate-950 hover:bg-slate-200"
+            >
+              Onboarding
+            </Link>
+            <Link
+              href="/interview?test=1"
+              className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10"
+            >
+              Voice Interview
+            </Link>
+            <Link
+              href="/results"
+              className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10"
+            >
+              Results
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10"
+            >
+              Dashboard
+            </Link>
+            <Link
+              href="/history"
+              className="rounded-2xl border border-white/10 px-5 py-4 text-center text-sm font-black text-slate-200 hover:bg-white/10"
+            >
+              History
+            </Link>
           </div>
         </section>
       </div>

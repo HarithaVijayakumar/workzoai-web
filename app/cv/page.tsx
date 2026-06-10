@@ -99,6 +99,104 @@ export default function CvWorkspacePage() {
   const htmlPreview = useMemo(() => generateResumeHtml(resumeInput), [resumeInput]);
 
   const phaseA = useMemo(() => buildPhaseAInsights({ cvText, jobDescription, targetRole, targetMarket }), [cvText, jobDescription, targetRole, targetMarket]);
+
+  const atsKeywords = useMemo(() => {
+    if (!jobDescription.trim()) return { matched: [], partial: [], missing: [], score: 0 };
+
+    const jdLower = jobDescription.toLowerCase();
+    const cvLower = cvText.toLowerCase();
+
+    // Extract meaningful keywords from JD (filter out stop words)
+    const stopWords = new Set(["the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for", "of", "with", "by", "from", "is", "are", "was", "were", "will", "be", "have", "has", "had", "do", "does", "did", "not", "this", "that", "we", "you", "they", "their", "our", "your", "its", "as", "if", "than", "then", "so", "can", "could", "should", "would", "may", "must", "shall", "who", "what", "when", "where", "how", "all", "any", "both", "each"]);
+
+    // Extract 2–4 word phrases that look like skills/requirements
+    const phrases: string[] = [];
+    const phrasePattern = /([a-z][a-z+#.\-/]{1,}(?:\s+[a-z][a-z+#.\-/]{1,}){0,3})/g;
+    let m: RegExpExecArray | null;
+    while ((m = phrasePattern.exec(jdLower)) !== null) {
+      const phrase = m[1]?.trim() ?? "";
+      if (phrase.length < 3) continue;
+      const words = phrase.split(/\s+/);
+      if (words.every((w) => stopWords.has(w))) continue;
+      // Prefer technical terms, skills, tools, certifications
+      if (/\d|[+#]|sql|python|excel|tableau|power\s?bi|crm|salesforce|zendesk|jira|azure|aws|gcp|react|node|java|typescript|javascript|api|saas|agile|scrum|stakeholder|customer|support|management|analysis|data|communication|leadership|experience|degree|certification|certification/i.test(phrase)) {
+        phrases.push(phrase);
+      }
+    }
+
+    // Deduplicate and take top 30 most relevant
+    const uniquePhrases = [...new Set(phrases)].slice(0, 40);
+
+    const matched: string[] = [];
+    const partial: string[] = [];
+    const missing: string[] = [];
+
+    for (const phrase of uniquePhrases) {
+      const words = phrase.split(/\s+/);
+      if (cvLower.includes(phrase)) {
+        matched.push(phrase);
+      } else if (words.length > 1 && words.some((w) => cvLower.includes(w) && !stopWords.has(w))) {
+        partial.push(phrase);
+      } else {
+        missing.push(phrase);
+      }
+    }
+
+    return { matched: matched.slice(0, 15), partial: partial.slice(0, 10), missing: missing.slice(0, 15) };
+  }, [cvText, jobDescription]);
+
+  const atsScore = useMemo(() => {
+    const total = atsKeywords.matched.length + atsKeywords.partial.length + atsKeywords.missing.length;
+    if (total === 0) return 0;
+    return Math.round((atsKeywords.matched.length + atsKeywords.partial.length * 0.5) / total * 100);
+  }, [atsKeywords]);
+
+  // ATS keyword gap analysis — extracts required keywords from JD, checks which are in CV
+  const atsAnalysis = useMemo(() => {
+    if (!jobDescription.trim() || !cvText.trim()) {
+      return { score: 0, matched: [] as string[], missing: [] as string[], partial: [] as string[], total: 0 };
+    }
+    const jdLower = jobDescription.toLowerCase();
+    const cvLower = cvText.toLowerCase();
+
+    // Extract meaningful keywords from JD (2+ char, not stopwords)
+    const stopwords = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","by","from","is","are","be","will","you","we","they","have","has","that","this","as","it","its","was","not","your","our","their","all","more","can","may","who","which","how","each","any","both","do","does"]);
+    const jdWords = jdLower.match(/[a-z][a-z0-9+#.-]{1,25}/g) || [];
+    const keywordFreq: Record<string, number> = {};
+    for (const word of jdWords) {
+      if (!stopwords.has(word)) keywordFreq[word] = (keywordFreq[word] || 0) + 1;
+    }
+    // Keep only meaningful keywords (appear ≥2 times OR are clearly technical/role terms)
+    const technicalTerms = new Set(["sql","python","excel","power bi","tableau","crm","salesforce","zendesk","jira","api","saas","agile","scrum","aws","azure","gcp","javascript","typescript","react","node","data","analysis","analytics","stakeholder","customer","communication","leadership","management","project","support","technical","reporting","dashboard","collaboration","english","german","dutch","french"]);
+    const importantKeywords = Object.entries(keywordFreq)
+      .filter(([word, count]) => count >= 2 || technicalTerms.has(word))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 24)
+      .map(([word]) => word);
+
+    const matched: string[] = [];
+    const partial: string[] = [];
+    const missing: string[] = [];
+
+    for (const keyword of importantKeywords) {
+      if (cvLower.includes(keyword)) {
+        matched.push(keyword);
+      } else {
+        // Check for partial match (root word present)
+        const root = keyword.slice(0, Math.max(4, keyword.length - 2));
+        if (root.length >= 4 && cvLower.includes(root)) {
+          partial.push(keyword);
+        } else {
+          missing.push(keyword);
+        }
+      }
+    }
+
+    const total = importantKeywords.length || 1;
+    const score = Math.round(((matched.length + partial.length * 0.5) / total) * 100);
+
+    return { score, matched, missing, partial, total };
+  }, [cvText, jobDescription]);
   const phaseB = useMemo(
     () => buildPhaseBInsights({ cvText, jobDescription, targetRole, targetMarket }),
     [cvText, jobDescription, targetRole, targetMarket],
@@ -318,6 +416,76 @@ export default function CvWorkspacePage() {
           </div>
 
 
+          {/* ATS keyword gap analysis */}
+          {jobDescription.trim() && cvText.trim() && (
+            <div className="rounded-[2rem] border border-emerald-300/15 bg-emerald-400/[0.045] p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-200">ATS Optimization</p>
+                  <h2 className="mt-2 text-xl font-black">Keyword match score</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    {atsAnalysis.score >= 75
+                      ? "Strong keyword coverage. Your CV includes most JD requirements."
+                      : atsAnalysis.score >= 50
+                        ? "Moderate coverage. Adding the missing keywords could significantly improve ATS pass rate."
+                        : "Low keyword coverage. Many JD requirements are not reflected in your CV."}
+                  </p>
+                </div>
+                <div className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl border border-emerald-300/20 bg-black/25 text-center">
+                  <p className="text-2xl font-black text-emerald-100">{atsAnalysis.score}%</p>
+                  <p className="-mt-1 text-[9px] font-black text-slate-500">ATS</p>
+                </div>
+              </div>
+
+              {/* Progress bar */}
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${atsAnalysis.score >= 75 ? "bg-emerald-400" : atsAnalysis.score >= 50 ? "bg-amber-400" : "bg-red-400"}`}
+                  style={{ width: `${atsAnalysis.score}%` }}
+                />
+              </div>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-emerald-300/15 bg-emerald-400/[0.06] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-200">Matched ({atsAnalysis.matched.length})</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {atsAnalysis.matched.map(kw => (
+                      <span key={kw} className="rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-black text-emerald-100">{kw}</span>
+                    ))}
+                    {atsAnalysis.matched.length === 0 && <p className="text-xs text-slate-500">None yet</p>}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-amber-300/15 bg-amber-400/[0.06] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-200">Partial ({atsAnalysis.partial.length})</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {atsAnalysis.partial.map(kw => (
+                      <span key={kw} className="rounded-full bg-amber-400/15 px-2.5 py-1 text-xs font-black text-amber-100">{kw}</span>
+                    ))}
+                    {atsAnalysis.partial.length === 0 && <p className="text-xs text-slate-500">None</p>}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-red-300/15 bg-red-400/[0.06] p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-red-200">Missing ({atsAnalysis.missing.length})</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {atsAnalysis.missing.map(kw => (
+                      <span key={kw} className="rounded-full bg-red-400/15 px-2.5 py-1 text-xs font-black text-red-100">{kw}</span>
+                    ))}
+                    {atsAnalysis.missing.length === 0 && <p className="text-xs text-slate-500">None missing</p>}
+                  </div>
+                </div>
+              </div>
+
+              {atsAnalysis.missing.length > 0 && (
+                <div className="mt-4 rounded-xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-black text-white">Quick fix</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-300">
+                    Add these terms naturally to your CV where you genuinely have experience: <span className="font-bold text-amber-200">{atsAnalysis.missing.slice(0, 5).join(", ")}</span>. Only add terms that reflect real experience — never keyword-stuff.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="rounded-[2rem] border border-blue-300/15 bg-blue-500/[0.045] p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -388,6 +556,59 @@ export default function CvWorkspacePage() {
               <p className="mt-3 text-xs font-black uppercase tracking-[0.18em] text-slate-500">Elite version</p>
               <p className="mt-1 text-sm leading-6 text-emerald-50">{phaseB.top10Rewrite.eliteLine}</p>
             </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-emerald-300/15 bg-emerald-500/[0.04] p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-emerald-200">ATS Optimization</p>
+                <h2 className="mt-2 text-xl font-black">JD keyword gap analysis</h2>
+                <p className="mt-1 text-sm text-slate-400">Keywords the job description requires — checked against your CV.</p>
+              </div>
+              <div className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border border-emerald-300/20 bg-black/25 text-center">
+                <p className="text-xl font-black text-emerald-100">{atsScore}%</p>
+                <p className="-mt-1 text-[9px] font-black text-slate-500">ATS</p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-emerald-300/15 bg-emerald-400/[0.06] p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-200 mb-2">Matched ({atsKeywords.matched.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {atsKeywords.matched.map((kw) => (
+                    <span key={kw} className="rounded-lg border border-emerald-300/20 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-black text-emerald-200">{kw}</span>
+                  ))}
+                  {atsKeywords.matched.length === 0 && <p className="text-xs text-slate-500">Paste a job description to analyse.</p>}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-amber-300/15 bg-amber-400/[0.06] p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-200 mb-2">Partially matched ({atsKeywords.partial.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {atsKeywords.partial.map((kw) => (
+                    <span key={kw} className="rounded-lg border border-amber-300/20 bg-amber-400/10 px-2 py-0.5 text-[11px] font-black text-amber-200">{kw}</span>
+                  ))}
+                  {atsKeywords.partial.length === 0 && <p className="text-xs text-slate-500">No partial matches found.</p>}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-red-300/15 bg-red-400/[0.06] p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-red-200 mb-2">Missing ({atsKeywords.missing.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {atsKeywords.missing.map((kw) => (
+                    <span key={kw} className="rounded-lg border border-red-300/20 bg-red-400/10 px-2 py-0.5 text-[11px] font-black text-red-200">{kw}</span>
+                  ))}
+                  {atsKeywords.missing.length === 0 && <p className="text-xs text-slate-500">{jobDescription ? "No missing keywords." : "Paste a job description to see gaps."}</p>}
+                </div>
+              </div>
+            </div>
+
+            {atsKeywords.missing.length > 0 && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400 mb-2">Quick fix</p>
+                <p className="text-sm leading-6 text-slate-300">
+                  Add these missing keywords naturally into your CV bullet points — ideally in context with a measurable result. Do not keyword-stuff; ATS systems also check for context.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="rounded-[2rem] border border-white/10 bg-white/[0.03] p-5">

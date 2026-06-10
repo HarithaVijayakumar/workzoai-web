@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, CheckCircle2, Copy, FileText, Gauge, Target, Wand2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { readLatestInterviewSetup } from "@/lib/workzoInterviewSetup";
+import {
+  normalizeSetupCvText,
+  normalizeSetupJobDescription,
+  normalizeSetupTargetRole,
+  readLatestInterviewSetup,
+} from "@/lib/workzoInterviewSetup";
 import { buildPhaseAInsights } from "@/lib/workzoCareerSuitePhaseA";
 import { buildPhaseBInsights } from "@/lib/workzoCareerSuitePhaseB";
 
@@ -16,9 +21,16 @@ export default function CoverLetterWorkspacePage() {
 
   useEffect(() => {
     const setup = readLatestInterviewSetup();
-    setCvText(String(setup?.cvText || setup?.uploadedCvText || setup?.resumeText || setup?.candidateCv || ""));
-    setJobDescription(String(setup?.jobDescription || setup?.jdText || ""));
-    setTargetRole(String(setup?.targetRole || setup?.role || setup?.jobTitle || ""));
+    import("@/lib/workzoInterviewSetup").then(({ normalizeSetupCvText: normCv, normalizeSetupJobDescription: normJd, normalizeSetupTargetRole: normRole }) => {
+      setCvText(normCv(setup));
+      setJobDescription(normJd(setup));
+      setTargetRole(normRole(setup));
+    }).catch(() => {
+      // fallback
+      setCvText(String(setup?.cvText || setup?.uploadedCvText || setup?.resumeText || ""));
+      setJobDescription(String(setup?.jobDescription || setup?.jdText || ""));
+      setTargetRole(String(setup?.targetRole || setup?.role || ""));
+    });
   }, []);
 
   const phaseA = useMemo(() => buildPhaseAInsights({ cvText, jobDescription, targetRole }), [cvText, jobDescription, targetRole]);
@@ -28,10 +40,59 @@ export default function CoverLetterWorkspacePage() {
   );
 
   async function handleGenerate() {
+    if (!cvText.trim()) {
+      setGenerated("Please add your CV text before generating a cover letter.");
+      return;
+    }
     setLoading(true);
+    setGenerated("");
     try {
-      const mod = await import("@/lib/workzoWorkspaceGenerators");
-      setGenerated(mod.generateCoverLetter({ cvText, jobDescription, targetRole }));
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "user",
+              content: `Write a professional, tailored cover letter for this candidate.
+
+CANDIDATE CV:
+${cvText.slice(0, 3000)}
+
+JOB DESCRIPTION:
+${jobDescription.slice(0, 2000)}
+
+TARGET ROLE: ${targetRole}
+
+Requirements:
+- Address it to the hiring team ("Dear Hiring Team" if no name available)
+- Open with a specific hook tied to one real CV achievement that matches the JD
+- Body: 2 paragraphs — one on relevant experience with a metric, one on why this specific role
+- Close with a confident call to action
+- Max 350 words, no generic filler like "I am writing to apply"
+- Match the tone to the role seniority
+- Only use experience visible in the CV — do not fabricate anything`,
+            },
+          ],
+        }),
+      });
+      const data = await res.json() as { content?: Array<{ type: string; text?: string }> };
+      const text = data.content?.map((b) => (b.type === "text" ? b.text ?? "" : "")).join("").trim();
+      if (text) {
+        setGenerated(text);
+      } else {
+        throw new Error("empty response");
+      }
+    } catch {
+      // Fallback to local generator
+      try {
+        const mod = await import("@/lib/workzoWorkspaceGenerators");
+        setGenerated(mod.generateCoverLetter({ cvText, jobDescription, targetRole }));
+      } catch {
+        setGenerated("Generation failed. Please check your connection and try again.");
+      }
     } finally {
       setLoading(false);
     }

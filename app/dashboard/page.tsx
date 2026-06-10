@@ -27,6 +27,7 @@ import {
   X,
 } from "lucide-react";
 import WorkOBotFloating from "@/components/WorkOBotFloating";
+import WorkZoPremiumProSuitePanel from "@/components/premium/WorkZoPremiumProSuitePanel";
 import { WORKZO_PLAN_LIMITS, canUseWorkZoFeature, getWorkZoPlanLimits, normalizeWorkZoPlan, type WorkZoPlanType } from "@/lib/workzoPlanLimits";
 import { getWorkZoCurrentPlan, getWorkZoUsageSummary } from "@/lib/workzoUsageTracker";
 
@@ -56,15 +57,14 @@ const baseNav = [
 ];
 
 const proTools = [
-  { title: "AI Career Coach", detail: "Personal coaching priorities from your history", icon: BrainCircuit, feature: "career_coach" as const },
-  { title: "Live AI Recruiter", detail: "60 video recruiter minutes per month", icon: Video, feature: "video_recruiter" as const },
-  { title: "Career Roadmaps", detail: "30 / 60 / 90 day improvement plans", icon: TrendingUp, feature: "career_roadmaps" as const },
-  { title: "Replay Intelligence", detail: "Best moments, weak moments, and missed opportunities", icon: PlayCircle, feature: "replay_intelligence" as const },
+  { title: "AI Career Coach", detail: "Weekly priorities, biggest blocker, and improvement focus based on your interview history", icon: BrainCircuit, feature: "career_coach" as const },
+  { title: "Live AI Recruiter", detail: "60 face-to-face video recruiter minutes per month with premium personas", icon: Video, feature: "video_recruiter" as const },
+  { title: "Career Roadmaps", detail: "Personalised 30 / 60 / 90 day plans based on your CV, goals, and weakness patterns", icon: TrendingUp, feature: "career_roadmaps" as const },
+  { title: "Replay Intelligence", detail: "After every session: best answer, weakest answer, trust drops, missed opportunities, and rewrites", icon: PlayCircle, feature: "replay_intelligence" as const },
 ];
 
 export default function DashboardPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [botOpen, setBotOpen] = useState(false);
   const plan = typeof window !== "undefined" ? getWorkZoCurrentPlan() : "free";
   const normalizedPlan = normalizeWorkZoPlan(plan);
   const limits = getWorkZoPlanLimits(normalizedPlan);
@@ -72,36 +72,72 @@ export default function DashboardPage() {
 
   const dashboardMode = useMemo(() => {
     if (normalizedPlan === "premium_pro") return {
-      eyebrow: "Premium Pro active",
-      title: "Full career support workspace",
-      subtitle: "You have AI Career Coach, Live AI Recruiter minutes, premium personas, roadmaps, and replay intelligence unlocked.",
+      eyebrow: "Premium Pro · Career growth platform",
+      title: "Your personal AI career coach is active",
+      subtitle: "Unlimited voice interviews, 60 Live AI Recruiter minutes, premium personas, AI coaching priorities, 30/60/90 day roadmaps, and replay intelligence. This is your full career acceleration workspace.",
       cta: "Start Pro Interview",
       ctaHref: "/onboarding?mode=pro",
       Icon: Star,
     };
     if (normalizedPlan === "premium") return {
-      eyebrow: "Premium active",
-      title: "Complete interview and application preparation",
-      subtitle: "You have 50 voice interviews, CV improvement, cover letters, Job Assist, Career Brain, and advanced reports unlocked.",
-      cta: "Start Premium Interview",
-      ctaHref: "/onboarding?mode=premium",
+      eyebrow: "Premium · Complete preparation",
+      title: "Everything you need to prepare and apply",
+      subtitle: "50 voice interviews, Improve CV, Cover Letter, Job Assist, Career Brain, ATS optimization, advanced reports, and performance tracking unlocked.",
+      cta: "Start Interview",
+      ctaHref: "/onboarding",
       Icon: Crown,
     };
     return {
       eyebrow: "Free plan active",
       title: "Try your first recruiter-style interview",
-      subtitle: "Free includes limited voice interviews, recruiter intelligence, follow-ups, basic reports, and limited history.",
+      subtitle: "2 voice interviews per month, recruiter intelligence, realistic follow-up questions, and a basic interview report.",
       cta: "Start Free Interview",
-      ctaHref: "/onboarding?mode=free",
+      ctaHref: "/onboarding",
       Icon: Rocket,
     };
   }, [normalizedPlan]);
 
   const actionCards = [
-    { title: "Start Interview", detail: normalizedPlan === "free" ? "Use one of your 2 free interviews" : normalizedPlan === "premium" ? "50 voice interviews per month" : "Unlimited voice interviews", href: "/onboarding", icon: Mic, feature: "voice_interview" as const, required: "free" as WorkZoPlanType },
-    { title: "Improve CV", detail: "Target your CV to the job and fix weak evidence", href: "/cv", icon: FileText, feature: "improve_cv" as const, required: "premium" as WorkZoPlanType },
-    { title: "Cover Letter", detail: "Generate a role-specific letter from CV + JD", href: "/cover-letter", icon: Mail, feature: "cover_letter" as const, required: "premium" as WorkZoPlanType },
-    { title: "Job Assist", detail: "Analyze job fit, missing requirements, and likely questions", href: "/jobs", icon: Briefcase, feature: "job_assist" as const, required: "premium" as WorkZoPlanType },
+    {
+      title: "Start Interview",
+      detail: normalizedPlan === "free" ? "2 free interviews per month" : normalizedPlan === "premium" ? "50 voice interviews per month" : "Unlimited voice interviews",
+      href: "/onboarding",
+      icon: Mic,
+      feature: "voice_interview" as const,
+      required: "free" as WorkZoPlanType,
+    },
+    {
+      title: "Results",
+      detail: normalizedPlan === "free" ? "Basic interview report" : "Advanced interview debrief",
+      href: "/results",
+      icon: BarChart3,
+      feature: "basic_reports" as const,
+      required: "free" as WorkZoPlanType,
+    },
+    {
+      title: "Improve CV",
+      detail: "Target your CV to the job and fix weak evidence",
+      href: "/cv",
+      icon: FileText,
+      feature: "improve_cv" as const,
+      required: "premium" as WorkZoPlanType,
+    },
+    {
+      title: "Cover Letter",
+      detail: "Generate a role-specific letter from CV + JD",
+      href: "/cover-letter",
+      icon: Mail,
+      feature: "cover_letter" as const,
+      required: "premium" as WorkZoPlanType,
+    },
+    {
+      title: "Job Assist",
+      detail: "Analyze job fit, missing requirements, and likely questions",
+      href: "/jobs",
+      icon: Briefcase,
+      feature: "job_assist" as const,
+      required: "premium" as WorkZoPlanType,
+    },
   ];
 
   return (
@@ -167,7 +203,7 @@ export default function DashboardPage() {
                 <p className="mt-1 text-sm leading-6 text-slate-300">
                   {normalizedPlan === "free"
                     ? "Premium unlocks CV improvement, cover letters, Job Assist, Career Brain, advanced reports, and 50 voice interviews per month."
-                    : "Premium Pro unlocks unlimited voice interviews, 60 Live AI Recruiter minutes, premium personas, roadmaps, replay intelligence, and priority models."}
+                    : "Premium Pro is your personal AI career coach. Unlimited interviews, 60 Live AI Recruiter minutes, premium personas, AI coaching priorities, 30/60/90 day roadmaps, and replay intelligence."}
                 </p>
               </div>
               <Link href={normalizedPlan === "free" ? "/pricing?plan=premium" : "/pricing?plan=premium_pro"} className="inline-flex shrink-0 items-center justify-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400">
@@ -197,6 +233,12 @@ export default function DashboardPage() {
           })}
         </section>
 
+
+
+        <section className="mt-8">
+          <WorkZoPremiumProSuitePanel source="dashboard" />
+        </section>
+
         <section className="mt-8 grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
           <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-6">
             <div className="flex items-center justify-between gap-3">
@@ -216,8 +258,9 @@ export default function DashboardPage() {
           </div>
 
           <div className="rounded-[1.5rem] border border-white/10 bg-white/[0.035] p-6">
-            <p className="text-xs font-black uppercase tracking-[0.22em] text-violet-200">Premium Pro layer</p>
-            <h2 className="mt-2 text-2xl font-black">Career coach tools</h2>
+            <p className="text-xs font-black uppercase tracking-[0.22em] text-violet-200">Premium Pro · Career growth platform</p>
+            <h2 className="mt-2 text-2xl font-black">Career acceleration tools</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">These tools make Premium Pro a full career growth platform — not just interview practice.</p>
             <div className="mt-5 grid gap-3">
               {proTools.map((tool) => {
                 const allowed = canUseWorkZoFeature(normalizedPlan, tool.feature);

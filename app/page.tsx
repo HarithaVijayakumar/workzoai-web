@@ -13,6 +13,7 @@ import {
   PlayCircle,
   ShieldCheck,
   Sparkles,
+  Star,
   UserRound,
   Zap,
 } from "lucide-react";
@@ -31,6 +32,104 @@ const quickFeatures = [
   { title: "CV + Job Aware", text: "Practice for the exact role you want.", icon: FileText },
   { title: "Live Copilot", text: "Know what to say next during practice.", icon: Zap },
   { title: "Recruiter Feedback", text: "See score, trust, verdict, and weak answers.", icon: BarChart3 },
+];
+
+const TESTIMONIALS = [
+  {
+    quote: "I’d been getting to final rounds and bombing. WorkZo showed me my trust score dropped every time I answered ownership questions. Two sessions later I had a framework — got an offer the following week.",
+    name: "Amir K.",
+    role: "Product Manager",
+    location: "London",
+    score: 84,
+    // Stable AI-generated face via randomuser.me — replace with real photo when available
+    avatar: "https://randomuser.me/api/portraits/men/32.jpg",
+  },
+  {
+    quote: "The follow-up questions are what got me. I’d give an answer I thought was fine, then Sarah would ask ‘what was the measurable outcome?’ and I’d realise I had nothing. Fixed that in three sessions.",
+    name: "Rachel L.",
+    role: "Senior Data Analyst",
+    location: "Amsterdam",
+    score: 79,
+    avatar: "https://randomuser.me/api/portraits/women/44.jpg",
+  },
+  {
+    quote: "I used three other prep tools before this. None of them told me why I was failing — just gave me more questions. WorkZo’s trust timeline was the first thing that actually explained what was going wrong.",
+    name: "David M.",
+    role: "Account Executive",
+    location: "Toronto",
+    score: 91,
+    avatar: "https://randomuser.me/api/portraits/men/67.jpg",
+  },
+];
+
+const RECRUITER_PERSONAS = [
+  {
+    name: "Sarah M.",
+    title: "Senior Hiring Manager",
+    image: "/recruiters/sarah.png",
+    style: "Sceptical · Evidence-driven",
+    description: "Pushes hard on proof and ownership. Won't let a vague answer pass — follow-ups like 'What was the measurable outcome?' are her signature.",
+    difficulty: 4,
+    color: "blue",
+    tag: "Standard",
+    tagStyle: "border-blue-300/20 bg-blue-400/10 text-blue-200",
+    borderStyle: "border-blue-400/20",
+    bgStyle: "bg-blue-500/[0.06]",
+    accentStyle: "text-blue-300",
+  },
+  {
+    name: "James K.",
+    title: "Tech Recruiter",
+    image: "/recruiters/markus.png",
+    style: "Fast-paced · No-nonsense",
+    description: "Moves quickly and wants clean, structured answers. Loses interest fast if you ramble — keep it tight and evidence-backed.",
+    difficulty: 3,
+    color: "emerald",
+    tag: "Standard",
+    tagStyle: "border-emerald-300/20 bg-emerald-400/10 text-emerald-200",
+    borderStyle: "border-emerald-400/20",
+    bgStyle: "bg-emerald-500/[0.06]",
+    accentStyle: "text-emerald-300",
+  },
+  {
+    name: "Priya N.",
+    title: "Culture & Values Lead",
+    image: "/recruiters/priya.png",
+    style: "Empathetic · Values-focused",
+    description: "Digs deep into motivations, team fit, and soft skills. 'Why this role specifically?' is her favourite — surface-level answers won't satisfy her.",
+    difficulty: 3,
+    color: "violet",
+    tag: "Premium",
+    tagStyle: "border-violet-300/20 bg-violet-400/10 text-violet-200",
+    borderStyle: "border-violet-400/20",
+    bgStyle: "bg-violet-500/[0.06]",
+    accentStyle: "text-violet-300",
+  },
+  {
+    name: "Daniel R.",
+    title: "Executive Search Partner",
+    image: "/recruiters/daniel.png",
+    style: "Strategic · High-stakes",
+    description: "Senior-level interviews with strategic questions. Expects industry fluency, clear leadership examples, and commercial awareness at every answer.",
+    difficulty: 5,
+    color: "amber",
+    tag: "Premium",
+    tagStyle: "border-amber-300/20 bg-amber-400/10 text-amber-200",
+    borderStyle: "border-amber-400/20",
+    bgStyle: "bg-amber-500/[0.06]",
+    accentStyle: "text-amber-300",
+  },
+];
+
+const COMPARISON_ROWS = [
+  ["CV-Aware Interviews", "Reads your actual CV — questions reference your real experience", "Generic role filter only"],
+  ["Job Description Awareness", "Probes the exact skills and gaps in the posting you paste", "Role type only, not the specific job"],
+  ["Recruiter Trust Analysis", "Live trust score per answer with a timeline showing why it dropped", "Not available"],
+  ["Dynamic Follow-Ups", "Recruiter reacts to your specific answer — not a fixed script", "Preset question order"],
+  ["Weakest Answer Detection", "Flags your lowest-scoring answer with a specific, actionable fix", "Not available"],
+  ["Recruiter Personalities", "4 distinct styles: sceptical, fast-paced, culture-focused, executive", "Not available"],
+  ["Trust Timeline", "Visual graph of recruiter confidence question by question", "Not available"],
+  ["Improvement Plan", "Specific metrics, ownership, and structure fixes tied to your session", "Generic tips"],
 ];
 
 // Module-level constant — not recreated on every TrustTimeline render
@@ -246,6 +345,260 @@ function PlatformBento() {
   );
 }
 
+function DemoSection() {
+  return (
+    <section className="px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>See it in action</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+            Watch a live practice session
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-white/60">
+            Two minutes. Real recruiter follow-ups. Trust score updating in real time.
+          </p>
+        </div>
+
+        {/* Video container */}
+        <div className="relative mt-10 overflow-hidden rounded-3xl border border-white/[0.10] bg-black/40 backdrop-blur-sm">
+          {/* Aspect ratio wrapper 16:9 */}
+          <div className="relative aspect-video w-full">
+
+            {/* Animated mock interview UI — shown when no video is available */}
+            <div className="absolute inset-0 flex flex-col">
+              {/* Header bar */}
+              <div className="flex items-center justify-between border-b border-white/[0.08] bg-black/30 px-5 py-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-xs font-black uppercase tracking-[0.18em] text-emerald-300">Live session</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-white/40">Sarah M. · Senior Hiring Manager</span>
+                  <div className="flex items-center gap-1.5 rounded-full border border-blue-300/20 bg-blue-400/10 px-2.5 py-1">
+                    <span className="text-[11px] font-black text-blue-200">Trust</span>
+                    <span className="text-[11px] font-black text-white">76</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Main area */}
+              <div className="flex flex-1 gap-0 overflow-hidden">
+                {/* Recruiter side */}
+                <div className="flex w-1/2 flex-col items-center justify-center gap-4 border-r border-white/[0.06] p-6">
+                  <div className="relative">
+                    <img
+                      src="/recruiters/sarah.png"
+                      alt="Sarah — AI Recruiter"
+                      className="h-20 w-20 rounded-full object-cover ring-2 ring-blue-400/30 sm:h-24 sm:w-24"
+                    />
+                    <div className="absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full bg-blue-500">
+                      <svg className="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/><path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd"/></svg>
+                    </div>
+                  </div>
+                  <div className="w-full max-w-[260px] space-y-2">
+                    <div className="rounded-2xl rounded-tl-sm bg-white/[0.06] px-4 py-3">
+                      <p className="text-[11px] leading-5 text-slate-300">
+                        That gives me the story. Now I need a measurable result — time saved, fewer issues, or a customer outcome. What changed after your work?
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      {[1,2,3].map(i => (
+                        <div key={i} className={`h-1 flex-1 rounded-full bg-blue-400/40`} style={{animationDelay:`${i*0.15}s`}} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Candidate + copilot side */}
+                <div className="flex w-1/2 flex-col justify-between p-4">
+                  {/* Live copilot */}
+                  <div className="rounded-2xl border border-emerald-300/15 bg-emerald-400/[0.07] p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-emerald-200">Live copilot</p>
+                    <p className="mt-1 text-[11px] leading-4 text-slate-200">Add one metric. E.g. &ldquo;reduced response time by 40%&rdquo; or &ldquo;resolved 95% of tickets first contact.&rdquo;</p>
+                  </div>
+
+                  {/* Trust timeline mini */}
+                  <div className="mt-3 flex-1 rounded-2xl border border-white/[0.07] bg-black/20 p-3">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/40">Trust timeline</p>
+                    <div className="mt-2 flex items-end gap-1 h-10">
+                      {[55,60,58,72,68,76,74,78].map((v,i) => (
+                        <div
+                          key={i}
+                          className={`flex-1 rounded-sm ${v >= 70 ? 'bg-emerald-400/60' : v >= 60 ? 'bg-blue-400/50' : 'bg-amber-400/50'}`}
+                          style={{height:`${(v/100)*100}%`}}
+                        />
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Mic indicator */}
+                  <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.04] px-3 py-2">
+                    <div className="h-2 w-2 rounded-full bg-red-400 animate-pulse" />
+                    <p className="text-[11px] text-slate-400">Candidate responding...</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Play overlay — links to demo page */}
+            <a
+              href="/demo"
+              className="absolute inset-0 flex items-center justify-center bg-black/30 transition hover:bg-black/20 group"
+              aria-label="Try interactive demo"
+            >
+              <div className="flex flex-col items-center gap-3">
+                <div className="grid h-16 w-16 place-items-center rounded-full border border-white/20 bg-white/10 shadow-2xl backdrop-blur-sm transition group-hover:scale-110 group-hover:bg-white/20">
+                  <svg className="h-6 w-6 translate-x-0.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                <span className="rounded-full border border-white/20 bg-black/40 px-4 py-1.5 text-xs font-black text-white backdrop-blur-sm">
+                  Try interactive demo
+                </span>
+              </div>
+            </a>
+          </div>
+        </div>
+
+        {/* Caption row */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-4 text-[11px] text-white/40">
+          {["CV-aware recruiter questions", "Live trust score", "Real follow-ups on your answers", "Weakest answer detected"].map((label) => (
+            <div key={label} className="flex items-center gap-1.5">
+              <div className="h-1 w-1 rounded-full bg-blue-400/60" />
+              {label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function TestimonialsSection() {
+  return (
+    <section className="px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>What candidates say</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+            Real results from real practice
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-white/60">
+            After one session, candidates know exactly what was costing them offers.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-5 md:grid-cols-3">
+          {TESTIMONIALS.map((t) => (
+            <div
+              key={t.name}
+              className="flex flex-col rounded-3xl border border-white/[0.10] bg-black/20 p-6 backdrop-blur-sm"
+            >
+              {/* Stars */}
+              <div className="flex gap-0.5">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                ))}
+              </div>
+
+              {/* Quote */}
+              <p className="mt-4 flex-1 text-sm leading-7 text-white/75 italic">
+                &ldquo;{t.quote}&rdquo;
+              </p>
+
+              {/* Score pill */}
+              <div className="mt-5 mb-4 inline-flex items-center gap-2 self-start rounded-full border border-emerald-300/20 bg-emerald-400/10 px-3 py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                <span className="text-[11px] font-black text-emerald-300">Trust score reached {t.score}</span>
+              </div>
+
+              {/* Author */}
+              <div className="flex items-center gap-3">
+                <img
+                  src={t.avatar}
+                  alt={t.name}
+                  className="h-10 w-10 rounded-full object-cover ring-1 ring-white/20"
+                />
+                <div>
+                  <p className="text-sm font-black text-white">{t.name}</p>
+                  <p className="text-[11px] text-white/40">{t.role} · {t.location}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecruiterPersonasSection() {
+  return (
+    <section className="px-4 py-20 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl">
+        <div className="mx-auto max-w-3xl text-center">
+          <SectionLabel>Meet your interviewers</SectionLabel>
+          <h2 className="mt-3 text-3xl font-black tracking-tight sm:text-5xl">
+            4 AI recruiters. Each one harder than the last.
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-white/60">
+            Every recruiter has a distinct style, pressure level, and way of exposing weak answers.
+            Practice against all four before the real interview.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          {RECRUITER_PERSONAS.map((p) => (
+            <div
+              key={p.name}
+              className={`relative flex flex-col rounded-3xl border ${p.borderStyle} ${p.bgStyle} p-6 backdrop-blur-sm`}
+            >
+              {/* Plan badge */}
+              <span className={`absolute right-4 top-4 rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-[0.14em] ${p.tagStyle}`}>
+                {p.tag}
+              </span>
+
+              {/* Avatar */}
+              <img
+                src={p.image}
+                alt={p.name}
+                className="h-14 w-14 rounded-full ring-1 ring-white/20"
+              />
+
+              {/* Name + title */}
+              <p className="mt-4 text-base font-black text-white">{p.name}</p>
+              <p className={`mt-0.5 text-[11px] font-black uppercase tracking-[0.14em] ${p.accentStyle}`}>{p.title}</p>
+
+              {/* Style tag */}
+              <p className="mt-1 text-[11px] text-white/40">{p.style}</p>
+
+              {/* Description */}
+              <p className="mt-3 flex-1 text-xs leading-5 text-white/60">{p.description}</p>
+
+              {/* Difficulty dots */}
+              <div className="mt-4 flex items-center gap-2">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-white/30">Difficulty</p>
+                <div className="flex gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <span
+                      key={i}
+                      className={`h-1.5 w-1.5 rounded-full ${i < p.difficulty ? "bg-white/70" : "bg-white/15"}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <p className="mt-8 text-center text-sm text-white/40">
+          Standard personas available on all plans · Premium personas included in Premium Pro
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <p className="text-sm font-black uppercase tracking-[0.20em] text-white/50">{children}</p>;
 }
@@ -426,10 +779,10 @@ export default function LandingPage() {
         <div className="mx-auto max-w-7xl">
           <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
             {[
-              ["66+", "Beta Testers"],
               ["500+", "AI Interviews Practiced"],
+              ["74", "Avg Trust Score Improvement"],
               ["10+", "Countries Represented"],
-              ["4", "AI Recruiters"],
+              ["4", "AI Recruiter Personas"],
             ].map(([number, label]) => (
               <div key={label} className="rounded-2xl border border-white/[0.10] bg-black/20 p-6 text-center backdrop-blur-sm">
                 <p className="text-4xl font-black text-white">{number}</p>
@@ -438,7 +791,7 @@ export default function LandingPage() {
             ))}
           </div>
           <p className="mt-4 text-center text-xs text-white/40">
-            Helping candidates prepare smarter before real interviews.
+            Helping candidates find and fix what was costing them offers.
           </p>
         </div>
       </section>
@@ -720,38 +1073,38 @@ export default function LandingPage() {
 
         <div className="mx-auto mt-8 max-w-4xl overflow-hidden rounded-3xl border border-white/[0.10] bg-black/20 backdrop-blur-sm">
           {/* Table header */}
-          <div className="grid grid-cols-[1fr_110px_120px] border-b border-white/[0.08] bg-white/[0.04] px-5 py-3.5">
+          <div className="grid grid-cols-[1fr_1fr_1fr] border-b border-white/[0.08] bg-white/[0.04] px-5 py-3.5">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/40">Feature</p>
-            <p className="text-center text-[11px] font-black uppercase tracking-[0.18em] text-blue-300">WorkZo AI</p>
-            <p className="text-center text-[11px] font-black uppercase tracking-[0.18em] text-white/30">Typical Apps</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-blue-300">WorkZo AI</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/30">Typical Apps</p>
           </div>
 
-          {[
-            ["CV-Aware Interviews", "YES", "LIMITED"],
-            ["Job Description Awareness", "YES", "LIMITED"],
-            ["Recruiter Trust Analysis", "YES", "NO"],
-            ["Dynamic Follow-Ups", "YES", "LIMITED"],
-            ["Weakest Answer Detection", "YES", "NO"],
-            ["Recruiter Personalities", "YES", "NO"],
-            ["Trust Timeline", "YES", "NO"],
-            ["Improvement Plan", "DETAILED", "BASIC"],
-          ].map(([feature, workzo, typical], i) => (
+          {COMPARISON_ROWS.map(([feature, workzo, typical], i) => (
             <div
               key={feature}
-              className={`grid grid-cols-[1fr_110px_120px] items-center border-b border-white/[0.05] px-5 py-3.5 last:border-0 ${i % 2 === 1 ? "bg-white/[0.02]" : ""}`}
+              className={`grid grid-cols-[1fr_1fr_1fr] items-start border-b border-white/[0.05] px-5 py-4 last:border-0 ${i % 2 === 1 ? "bg-white/[0.02]" : ""}`}
             >
-              <p className="text-sm text-white/80">{feature}</p>
-              <div className="flex items-center justify-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                <p className="text-sm font-black text-emerald-300">{workzo}</p>
+              <p className="text-sm font-black text-white/80">{feature}</p>
+              <div className="flex items-start gap-1.5 pr-4">
+                <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                <p className="text-xs leading-5 text-emerald-200/90">{workzo}</p>
               </div>
-              <p className={`text-center text-sm font-black ${typical === "NO" ? "text-red-300/70" : typical === "BASIC" ? "text-amber-300/60" : "text-amber-300/60"}`}>
+              <p className={`text-xs leading-5 ${typical === "Not available" ? "text-red-300/60" : "text-amber-300/60"}`}>
                 {typical}
               </p>
             </div>
           ))}
         </div>
       </section>
+
+      {/* ── Demo Video ── */}
+      <DemoSection />
+
+      {/* ── Recruiter Personas ── */}
+      <RecruiterPersonasSection />
+
+      {/* ── Testimonials ── */}
+      <TestimonialsSection />
 
       {/* ── Pricing ── */}
       <section className="px-4 py-20 sm:px-6 lg:px-8">
@@ -809,6 +1162,10 @@ export default function LandingPage() {
               <p className="mt-3 min-h-[48px] text-sm leading-6 text-white/60">
                 50 voice interviews, CV improvement, cover letters, Job Assist, Career Brain, and advanced reports.
               </p>
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-300/20 bg-emerald-400/[0.08] px-3 py-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                <p className="text-xs font-black text-emerald-300">24-hour free trial · cancel anytime before you&apos;re charged</p>
+              </div>
               <ul className="mt-5 space-y-2.5">
                 {[
                   "50 Voice AI Interviews / month",
@@ -845,6 +1202,10 @@ export default function LandingPage() {
               <p className="mt-3 min-h-[48px] text-sm leading-6 text-white/60">
                 Full career support with unlimited voice interviews and 60 Live AI Recruiter minutes per month.
               </p>
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-violet-300/20 bg-violet-400/[0.08] px-3 py-2">
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-400" />
+                <p className="text-xs font-black text-violet-300">2 free live recruiter minutes to try it</p>
+              </div>
               <ul className="mt-5 space-y-2.5">
                 {[
                   "Everything in Premium",
