@@ -36,6 +36,8 @@ import {
   runWorkobotAction,
   type WorkobotAction,
 } from "@/lib/launchIntelligenceEngine";
+import { getWorkZoCurrentPlan } from "@/lib/workzoUsageTracker";
+import { getWorkZoPlanLimits } from "@/lib/workzoPlanLimits";
 import FeedbackCapture from "@/components/FeedbackCapture";
 import { trackWorkZoLaunchEvent } from "@/lib/workzoLaunchAnalytics";
 
@@ -391,6 +393,12 @@ function modeStarter(mode: CopilotMode, targetRole: string) {
   return starters[mode];
 }
 
+const PREMIUM_ONLY_ACTIONS: SmartActionId[] = [
+  "career_plan",
+  "email_reply",
+  "linkedin_message",
+];
+
 export default function WorkOBotCopilotPage() {
   const [setup, setSetup] = useState<SavedSetup>(emptySetup);
   const [mode, setMode] = useState<CopilotMode>("career_chat");
@@ -402,6 +410,17 @@ export default function WorkOBotCopilotPage() {
   const [comparison, setComparison] = useState<ReturnType<typeof compareAnswers> | null>(null);
   const [loading, setLoading] = useState(false);
   const [conversation, setConversation] = useState<ChatMessage[]>([]);
+  const [isPremium, setIsPremium] = useState(false);
+
+  useEffect(() => {
+    try {
+      const plan = getWorkZoCurrentPlan();
+      const limits = getWorkZoPlanLimits(plan);
+      setIsPremium(Boolean(limits.advancedReports || limits.tavus));
+    } catch {
+      setIsPremium(false);
+    }
+  }, []);
 
   useEffect(() => {
     setSetup(readSetup());
@@ -453,6 +472,12 @@ export default function WorkOBotCopilotPage() {
           ]
         : conversation;
 
+      if (!isPremium && PREMIUM_ONLY_ACTIONS.includes(action as SmartActionId)) {
+        setOutput("This feature is available on Premium. Upgrade to unlock career plans, LinkedIn messages, and email replies.");
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch("/api/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -475,6 +500,11 @@ export default function WorkOBotCopilotPage() {
       const data = (await response.json()) as { success?: boolean; output?: string; error?: string };
 
       if (!response.ok || !data.success) {
+        if (data.error === "upgrade_required" || data.error === "upgrade_required_rate_limit") {
+          setOutput("You have reached the free usage limit. Upgrade to Premium for unlimited access.");
+          setLoading(false);
+          return;
+        }
         throw new Error(data.error || "Copilot failed");
       }
 

@@ -75,8 +75,10 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
     yearlySavingsLabel: "",
     badge: "Get Started",
     positioning: "Try the interview experience",
-    description: "Experience WorkZo AI before upgrading. Try the voice interview engine and see recruiter intelligence in action.",
-    bestFor: "Trying WorkZo AI",
+
+    description: "Experience WorkZo AI before upgrading. 2 voice interviews, basic report, standard recruiters.",
+    bestFor: "First-time users",
+
     interviewsPerMonth: 2,
     voiceInterviewsPerMonth: 2,
     unlimitedVoiceInterviews: false,
@@ -86,7 +88,7 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
     tavusInterviewsPerMonth: 0,
     tavusMinutesPerMonth: 0,
     advancedReports: false,
-    interviewHistory: true,
+    interviewHistory: false,
     improveCv: false,
     coverLetter: false,
     jobAssist: false,
@@ -103,11 +105,11 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
     exports: false,
     included: [
       "2 Voice AI Interviews / month",
-      "Recruiter Intelligence Trial",
-      "Realistic Follow-up Questions",
-      "Basic Interview Report",
-      "Limited Interview History",
-      "Standard Recruiters",
+      "Recruiter intelligence trial",
+      "Realistic follow-up questions",
+      "Basic interview report",
+      "Standard recruiters",
+
     ],
     notIncluded: [
       "Improve CV",
@@ -121,7 +123,8 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
       "Career Roadmaps",
       "Replay Intelligence",
       "Premium Personas",
-      "Tavus Live AI Recruiter",
+
+      "Live AI Recruiter",
     ],
   },
   premium: {
@@ -133,9 +136,9 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
     yearlyPriceLabel: "€149.99/year",
     yearlySavingsLabel: "Save about 37% yearly",
     badge: "Most Popular",
-    positioning: "Complete interview preparation platform",
-    description: "Everything you need to prepare, apply, and improve. Complete interview and job application preparation from start to finish.",
-    bestFor: "Most job seekers",
+    positioning: "Complete interview + job application preparation",
+    description: "The complete preparation system. 50 voice interviews, CV improvement, cover letters, Job Assist, Career Brain, advanced reports, and performance tracking.",
+    bestFor: "Active job seekers",
     interviewsPerMonth: 50,
     voiceInterviewsPerMonth: 50,
     unlimitedVoiceInterviews: false,
@@ -175,11 +178,14 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
       "Advanced Recruiter Intelligence",
     ],
     notIncluded: [
-      "Tavus Live AI Recruiter",
+
+      "Live AI Recruiter (Tavus)",
       "Premium Recruiter Personas",
       "AI Career Coach",
       "Career Roadmaps",
       "Replay Intelligence",
+      "Priority AI Models",
+      "Early Access Features",
     ],
   },
   premium_pro: {
@@ -191,9 +197,9 @@ export const WORKZO_PLAN_LIMITS: Record<WorkZoPlanType, WorkZoPlanLimits> = {
     yearlyPriceLabel: "€299.99/year",
     yearlySavingsLabel: "Save about 37% yearly",
     badge: "Best Experience",
-    positioning: "AI Career Coach + Career Growth Platform",
-    description: "Your personal AI career coach and growth platform. Live AI Recruiter, coaching, roadmaps, replay intelligence, and long-term improvement tracking.",
-    bestFor: "Serious job seekers and career changers",
+    positioning: "Complete career acceleration system",
+    description: "AI coaching, roadmaps, replay intelligence, Tavus recruiter, and long-term improvement tracking. This is not just Premium + video — it is a full career growth platform.",
+    bestFor: "Serious job seekers, career changers, and professionals",
     interviewsPerMonth: 999999,
     voiceInterviewsPerMonth: 999999,
     unlimitedVoiceInterviews: true,
@@ -277,8 +283,8 @@ export function getWorkZoFeatureRequiredPlan(feature: WorkZoFeatureKey): WorkZoP
     case "recruiter_intelligence":
     case "follow_up_questions":
     case "basic_reports":
-    case "interview_history":
       return "free";
+    case "interview_history":
     case "advanced_reports":
     case "improve_cv":
     case "cover_letter":
@@ -314,9 +320,9 @@ export function getWorkZoPlanUpgradeCopy(feature?: string) {
       eyebrow: "Premium Pro",
       title: "Unlock AI Career Coach + Live AI Recruiter",
       description:
-        "Get the full WorkZo experience with unlimited voice interviews, 100 Live AI Recruiter minutes, premium personas, roadmaps, replay intelligence, and priority models.",
+        "Get the full WorkZo experience with unlimited voice interviews, 60 Live AI Recruiter minutes, premium personas, roadmaps, replay intelligence, and priority models.",
       bullets: [
-        "100 Live AI Recruiter minutes / month",
+        "60 Live AI Recruiter minutes / month",
         "Unlimited voice interviews",
         "AI Career Coach and career roadmaps",
         "Premium recruiter personas",

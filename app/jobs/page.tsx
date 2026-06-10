@@ -277,6 +277,8 @@ export default function JobsWorkspacePage() {
   const [jobs, setJobs] = useState<LiveJob[]>([]);
   const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [analyzingJobId, setAnalyzingJobId] = useState<string | null>(null);
+  const [jobAnalysis, setJobAnalysis] = useState<Record<string, string>>({});
   const [message, setMessage] = useState("");
   const [copied, setCopied] = useState(false);
 
@@ -387,6 +389,97 @@ export default function JobsWorkspacePage() {
   function rememberJob(job: LiveJob) {
     const next = saveSelectedJobForNextStep(job, setup);
     setSetup(next);
+  }
+
+  const [jobQuestions, setJobQuestions] = useState<Record<string, string[]>>({});
+  const [generatingQuestionsFor, setGeneratingQuestionsFor] = useState<string | null>(null);
+
+  async function handleGenerateQuestions(job: LiveJob) {
+    setGeneratingQuestionsFor(job.id);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 600,
+          messages: [
+            {
+              role: "user",
+              content: `Generate 7 likely interview questions for this role. Mix competency, situational, and technical questions relevant to the actual JD. Return ONLY a JSON array of strings, no other text.
+
+JOB: ${job.title} at ${job.company}
+JD EXCERPT: ${job.description.slice(0, 1200)}
+CANDIDATE BACKGROUND: ${cvText.slice(0, 800)}`,
+            },
+          ],
+        }),
+      });
+      const data = await res.json() as { content?: Array<{ type: string; text?: string }> };
+      const raw = data.content?.map((b) => (b.type === "text" ? b.text ?? "" : "")).join("").trim() ?? "[]";
+      const clean = raw.replace(/^```json|^```|```$/gm, "").trim();
+      const questions = JSON.parse(clean) as string[];
+      if (Array.isArray(questions)) {
+        setJobQuestions((prev) => ({ ...prev, [job.id]: questions }));
+        // Also save to setup so the interview room knows the target JD + role
+        rememberJob(job);
+      }
+    } catch {
+      setJobQuestions((prev) => ({ ...prev, [job.id]: ["Could not generate questions — try again."] }));
+    } finally {
+      setGeneratingQuestionsFor(null);
+    }
+  }
+
+  async function handleAnalyzeJob(job: LiveJob) {
+    if (!cvText.trim()) return;
+    setAnalyzingJobId(job.id);
+    try {
+      const res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "user",
+              content: `Analyse the fit between this candidate CV and the job below. Be specific and honest — reference actual CV details.
+
+CV:
+${cvText.slice(0, 2500)}
+
+JOB: ${job.title} at ${job.company}
+${job.description.slice(0, 1500)}
+
+Respond with exactly this format:
+FIT SCORE: X/100
+
+MATCH REASONS:
+• [specific reason tied to CV + JD]
+• [specific reason tied to CV + JD]
+• [specific reason tied to CV + JD]
+
+GAPS:
+• [honest gap, not generic advice]
+• [honest gap, not generic advice]
+
+INTERVIEW TIP:
+[One specific preparation tip based on the JD requirements]`,
+            },
+          ],
+        }),
+      });
+      const data = await res.json() as { content?: Array<{ type: string; text?: string }> };
+      const text = data.content?.map((b) => (b.type === "text" ? b.text ?? "" : "")).join("").trim();
+      if (text) {
+        setJobAnalysis((prev) => ({ ...prev, [job.id]: text }));
+      }
+    } catch {
+      // silently fail — button can be retried
+    } finally {
+      setAnalyzingJobId(null);
+    }
   }
 
   return (
@@ -688,6 +781,33 @@ export default function JobsWorkspacePage() {
                     <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-300">{summarizeDescription(job.description)}</p>
 
                     <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { rememberJob(job); void handleAnalyzeJob(job); }}
+                        disabled={analyzingJobId === job.id}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-violet-300/20 bg-violet-500/10 px-3 py-1.5 text-xs font-black text-violet-200 transition hover:bg-violet-500/20 disabled:opacity-60"
+                      >
+                        {analyzingJobId === job.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                        {analyzingJobId === job.id ? "Analysing…" : "AI fit check"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { rememberJob(job); void handleGenerateQuestions(job); }}
+                        disabled={generatingQuestionsFor === job.id}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-blue-300/20 bg-blue-500/10 px-3 py-1.5 text-xs font-black text-blue-200 transition hover:bg-blue-500/20 disabled:opacity-60"
+                      >
+                        {generatingQuestionsFor === job.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />}
+                        {generatingQuestionsFor === job.id ? "Generating…" : "Likely questions"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { rememberJob(job); void handleGenerateQuestions(job); }}
+                        disabled={generatingQuestionsFor === job.id}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-cyan-300/20 bg-cyan-500/10 px-3 py-1.5 text-xs font-black text-cyan-200 transition hover:bg-cyan-500/20 disabled:opacity-60"
+                      >
+                        {generatingQuestionsFor === job.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mic className="h-3 w-3" />}
+                        {generatingQuestionsFor === job.id ? "Generating…" : "Likely questions"}
+                      </button>
                       <JobActionLink href="/interview" onClick={() => rememberJob(job)}>
                         <Mic className="mr-1.5 h-3.5 w-3.5" /> Prepare interview
                       </JobActionLink>
@@ -698,6 +818,33 @@ export default function JobsWorkspacePage() {
                         <Briefcase className="mr-1.5 h-3.5 w-3.5" /> Cover letter
                       </JobActionLink>
                     </div>
+                    {jobAnalysis[job.id] ? (
+                      <div className="mt-3 rounded-2xl border border-violet-300/15 bg-violet-500/[0.07] p-4">
+                        <p className="mb-2 text-[10px] font-black uppercase tracking-[0.18em] text-violet-300">AI fit analysis</p>
+                        <pre className="whitespace-pre-wrap text-xs leading-5 text-slate-300">{jobAnalysis[job.id]}</pre>
+                      </div>
+                    ) : null}
+                    {jobQuestions[job.id] ? (
+                      <div className="mt-3 rounded-2xl border border-blue-300/15 bg-blue-500/[0.07] p-4">
+                        <p className="mb-3 text-[10px] font-black uppercase tracking-[0.18em] text-blue-300">Likely interview questions ({jobQuestions[job.id].length})</p>
+                        <ol className="space-y-2">
+                          {jobQuestions[job.id].map((q, i) => (
+                            <li key={i} className="flex items-start gap-2 text-xs leading-5 text-slate-300">
+                              <span className="shrink-0 rounded bg-blue-400/15 px-1.5 py-0.5 text-[10px] font-black text-blue-200">{i + 1}</span>
+                              {q}
+                            </li>
+                          ))}
+                        </ol>
+                        <a
+                          href="/onboarding"
+                          onClick={() => rememberJob(job)}
+                          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-500 px-4 py-2 text-xs font-black text-white hover:bg-blue-400"
+                        >
+                          <Mic className="h-3 w-3" /> Practice this interview now
+                        </a>
+                      </div>
+                    ) : null}
+
                   </article>
                 ))}
 

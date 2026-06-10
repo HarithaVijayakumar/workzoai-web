@@ -33,6 +33,11 @@ export type LiveScore = {
   structure: number;
   evidence: number;
   overall: number;
+  // Extended to align with RecruiterSignalState in interview/page.tsx
+  trust?: number;
+  interest?: number;
+  communication?: number;
+  mood?: "Impressed" | "Engaged" | "Neutral" | "Concerned" | "Doubtful";
 };
 
 export type AnswerQuality = "weak" | "average" | "strong" | "excellent";
@@ -71,6 +76,14 @@ export type InterviewSetup = {
   recruiterPersonality: string;
   cvText: string;
   jobDescription: string;
+  // Extended fields used by interview/page.tsx
+  candidateName?: string;
+  targetCompany?: string;
+  recruiterId?: string;
+  recruiterName?: string;
+  recruiterTitle?: string;
+  recruiterImage?: string;
+  language?: string;
 };
 
 export type PersistentPattern = {
@@ -635,6 +648,18 @@ export const useInterviewStore = create<InterviewState>()(
           ].slice(0, 200),
         })),
 
+      saveResultToDb: async (sessionData: Record<string, unknown>) => {
+        try {
+          await fetch("/api/db/interview-result", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(sessionData),
+          });
+        } catch {
+          // Fire-and-forget: localStorage is the fallback read source.
+        }
+      },
+
       recordErrorEvent: (eventName, error, metadata, severity = "medium") => {
         const message = normalizeError(error);
 
@@ -718,6 +743,7 @@ export const useInterviewStore = create<InterviewState>()(
       name: "workzo-interview-memory",
       partialize: (state) => ({
         setup: state.setup,
+        sessionId: state.sessionId,
         persistentPatterns: state.persistentPatterns.slice(-20),
         answerHistory: state.answerHistory.slice(-25),
         interruptionHistory: state.interruptionHistory.slice(-20),
@@ -727,6 +753,8 @@ export const useInterviewStore = create<InterviewState>()(
         errorEvents: state.errorEvents.slice(0, 100),
         recoverySnapshot: state.recoverySnapshot,
         recoveryAvailable: state.recoveryAvailable,
+        // Persist liveScore so results page can read it on resume
+        liveScore: state.liveScore,
       }),
     }
   )

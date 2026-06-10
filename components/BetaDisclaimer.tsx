@@ -8,7 +8,7 @@ export default function BetaDisclaimer() {
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-200" />
         <p>
-          <span className="font-black text-cyan-100">Beta notice:</span> WorkZo AI is still improving.
+          <span className="font-black text-cyan-100">Beta notice:</span> WorkZo AI is continuously improving based on real interview feedback.
           AI feedback may be incomplete or imperfect. Please review important CV, interview,
           and job guidance before using it in real applications. Your uploaded CV text is used
           only for this interview setup.

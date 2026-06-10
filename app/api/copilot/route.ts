@@ -106,14 +106,81 @@ Avoid vague claims like "I worked on many things" without proof.
 Rewrite one CV bullet or interview answer with a clear result.`;
 }
 
+// Simple in-memory rate limiter (resets on cold start — good enough for edge protection)
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_FREE = 5;   // requests per minute for free plan
+const RATE_LIMIT_PAID = 40;  // requests per minute for premium
+
+function getRateLimitKey(request: Request): string {
+  const ip =
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "anonymous";
+  return ip;
+}
+
+function checkRateLimit(key: string, limit: number): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(key);
+  if (!entry || entry.resetAt < now) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= limit) return false;
+  entry.count += 1;
+  return true;
+}
+
+function getPlanFromCookie(request: Request): string {
+  const cookie = request.headers.get("cookie") || "";
+  // Check all plan cookie keys in priority order
+  const keys = ["workzo_plan", "workzo_plan_type", "workzoPlan"];
+  for (const key of keys) {
+    const match = cookie.match(new RegExp(`(?:^|; )${key}=([^;]+)`));
+    if (match?.[1] && match[1].trim() !== "free") return match[1].trim();
+  }
+  return "free";
+}
+
+function isProPlan(plan: string): boolean {
+  return plan === "premium_pro";
+}
+
+function isPaidPlan(plan: string): boolean {
+  return plan === "premium" || plan === "premium_pro";
+}
+
 export async function POST(request: Request) {
   try {
     if (!process.env.OPENROUTER_API_KEY) {
       return NextResponse.json({ success: false, error: "OPENROUTER_API_KEY is missing." }, { status: 500 });
     }
 
+    // Plan check + rate limit
+    const plan = getPlanFromCookie(request);
+    const paid = isPaidPlan(plan);
+    const rateLimitKey = getRateLimitKey(request);
+    const pro = isProPlan(plan);
+    const allowed = checkRateLimit(rateLimitKey, pro ? 80 : paid ? RATE_LIMIT_PAID : RATE_LIMIT_FREE);
+
+    if (!allowed) {
+      return NextResponse.json(
+        { success: false, error: paid ? "Rate limit reached. Please wait a moment." : "upgrade_required_rate_limit" },
+        { status: 429 },
+      );
+    }
+
     const body = (await request.json()) as CopilotRequest;
+
+    // Free-plan action gate: block premium-only actions
+    const premiumOnlyActions: CopilotAction[] = ["career_plan", "salary_negotiation", "email_reply", "linkedin_message"];
     const action = normalizeAction(body.action, body.mode);
+    if (!paid && premiumOnlyActions.includes(action)) {
+      return NextResponse.json(
+        { success: false, error: "upgrade_required", action },
+        { status: 403 },
+      );
+    }
     const message = cleanMultiline(body.message || body.prompt, 4000);
     const question = cleanMultiline(body.question, 2500);
     const answer = cleanMultiline(body.answer, 6000);
@@ -184,7 +251,7 @@ ${recruiterMemory}
     return NextResponse.json({
       success: true,
       output: output || buildFallback(targetRole),
-      model: process.env.OPENROUTER_MODEL || "anthropic/claude-3.5-sonnet",
+      model: pro ? (process.env.OPENROUTER_PRO_MODEL || "anthropic/claude-opus-4") : paid ? (process.env.OPENROUTER_MODEL || "anthropic/claude-sonnet-4-20250514") : (process.env.OPENROUTER_FREE_MODEL || "anthropic/claude-haiku-4-5-20251001"),
       provider: "openrouter",
       action,
     });

@@ -1,7 +1,27 @@
 import Link from "next/link";
-import { ArrowLeft, BarChart3, CalendarDays, LockKeyhole, RotateCcw, ShieldCheck } from "lucide-react";
+import { ArrowLeft, BarChart3, CalendarDays, Crown, Lock, LockKeyhole, RotateCcw, ShieldCheck, Star } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { cookies } from "next/headers";
 import HistoryAnalyticsPing from "./HistoryAnalyticsPing";
+
+async function getPlanFromCookies(): Promise<string> {
+  try {
+    const cookieStore = await cookies();
+    const planCookie =
+      cookieStore.get("workzo_plan")?.value ||
+      cookieStore.get("workzo_plan_type")?.value ||
+      "";
+    if (planCookie.includes("premium_pro") || planCookie.includes("pro")) return "premium_pro";
+    if (planCookie.includes("premium")) return "premium";
+  } catch {}
+  return "free";
+}
+
+function getPlanLimits(plan: string) {
+  if (plan === "premium_pro") return { historyLimit: 999, label: "Premium Pro", icon: "star" };
+  if (plan === "premium") return { historyLimit: 999, label: "Premium", icon: "crown" };
+  return { historyLimit: 3, label: "Free", icon: "free" };
+}
 
 export const dynamic = "force-dynamic";
 
@@ -64,6 +84,8 @@ export default async function HistoryPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const plan = await getPlanFromCookies();
+  const planLimits = getPlanLimits(plan);
 
   if (!user) {
     return (
@@ -93,11 +115,13 @@ export default async function HistoryPage() {
     .select("id, target_role, target_company, recruiter_name, recruiter_title, company_style, atmosphere, country, duration_seconds, overall_score, trust_score, verdict, summary, weakest_moment, created_at")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(100);
 
   const rows = (sessions || []) as SessionRow[];
-  const displayRows = rows.slice(0, 5);
-  const hiddenPremiumCount = Math.max(0, rows.length - displayRows.length);
+  const displayRows = rows.slice(0, planLimits.historyLimit);
+  const hiddenCount = Math.max(0, rows.length - displayRows.length);
+  const isPaidPlan = plan === "premium" || plan === "premium_pro";
+  const isProPlan = plan === "premium_pro";
 
   return (
     <main className="min-h-screen bg-[#050b14] px-4 py-6 text-white sm:px-6">
@@ -125,14 +149,18 @@ export default async function HistoryPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:min-w-[260px]">
+            <div className="grid grid-cols-3 gap-3 sm:min-w-[360px]">
               <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <p className="text-xs text-slate-400">Saved</p>
+                <p className="text-xs text-slate-400">Sessions</p>
                 <p className="mt-1 text-2xl font-black">{rows.length}</p>
               </div>
               <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
-                <p className="text-xs text-slate-400">Account</p>
-                <p className="mt-1 truncate text-sm font-black text-emerald-300">Active</p>
+                <p className="text-xs text-slate-400">Visible</p>
+                <p className="mt-1 text-2xl font-black">{displayRows.length}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                <p className="text-xs text-slate-400">Plan</p>
+                <p className={`mt-1 truncate text-sm font-black ${isProPlan ? "text-violet-300" : isPaidPlan ? "text-blue-300" : "text-slate-400"}`}>{planLimits.label}</p>
               </div>
             </div>
           </div>
@@ -158,16 +186,39 @@ export default async function HistoryPage() {
           </section>
         ) : null}
 
-        {hiddenPremiumCount > 0 ? (
-          <section className="mt-5 rounded-3xl border border-amber-300/20 bg-amber-400/[0.07] p-5 text-amber-50">
-            <p className="text-xs font-black uppercase tracking-[0.18em] text-amber-200">Premium History</p>
-            <h2 className="mt-2 text-2xl font-black">Unlimited interview history</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-amber-50/80">
-              Free history shows your latest 5 interviews. Premium unlocks full session history, cross-session patterns, and long-term progress tracking.
-            </p>
-            <Link href="/pricing" className="mt-4 inline-flex rounded-2xl bg-amber-300 px-5 py-3 text-sm font-black text-slate-950">
-              View Premium
-            </Link>
+        {hiddenCount > 0 && !isPaidPlan ? (
+          <section className="mt-5 rounded-3xl border border-blue-300/20 bg-blue-500/[0.07] p-6">
+            <div className="flex items-start gap-4">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-blue-400/15 text-blue-200">
+                <Lock className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-black uppercase tracking-[0.18em] text-blue-300">Free plan — limited history</p>
+                <h2 className="mt-2 text-xl font-black text-white">
+                  {hiddenCount} older interview{hiddenCount === 1 ? "" : "s"} are locked
+                </h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                  Free shows your 3 most recent sessions. Premium unlocks full unlimited history, cross-session patterns, performance trends, and long-term tracking.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link href="/pricing?plan=premium" className="inline-flex items-center gap-2 rounded-2xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400">
+                    <Crown className="h-4 w-4" /> Unlock with Premium
+                  </Link>
+                  <Link href="/pricing?plan=premium_pro" className="inline-flex items-center gap-2 rounded-2xl border border-violet-300/20 bg-violet-500/10 px-5 py-3 text-sm font-black text-violet-200 hover:bg-violet-500/20">
+                    <Star className="h-4 w-4" /> Or get Premium Pro
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              {["Full interview history", "Cross-session pattern tracking", "Score and trust trend charts"].map((item) => (
+                <div key={item} className="rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-slate-400">
+                  <Lock className="mb-2 h-4 w-4 text-blue-300/50" />
+                  {item}
+                </div>
+              ))}
+            </div>
           </section>
         ) : null}
 

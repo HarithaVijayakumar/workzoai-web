@@ -636,8 +636,48 @@ function buildAdmissionRedirectResponse({
   });
 }
 
+// In-memory rate limiter — protects against free-tier abuse of the intelligence endpoint
+const rateMap = new Map<string, { count: number; resetAt: number }>();
+
+function getClientKey(req: Request): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "anon"
+  );
+}
+
+function withinRateLimit(key: string, limit: number): boolean {
+  const now = Date.now();
+  const entry = rateMap.get(key);
+  if (!entry || entry.resetAt < now) {
+    rateMap.set(key, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= limit) return false;
+  entry.count += 1;
+  return true;
+}
+
+function getPlan(req: Request): string {
+  const cookie = req.headers.get("cookie") || "";
+  return cookie.match(/workzo_plan=([^;]+)/)?.[1] ?? "free";
+}
+
 export async function POST(request: Request) {
   try {
+    const plan = getPlan(request);
+    const paid = plan === "premium" || plan === "premium_pro";
+    const clientKey = getClientKey(request);
+
+    // Free: 20 req/min (generous for practice), Paid: 60 req/min
+    if (!withinRateLimit(clientKey, paid ? 60 : 20)) {
+      return NextResponse.json(
+        { error: paid ? "Rate limit reached." : "upgrade_required_rate_limit" },
+        { status: 429 },
+      );
+    }
+
     const body = (await request.json()) as InterviewRequest;
     const setup = body.setup || {};
     const answer = text(body.answer);
@@ -669,9 +709,19 @@ export async function POST(request: Request) {
       650,
     );
 
+    // currentQuestion should be the actual last recruiter question from the live
+    // transcript (sent by the client). Fall back to body.currentQuestion for
+    // backward compatibility with older clients.
+    const resolvedCurrentQuestion = text(
+      (Array.isArray(body.transcript) && body.transcript.length > 0
+        ? [...body.transcript].reverse().find((t) => t.role === "recruiter")?.text
+        : undefined) || body.currentQuestion,
+      360,
+    );
+
     const intelligence95 = buildInterviewIntelligence95({
       answer,
-      currentQuestion: text(body.currentQuestion, 360),
+      currentQuestion: resolvedCurrentQuestion,
       transcript: compactTranscript(body.transcript),
       cvText: cvGroundingEvidence || compactCv,
       jobDescription: compactJob,
@@ -798,7 +848,7 @@ export async function POST(request: Request) {
 
     const baseDecision = await decideUnifiedRecruiterResponse({
       answer,
-      currentQuestion: text(body.currentQuestion, 360),
+      currentQuestion: resolvedCurrentQuestion,
       transcript: compactTranscript(body.transcript),
       recruiterTrust: typeof body.recruiterTrust === "number" ? body.recruiterTrust : 58,
       recruiterState: body.recruiterState || null,
@@ -820,7 +870,7 @@ export async function POST(request: Request) {
     const enhancedDecision = enhanceWorkZoDecisionV2({
       decision: baseDecision,
       answer,
-      currentQuestion: text(body.currentQuestion, 360),
+      currentQuestion: resolvedCurrentQuestion,
       transcript: compactTranscript(body.transcript),
       currentTrust: typeof body.recruiterTrust === "number" ? body.recruiterTrust : 58,
       setup: {

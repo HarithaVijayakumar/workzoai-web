@@ -27,6 +27,7 @@ import {
 
 import UpgradeModal from "@/components/premium/UpgradeModal";
 import PremiumUsageBadge from "@/components/premium/PremiumUsageBadge";
+import WorkZoPremiumProSuitePanel from "@/components/premium/WorkZoPremiumProSuitePanel";
 import { getWorkZoCurrentPlan, recordWorkZoReportViewed } from "@/lib/workzoUsageTracker";
 import { readLatestInterviewSetup } from "@/lib/workzoInterviewSetup";
 import { buildPhaseBInsights } from "@/lib/workzoCareerSuitePhaseB";
@@ -863,7 +864,17 @@ export default function ResultsPage() {
     if (result.isPremium) return true;
     if (String(result.plan || "").toLowerCase().includes("premium")) return true;
     try {
-      return getWorkZoCurrentPlan() === "premium";
+      const plan = getWorkZoCurrentPlan();
+      return plan === "premium" || plan === "premium_pro";
+    } catch {
+      return false;
+    }
+  }, [result]);
+
+  const isProPlan = useMemo(() => {
+    if (String(result.plan || "").toLowerCase().includes("premium_pro") || String(result.plan || "").toLowerCase().includes("_pro")) return true;
+    try {
+      return getWorkZoCurrentPlan() === "premium_pro";
     } catch {
       return false;
     }
@@ -1132,6 +1143,109 @@ export default function ResultsPage() {
             </section>
           </>
         )}
+
+        {/* Performance Tracking — Premium feature, shown before the Pro layer */}
+        {isPremium && (
+          <section className="mt-6 rounded-[2rem] border border-blue-300/15 bg-blue-500/[0.05] p-6">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-blue-300">Performance tracking</p>
+                <h2 className="mt-2 text-xl font-black text-white">Score and trust trends</h2>
+                <p className="mt-1 text-sm text-slate-400">
+                  {isProPlan
+                    ? "Full trend data from your session history. Premium Pro adds coaching priorities and roadmaps below."
+                    : "Your session performance at a glance. Upgrade to Premium Pro for AI coaching priorities and 30/60/90 day roadmaps."}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-xs text-slate-500">Hiring readiness</p>
+                <p className="text-3xl font-black text-white">{Math.round((report.overallScore + report.trustScore) / 2)}%</p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { label: "Overall Score", value: report.overallScore, color: "text-blue-100" },
+                { label: "Trust Score", value: report.trustScore, color: "text-emerald-200" },
+                { label: "Evidence Quality", value: report.evidenceQuality, color: "text-cyan-200" },
+                { label: "Ownership Score", value: report.ownershipScore, color: "text-amber-200" },
+              ].map((item) => (
+                <div key={item.label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">{item.label}</p>
+                  <p className={`mt-2 text-3xl font-black ${item.color}`}>{item.value ?? "—"}</p>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-current opacity-60" style={{ width: `${Math.min(100, item.value ?? 0)}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500 mb-3">Strengths detected</p>
+                <div className="space-y-2">
+                  {(report.strengths || []).slice(0, 3).map((item: string) => (
+                    <div key={item} className="flex items-start gap-2 text-sm text-slate-300">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-400" />
+                      {item}
+                    </div>
+                  ))}
+                  {(!report.strengths || report.strengths.length === 0) && (
+                    <p className="text-sm text-slate-500">Complete more interviews to identify strengths.</p>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500 mb-3">Improvement areas</p>
+                <div className="space-y-2">
+                  {(report.improvements || []).slice(0, 3).map((item: string) => (
+                    <div key={item} className="flex items-start gap-2 text-sm text-slate-300">
+                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400" />
+                      {item}
+                    </div>
+                  ))}
+                  {(!report.improvements || report.improvements.length === 0) && (
+                    <p className="text-sm text-slate-500">More interviews needed for improvement tracking.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {!isProPlan && (
+              <div className="mt-5 flex items-center justify-between gap-4 rounded-2xl border border-violet-300/15 bg-violet-500/[0.07] p-4">
+                <div>
+                  <p className="text-sm font-black text-white">Want AI coaching priorities and 30/60/90 day roadmaps?</p>
+                  <p className="mt-1 text-xs text-slate-400">Premium Pro adds weekly coaching priorities, progress trends across sessions, and personalised career roadmaps based on your patterns.</p>
+                </div>
+                <a href="/pricing?plan=premium_pro" className="shrink-0 rounded-2xl bg-violet-500 px-4 py-2.5 text-sm font-black text-white hover:bg-violet-400">
+                  Upgrade to Pro
+                </a>
+              </div>
+            )}
+          </section>
+        )}
+
+        <section className="mt-6">
+          <WorkZoPremiumProSuitePanel
+              source="results"
+              report={{
+                ...(report as unknown as Record<string, unknown>),
+                // Ensure replay intelligence gets the full answer insights
+                answerInsights: report.answerInsights ?? [],
+                targetRole: result.targetRole ?? report.roleLabel ?? "",
+                companyName: result.targetCompany ?? result.companyName ?? "",
+                overallScore: report.overallScore ?? 0,
+                trustScore: report.trustScore ?? 0,
+                evidenceQuality: report.evidenceQuality ?? 0,
+                ownershipScore: report.ownershipScore ?? 0,
+                structureScore: report.structureScore ?? 0,
+                biggestBlocker: report.biggestBlocker ?? "",
+                strengths: report.strengths ?? [],
+                improvements: report.improvements ?? [],
+                contradictions: report.contradictions ?? [],
+              }}
+            />
+        </section>
 
         <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
