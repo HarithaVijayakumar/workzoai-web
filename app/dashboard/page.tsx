@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
+  BookOpen,
   BrainCircuit,
   Briefcase,
   CheckCircle2,
@@ -33,13 +34,10 @@ import {
   WORKZO_PLAN_LIMITS,
   canUseWorkZoFeature,
   getWorkZoPlanLimits,
-  normalizeWorkZoPlan,
   type WorkZoPlanType,
 } from "@/lib/workzoPlanLimits";
-import {
-  getWorkZoCurrentPlan,
-  getWorkZoUsageSummary,
-} from "@/lib/workzoUsageTracker";
+import { getWorkZoUsageSummary } from "@/lib/workzoUsageTracker";
+import { useWorkZoAuthoritativePlan } from "@/lib/workzoClientPlan";
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
@@ -64,18 +62,20 @@ type DashboardActionCard = {
 
 const baseNav = [
   { label: "Dashboard", href: "/dashboard", icon: Home, feature: "voice_interview" as const },
-  { label: "Start Interview", href: "/onboarding", icon: Mic, feature: "voice_interview" as const },
+  { label: "Start Interview", href: "/interview", icon: Mic, feature: "voice_interview" as const },
   { label: "Results", href: "/results", icon: BarChart3, feature: "basic_reports" as const },
   { label: "History", href: "/history", icon: History, feature: "interview_history" as const },
   { label: "Improve CV", href: "/cv", icon: FileText, feature: "improve_cv" as const },
   { label: "Cover Letter", href: "/cover-letter", icon: Mail, feature: "cover_letter" as const },
   { label: "Job Assist", href: "/jobs", icon: Briefcase, feature: "job_assist" as const },
+  { label: "Work-O-Bot", href: "/copilot", icon: BrainCircuit, feature: "career_brain" as const },
+  { label: "Features", href: "/features/interview-practice", icon: BookOpen, feature: "voice_interview" as const },
   { label: "Settings", href: "/dashboard/settings", icon: Settings, feature: "voice_interview" as const },
 ];
 
 // ── Per-plan action cards ─────────────────────────────────────────────────────
 const FREE_ACTIONS: DashboardActionCard[] = [
-  { title: "Start free interview", detail: "2 interviews/month · browser voice · AI recruiter", href: "/onboarding", icon: Mic, cta: "Start now", accent: "blue" },
+  { title: "Start free interview", detail: "2 interviews/month · browser voice · AI recruiter", href: "/interview", icon: Mic, cta: "Start now", accent: "blue" },
   { title: "View your results", detail: "Basic score, weakest answer, and improvement tips", href: "/results", icon: BarChart3, cta: "See report", accent: "slate" },
   { title: "Improve CV", detail: "ATS keywords, gap analysis, and formatting advice", href: "/cv", icon: FileText, cta: "Unlock in Premium", accent: "locked", locked: true, requiredPlan: "premium" as WorkZoPlanType },
   { title: "Cover Letter", detail: "Role-specific letter from your CV and job description", href: "/cover-letter", icon: Mail, cta: "Unlock in Premium", accent: "locked", locked: true, requiredPlan: "premium" as WorkZoPlanType },
@@ -83,7 +83,7 @@ const FREE_ACTIONS: DashboardActionCard[] = [
 ];
 
 const PREMIUM_ACTIONS: DashboardActionCard[] = [
-  { title: "Start interview", detail: "50 interviews/month · advanced recruiter intelligence", href: "/onboarding", icon: Mic, cta: "Start interview", accent: "blue" },
+  { title: "Start interview", detail: "50 interviews/month · advanced recruiter intelligence", href: "/interview", icon: Mic, cta: "Start interview", accent: "blue" },
   { title: "Improve your CV", detail: "ATS keyword gap · matched, partial, missing chips · score", href: "/cv", icon: FileText, cta: "Open CV tools", accent: "emerald" },
   { title: "Cover Letter", detail: "AI-generated from your CV + job description", href: "/cover-letter", icon: Mail, cta: "Generate letter", accent: "violet" },
   { title: "Job Assist", detail: "Fit score, gaps, and 7 likely questions per role", href: "/jobs", icon: Briefcase, cta: "Browse jobs", accent: "amber" },
@@ -92,7 +92,7 @@ const PREMIUM_ACTIONS: DashboardActionCard[] = [
 ];
 
 const PRO_ACTIONS: DashboardActionCard[] = [
-  { title: "Start Pro interview", detail: "Unlimited · Vapi AI voice · premium recruiter personas", href: "/onboarding?mode=pro", icon: Mic, cta: "Start interview", accent: "violet" },
+  { title: "Start Pro interview", detail: "Unlimited · Vapi AI voice · premium recruiter personas", href: "/interview?mode=pro", icon: Mic, cta: "Start interview", accent: "violet" },
   { title: "Live AI Recruiter", detail: "60 min/month · face-to-face video · Tavus-powered", href: "/onboarding?mode=tavus", icon: Video, cta: "Start video session", accent: "blue" },
   { title: "Improve CV", detail: "ATS keyword gap, scoring, and job-specific targeting", href: "/cv", icon: FileText, cta: "Open CV tools", accent: "emerald" },
   { title: "Cover Letter", detail: "AI-generated, CV-aware, role-specific in seconds", href: "/cover-letter", icon: Mail, cta: "Generate letter", accent: "violet" },
@@ -156,12 +156,12 @@ const PLAN_INCLUDES = {
 export default function DashboardPage() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [plan, setPlan] = useState<WorkZoPlanType>("free");
+  const planState = useWorkZoAuthoritativePlan();
+  const plan = planState.plan;
 
   useEffect(() => {
-    setPlan(normalizeWorkZoPlan(getWorkZoCurrentPlan()));
-    setMounted(true);
-  }, []);
+    setMounted(!planState.loading);
+  }, [planState.loading]);
 
   const limits = getWorkZoPlanLimits(plan);
   const usage = mounted ? getWorkZoUsageSummary(plan) : null;
@@ -172,7 +172,7 @@ export default function DashboardPage() {
       title: "Your personal AI career coach is active",
       subtitle: "Unlimited voice interviews, 60 Live AI Recruiter minutes, premium personas, AI coaching priorities, 30/60/90 day roadmaps, and replay intelligence.",
       cta: "Start Pro Interview",
-      ctaHref: "/onboarding?mode=pro",
+      ctaHref: "/interview?mode=pro",
       Icon: Star,
       color: "violet" as const,
     };
@@ -181,7 +181,7 @@ export default function DashboardPage() {
       title: "Everything you need to prepare and apply",
       subtitle: "50 voice interviews, CV improvement, Cover Letter, Job Assist, Career Brain, ATS optimization, advanced reports, and performance tracking.",
       cta: "Start Interview",
-      ctaHref: "/onboarding",
+      ctaHref: "/interview",
       Icon: Crown,
       color: "blue" as const,
     };
@@ -190,7 +190,7 @@ export default function DashboardPage() {
       title: "Try your first recruiter-style interview",
       subtitle: "2 voice interviews per month with AI recruiter intelligence, realistic follow-ups, and a basic interview report.",
       cta: "Start Free Interview",
-      ctaHref: "/onboarding",
+      ctaHref: "/interview",
       Icon: Rocket,
       color: "emerald" as const,
     };
@@ -207,7 +207,7 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-[#050a12] text-white">
-      <WorkOBotFloating />
+      {mounted && plan !== "free" && <WorkOBotFloating />}
 
       {/* Mobile menu toggle */}
       <button
@@ -484,7 +484,7 @@ export default function DashboardPage() {
               <div className="mt-5 space-y-4">
                 {[
                   { step: "1", label: "Upload your CV", detail: "WorkZo reads your real experience and asks role-specific follow-ups.", href: "/onboarding", icon: FileText },
-                  { step: "2", label: "Run an interview", detail: "Answer as you would in a real interview. The recruiter will push back.", href: "/onboarding", icon: Mic },
+                  { step: "2", label: "Run an interview", detail: "Answer as you would in a real interview. The recruiter will push back.", href: "/interview", icon: Mic },
                   { step: "3", label: "Review results", detail: "See trust timeline, weakest answer, and exactly what to fix.", href: "/results", icon: BarChart3 },
                   ...(plan === "premium"
                     ? [{ step: "4", label: "Improve your CV", detail: "Fix keyword gaps based on the job description you're targeting.", href: "/cv", icon: FileText }]

@@ -28,10 +28,21 @@ import {
 import UpgradeModal from "@/components/premium/UpgradeModal";
 import PremiumUsageBadge from "@/components/premium/PremiumUsageBadge";
 import WorkZoPremiumProSuitePanel from "@/components/premium/WorkZoPremiumProSuitePanel";
-import { getWorkZoCurrentPlan, recordWorkZoReportViewed } from "@/lib/workzoUsageTracker";
+import { recordWorkZoReportViewed } from "@/lib/workzoUsageTracker";
+import { useWorkZoAuthoritativePlan } from "@/lib/workzoClientPlan";
 import { readLatestInterviewSetup } from "@/lib/workzoInterviewSetup";
 import { buildPhaseBInsights } from "@/lib/workzoCareerSuitePhaseB";
 import { buildCareerBrain, updateCareerMemoryFromReport, type PhaseCCareerBrain } from "@/lib/workzoCareerMemory";
+import {
+  buildHiringCommitteeMemo,
+  buildShadowScores,
+  buildTargetedSkillDrills,
+  buildWhatTheyHeard,
+  type WorkZoHiringCommitteeMemo,
+  type WorkZoShadowScore,
+  type WorkZoSkillDrill,
+  type WorkZoWhatTheyHeard,
+} from "@/lib/workzoHiringCommitteeEngine";
 
 type TranscriptTurn = {
   role?: string;
@@ -78,6 +89,26 @@ type StoredResult = {
   resumeProfile?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 };
+
+
+
+type DbInterviewResultRow = {
+  id?: string;
+  session_id?: string | null;
+  overall_score?: number | null;
+  trust_score?: number | null;
+  evidence_quality?: number | null;
+  contradiction_risk?: number | null;
+  strengths?: string[] | null;
+  improvements?: string[] | null;
+  weak_answers?: StoredResult["weakAnswers"] | null;
+  contradictions?: string[] | null;
+  evidence_requests?: string[] | null;
+  raw_result?: Record<string, unknown> | null;
+  created_at?: string | null;
+};
+
+type ResultsLoadState = "loading" | "db" | "local" | "empty";
 
 type AnswerInsight = {
   id: string;
@@ -137,9 +168,14 @@ type RichReport = {
   benchmark: Array<{ label: string; user: number; top: number; note: string }>;
   audioSignals: Array<{ label: string; value: number; risk: "low" | "medium" | "high" }>;
   improvementPlan: Array<{ priority: string; title: string; action: string; gain: string }>;
+  hiringCommittee: WorkZoHiringCommitteeMemo;
+  shadowScores: WorkZoShadowScore[];
+  whatTheyHeard: WorkZoWhatTheyHeard[];
+  targetedDrills: WorkZoSkillDrill[];
 };
 
 const STORAGE_KEYS = [
+  "workzo_latest_interview_result",
   "workzo_latest_result",
   "workzo-interview-result",
   "workzo_interview_result",
@@ -222,6 +258,61 @@ function readStoredResult(): StoredResult {
   const setup = readJson(SETUP_KEYS) || {};
   const result = readJson(STORAGE_KEYS) || {};
   return { ...setup, ...result } as StoredResult;
+}
+
+
+function normalizeDbInterviewResult(row: DbInterviewResultRow | null | undefined): StoredResult | null {
+  if (!row) return null;
+
+  const raw = row.raw_result && typeof row.raw_result === "object" ? row.raw_result : {};
+  const rawRecord = raw as StoredResult & {
+    score?: { overall?: number; trust?: number; clarity?: number; confidence?: number; relevance?: number; communication?: number };
+    answerQuality?: { evidenceScore?: number };
+  };
+  const normalized: StoredResult = {
+    ...rawRecord,
+    overallScore: numberOr(rawRecord.overallScore, numberOr(row.overall_score, numberOr(rawRecord.score?.overall, 0))),
+    trustScore: numberOr(rawRecord.trustScore, numberOr(row.trust_score, numberOr(rawRecord.score?.trust, 0))),
+    communicationScore: numberOr(rawRecord.communicationScore, numberOr(rawRecord.score?.communication, 0)),
+    confidenceScore: numberOr(rawRecord.confidenceScore, numberOr(rawRecord.score?.confidence, 0)),
+    roleCompetencyScore: numberOr(rawRecord.roleCompetencyScore, numberOr(rawRecord.score?.relevance, 0)),
+    evidenceQuality: numberOr(rawRecord.evidenceQuality, numberOr(row.evidence_quality, numberOr(rawRecord.answerQuality?.evidenceScore, 0))),
+    contradictionRisk: numberOr((raw as StoredResult).contradictionRisk, numberOr(row.contradiction_risk, 0)),
+    strengths: Array.isArray(rawRecord.strengths) ? rawRecord.strengths : row.strengths || [],
+    improvements: Array.isArray(rawRecord.improvements) ? rawRecord.improvements : row.improvements || [],
+    weakAnswers: Array.isArray(rawRecord.weakAnswers) ? rawRecord.weakAnswers : row.weak_answers || [],
+    contradictions: Array.isArray(rawRecord.contradictions) ? rawRecord.contradictions : row.contradictions || [],
+    evidenceRequests: Array.isArray(rawRecord.evidenceRequests) ? rawRecord.evidenceRequests : row.evidence_requests || [],
+    metadata: {
+      ...((rawRecord.metadata || {}) as Record<string, unknown>),
+      dbResultId: row.id,
+      dbSessionId: row.session_id,
+      dbCreatedAt: row.created_at,
+      source: "database",
+    },
+  };
+
+  return normalized;
+}
+
+async function fetchLatestDbInterviewResult(): Promise<StoredResult | null> {
+  try {
+    const response = await fetch("/api/db/interview-result", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
+
+    if (response.status === 401 || response.status === 404) return null;
+    if (!response.ok) throw new Error(`Failed to load database result: ${response.status}`);
+
+    const payload = await response.json().catch(() => null) as { result?: DbInterviewResultRow | null } | null;
+    return normalizeDbInterviewResult(payload?.result || null);
+  } catch (error) {
+    console.warn("WorkZo results DB read failed; falling back to local result", error);
+    return null;
+  }
 }
 
 function gradeFromScore(score: number) {
@@ -491,18 +582,22 @@ function buildRichReport(result: StoredResult, isPremium: boolean): RichReport {
     ? clamp(answerInsights.reduce((sum, item) => sum + item.wordCount, 0) / Math.max(durationSeconds / 60, 1), 0, 220)
     : 0;
 
-  const evidenceQuality = numberOr(result.evidenceQuality, average(answerInsights.map((item) => item.evidenceScore), 58));
-  const trustScore = numberOr(result.trustScore, average(answerInsights.map((item) => item.trustImpact), 62));
+  const resultRecord = result as StoredResult & {
+    score?: { overall?: number; trust?: number; clarity?: number; confidence?: number; relevance?: number; communication?: number };
+    answerQuality?: { evidenceScore?: number };
+  };
+  const evidenceQuality = numberOr(result.evidenceQuality, numberOr(resultRecord.answerQuality?.evidenceScore, average(answerInsights.map((item) => item.evidenceScore), 58)));
+  const trustScore = numberOr(result.trustScore, numberOr(resultRecord.score?.trust, average(answerInsights.map((item) => item.trustImpact), 62)));
   const structureScore = average(answerInsights.map((item) => item.structureScore), 60);
   const ownershipScore = average(answerInsights.map((item) => item.ownershipPresent ? 78 : 48), 58);
 
-  const communicationScore = numberOr(result.communicationScore, clamp(structureScore + (averageWpm >= 110 && averageWpm <= 170 ? 8 : -4)));
-  const confidenceScore = numberOr(result.confidenceScore, clamp(trustScore - (answerInsights.some((item) => item.fillerCount >= 4) ? 8 : 0) + (ownershipScore >= 70 ? 4 : -3)));
-  const roleCompetencyScore = numberOr(result.roleCompetencyScore, clamp((evidenceQuality * 0.58) + (structureScore * 0.22) + (ownershipScore * 0.2)));
+  const communicationScore = numberOr(result.communicationScore, numberOr(resultRecord.score?.communication, clamp(structureScore + (averageWpm >= 110 && averageWpm <= 170 ? 8 : -4))));
+  const confidenceScore = numberOr(result.confidenceScore, numberOr(resultRecord.score?.confidence, clamp(trustScore - (answerInsights.some((item) => item.fillerCount >= 4) ? 8 : 0) + (ownershipScore >= 70 ? 4 : -3))));
+  const roleCompetencyScore = numberOr(result.roleCompetencyScore, numberOr(resultRecord.score?.relevance, clamp((evidenceQuality * 0.58) + (structureScore * 0.22) + (ownershipScore * 0.2))));
 
   const overallScore = numberOr(
     result.overallScore,
-    clamp((communicationScore * 0.22) + (confidenceScore * 0.18) + (roleCompetencyScore * 0.28) + (trustScore * 0.2) + (evidenceQuality * 0.12)),
+    numberOr(resultRecord.score?.overall, clamp((communicationScore * 0.22) + (confidenceScore * 0.18) + (roleCompetencyScore * 0.28) + (trustScore * 0.2) + (evidenceQuality * 0.12))),
   );
 
   const redFlags = uniqueList(
@@ -554,6 +649,56 @@ function buildRichReport(result: StoredResult, isPremium: boolean): RichReport {
   ];
 
   const companyDNA = buildCompanyDNA(companyLabel, roleLabel, answerInsights);
+  const committeeEvidence = answerInsights.map((item) => ({
+    id: item.id,
+    question: item.question,
+    answer: item.answer,
+    score: Math.round((item.evidenceScore + item.structureScore + item.trustImpact) / 3),
+    weakness: item.weakness,
+    recruiterHeard: item.recruiterHeard,
+    hasMetric: item.metricPresent,
+    hasOwnership: item.ownershipPresent,
+    redFlags: item.redFlags,
+  }));
+  const hiringCommittee = buildHiringCommitteeMemo({
+    overallScore,
+    trustScore,
+    evidenceQuality,
+    ownershipScore,
+    structureScore,
+    roleLabel,
+    companyLabel,
+    recruiterName,
+    biggestBlocker,
+    strengths: uniqueList(result.strengths, [
+      "You gave useful background signal for the target role.",
+      "You showed motivation to improve and prepare seriously.",
+      "Your answers contained at least some recruiter-relevant context.",
+    ], 4),
+    improvements: uniqueList(result.improvements, [
+      "Make your answers more measurable and structured.",
+      "Make your personal ownership clearer.",
+      "Use a sharper STAR structure for every major answer.",
+    ], 4),
+    answerEvidence: committeeEvidence,
+    redFlags,
+    contradictions,
+  });
+  const shadowScores = buildShadowScores({
+    trustScore,
+    evidenceQuality,
+    ownershipScore,
+    structureScore,
+    communicationScore,
+    contradictionCount: contradictions.length,
+  });
+  const whatTheyHeard = buildWhatTheyHeard(committeeEvidence);
+  const targetedDrills = buildTargetedSkillDrills({
+    biggestBlocker,
+    answerEvidence: committeeEvidence,
+    redFlags,
+    contradictions,
+  });
 
   return {
     isPremium,
@@ -612,7 +757,128 @@ function buildRichReport(result: StoredResult, isPremium: boolean): RichReport {
       { priority: "Priority 2", title: "Rewrite weakest answer", action: "Use STAR with one measurable result and one sentence connecting it to the target role.", gain: "+4 to +8 pts" },
       { priority: "Priority 3", title: "Reduce recruiter doubt", action: "Clarify timeline, role scope, and personal contribution before the recruiter has to ask.", gain: "+3 to +7 pts" },
     ],
+    hiringCommittee,
+    shadowScores,
+    whatTheyHeard,
+    targetedDrills,
   };
+}
+
+function RiskTone({ risk }: { risk: "low" | "medium" | "high" }) {
+  return (
+    <span className={cn(
+      "rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.16em]",
+      risk === "high" ? "bg-rose-400/10 text-rose-200" : risk === "medium" ? "bg-amber-400/10 text-amber-100" : "bg-emerald-400/10 text-emerald-200",
+    )}>
+      {risk} risk
+    </span>
+  );
+}
+
+function HiringCommitteeMemoCard({ memo }: { memo: WorkZoHiringCommitteeMemo }) {
+  return (
+    <section className="mt-6 rounded-[2rem] border border-amber-300/20 bg-amber-400/[0.075] p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-amber-200">Confidential hiring committee memo</p>
+          <h2 className="mt-3 text-3xl font-black text-white">{memo.headline}</h2>
+          <p className="mt-3 max-w-4xl text-sm leading-7 text-amber-50/90">{memo.recruiterSummary}</p>
+        </div>
+        <div className="rounded-2xl border border-amber-300/20 bg-black/25 p-4 text-center">
+          <p className="text-xs font-black uppercase tracking-[0.2em] text-amber-200">Panel confidence</p>
+          <p className="mt-2 text-4xl font-black text-white">{memo.confidence}%</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-4 lg:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="font-black text-emerald-100">Evidence for hire</p>
+          <div className="mt-3 space-y-2">{memo.evidenceForHire.map((item) => <p key={item} className="text-sm leading-6 text-slate-200">• {item}</p>)}</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="font-black text-rose-100">Panel concerns</p>
+          <div className="mt-3 space-y-2">{memo.evidenceAgainstHire.map((item) => <p key={item} className="text-sm leading-6 text-slate-200">• {item}</p>)}</div>
+        </div>
+        <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
+          <p className="font-black text-blue-100">Recommendation</p>
+          <p className="mt-3 text-sm leading-6 text-slate-200">{memo.finalRecommendation}</p>
+          <div className="mt-3 space-y-2">{memo.nextRoundFocus.map((item) => <p key={item} className="rounded-xl bg-blue-400/10 p-3 text-xs leading-5 text-blue-50">{item}</p>)}</div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ShadowScoreSection({ scores }: { scores: WorkZoShadowScore[] }) {
+  return (
+    <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
+      <p className="text-xs font-black uppercase tracking-[0.28em] text-slate-400">Shadow score</p>
+      <h2 className="mt-2 text-2xl font-black text-white">What an internal recruiter would quietly score</h2>
+      <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {scores.map((item) => (
+          <div key={item.label} className="rounded-2xl border border-white/10 bg-black/20 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-black text-white">{item.label}</p>
+              <RiskTone risk={item.risk} />
+            </div>
+            <p className="mt-4 text-4xl font-black text-white">{item.score}%</p>
+            <p className="mt-3 text-sm leading-6 text-slate-400">{item.internalMeaning}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WhatTheyHeardSection({ items }: { items: WorkZoWhatTheyHeard[] }) {
+  return (
+    <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
+      <p className="text-xs font-black uppercase tracking-[0.28em] text-cyan-200">What they heard</p>
+      <h2 className="mt-2 text-2xl font-black text-white">Your words vs. the interviewer’s interpretation</h2>
+      <div className="mt-5 space-y-4">
+        {items.map((item) => (
+          <div key={item.id} className="grid gap-4 rounded-3xl border border-white/10 bg-black/20 p-4 lg:grid-cols-2">
+            <div className="rounded-2xl bg-white/[0.04] p-4">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">You said</p>
+              <p className="mt-3 text-sm leading-7 text-slate-200">“{item.youSaid}”</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-300/20 bg-cyan-400/10 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.2em] text-cyan-200">They inferred</p>
+              <p className="mt-3 text-sm leading-7 text-cyan-50">{item.theyHeard}</p>
+              <p className="mt-3 text-xs leading-5 text-amber-100">Risk: {item.risk}</p>
+              <p className="mt-2 text-xs leading-5 text-emerald-100">Stronger signal: {item.strongerSignal}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TargetedDrillsSection({ drills }: { drills: WorkZoSkillDrill[] }) {
+  return (
+    <section className="mt-6 rounded-[2rem] border border-violet-300/20 bg-violet-500/[0.06] p-6">
+      <p className="text-xs font-black uppercase tracking-[0.28em] text-violet-200">Targeted skill drills</p>
+      <h2 className="mt-2 text-2xl font-black text-white">Do not repeat the whole interview — train the weak signal</h2>
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        {drills.map((drill) => (
+          <Link key={drill.id} href={drill.href} className="group rounded-3xl border border-white/10 bg-black/20 p-5 transition hover:bg-white/[0.06]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.2em] text-violet-200">{drill.duration} · {drill.pressureLevel} pressure</p>
+                <h3 className="mt-2 text-xl font-black text-white">{drill.title}</h3>
+              </div>
+              <ChevronRight className="h-5 w-5 text-slate-500 transition group-hover:text-white" />
+            </div>
+            <p className="mt-3 text-sm leading-6 text-slate-300">{drill.prompt}</p>
+            <p className="mt-3 rounded-2xl bg-amber-400/10 p-3 text-sm leading-6 text-amber-50">Recruiter pushback: “{drill.recruiterPushback}”</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {drill.successCriteria.map((item) => <span key={item} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-bold text-slate-300">{item}</span>)}
+            </div>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
 }
 
 function ScoreRing({ score, grade }: { score: number; grade: string }) {
@@ -820,72 +1086,72 @@ export default function ResultsPage() {
   const [mounted, setMounted] = useState(false);
   const [result, setResult] = useState<StoredResult>({});
   const [setupContext, setSetupContext] = useState<Record<string, unknown>>({});
+  const [loadState, setLoadState] = useState<ResultsLoadState>("loading");
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [careerBrain, setCareerBrain] = useState<PhaseCCareerBrain | null>(null);
+  const planState = useWorkZoAuthoritativePlan();
 
   useEffect(() => {
-    const storedResult = readStoredResult();
-    const storedSetup = (readLatestInterviewSetup() || {}) as Record<string, unknown>;
-    setResult(storedResult);
-    setSetupContext(storedSetup);
+    let cancelled = false;
 
-    try {
-      const premiumNow = Boolean(
-        storedResult.isPremium ||
-          String(storedResult.plan || "").toLowerCase().includes("premium") ||
-          getWorkZoCurrentPlan() === "premium",
-      );
-      const immediateReport = buildRichReport(storedResult, premiumNow);
-      const brain = updateCareerMemoryFromReport({
-        targetRole: immediateReport.roleLabel,
-        companyName: immediateReport.companyLabel,
-        overallScore: immediateReport.overallScore,
-        trustScore: immediateReport.trustScore,
-        evidenceQuality: immediateReport.evidenceQuality,
-        ownershipScore: immediateReport.ownershipScore,
-        structureScore: immediateReport.structureScore,
-        biggestBlocker: immediateReport.biggestBlocker,
-        strengths: immediateReport.strengths,
-        improvements: immediateReport.improvements,
-        answerInsights: immediateReport.answerInsights,
-        contradictions: immediateReport.contradictions,
-      });
-      setCareerBrain(brain);
-    } catch {
-      setCareerBrain(buildCareerBrain());
+    async function loadResultsDbFirst() {
+      const storedSetup = (readLatestInterviewSetup() || {}) as Record<string, unknown>;
+      const localResult = readStoredResult();
+      const dbResult = await fetchLatestDbInterviewResult();
+      const sourceResult = dbResult || localResult;
+      const nextLoadState: ResultsLoadState = dbResult
+        ? "db"
+        : Object.keys(localResult).length
+          ? "local"
+          : "empty";
+
+      if (cancelled) return;
+
+      setResult(sourceResult);
+      setSetupContext(storedSetup);
+      setLoadState(nextLoadState);
+
+      try {
+        const premiumNow = ["premium", "premium_pro"].includes(planState.plan);
+        const immediateReport = buildRichReport(sourceResult, premiumNow);
+        const brain = updateCareerMemoryFromReport({
+          targetRole: immediateReport.roleLabel,
+          companyName: immediateReport.companyLabel,
+          overallScore: immediateReport.overallScore,
+          trustScore: immediateReport.trustScore,
+          evidenceQuality: immediateReport.evidenceQuality,
+          ownershipScore: immediateReport.ownershipScore,
+          structureScore: immediateReport.structureScore,
+          biggestBlocker: immediateReport.biggestBlocker,
+          strengths: immediateReport.strengths,
+          improvements: immediateReport.improvements,
+          answerInsights: immediateReport.answerInsights,
+          contradictions: immediateReport.contradictions,
+        });
+        setCareerBrain(brain);
+      } catch {
+        setCareerBrain(buildCareerBrain());
+      }
+
+      setMounted(true);
+      try {
+        recordWorkZoReportViewed();
+      } catch {
+        // Analytics should never block the report.
+      }
     }
 
-    setMounted(true);
-    try {
-      recordWorkZoReportViewed();
-    } catch {
-      // Analytics should never block the report.
-    }
-  }, []);
+    setLoadState("loading");
+    loadResultsDbFirst();
 
-  const isPremium = useMemo(() => {
-    if (result.isPremium) return true;
-    if (String(result.plan || "").toLowerCase().includes("premium")) return true;
-    try {
-      return getWorkZoCurrentPlan() === "premium";
-    } catch {
-      return false;
-    }
-  }, [result]);
+    return () => {
+      cancelled = true;
+    };
+  }, [planState.plan]);
 
-  const isProPlan = useMemo(() => {
-    try {
-      const currentPlan = getWorkZoCurrentPlan();
+  const isPremium = useMemo(() => ["premium", "premium_pro"].includes(planState.plan), [planState.plan]);
 
-      return (
-        currentPlan === "premium_pro" ||
-        String(result.plan || "").toLowerCase() === "premium_pro" ||
-        String(result.plan || "").toLowerCase() === "pro"
-      );
-    } catch {
-      return false;
-    }
-  }, [result]);
+  const isProPlan = useMemo(() => planState.plan === "premium_pro", [planState.plan]);
 
   const report = useMemo(() => buildRichReport(result, isPremium), [result, isPremium]);
   const phaseB = useMemo(
@@ -900,7 +1166,14 @@ export default function ResultsPage() {
     [result, setupContext],
   );
   if (!mounted) {
-    return <main className="min-h-screen bg-[#050a12] text-white" />;
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#050a12] px-5 text-white">
+        <div className="rounded-[2rem] border border-white/10 bg-white/[0.04] p-6 text-center">
+          <p className="text-xs font-black uppercase tracking-[0.28em] text-blue-200">Loading interview debrief</p>
+          <p className="mt-3 text-sm leading-6 text-slate-400">Checking your saved database report first, then falling back to this device if needed.</p>
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -914,6 +1187,9 @@ export default function ResultsPage() {
 
           <div className="flex items-center gap-3">
             <PremiumUsageBadge compact={false} label={isProPlan ? "Premium Pro report" : isPremium ? "Premium report" : "Free report"} />
+            <span className="rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-400">
+              {loadState === "db" ? "Synced report" : loadState === "local" ? "Local report" : loadState === "loading" ? "Loading" : "No saved report"}
+            </span>
             <Link href="/pricing" className="rounded-2xl bg-blue-500 px-5 py-3 text-sm font-black text-white hover:bg-blue-400">
               {isPremium ? "Manage plan" : "Upgrade"}
             </Link>
@@ -944,6 +1220,9 @@ export default function ResultsPage() {
             <ScoreRing score={report.overallScore} grade={report.grade} />
           </div>
         </section>
+
+        <HiringCommitteeMemoCard memo={report.hiringCommittee} />
+        <ShadowScoreSection scores={report.shadowScores} />
 
         <section className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard icon={MessageSquareText} label="Communication" value={report.communicationScore} note="Clarity, answer length, and structure." />
@@ -1042,7 +1321,7 @@ export default function ResultsPage() {
                   <p className="rounded-2xl bg-white/10 p-4">Evidence request script</p>
                 </div>
               </LockedPreview>
-              <LockedPreview title="Question-by-question feedback timeline" count={`${report.answersCount || 1} answer(s) analyzed`}>
+              <LockedPreview title="What they heard + targeted drills" count={`${report.whatTheyHeard.length} interpretation(s), ${report.targetedDrills.length} drill(s)`}>
                 <div className="space-y-3">
                   {report.answerInsights.slice(0, 3).map((item, index) => (
                     <div key={item.id} className="rounded-2xl bg-white/10 p-4">
@@ -1141,6 +1420,9 @@ export default function ResultsPage() {
                 ))}
               </div>
             </section>
+
+            <WhatTheyHeardSection items={report.whatTheyHeard} />
+            <TargetedDrillsSection drills={report.targetedDrills} />
 
             <section className="mt-6 rounded-[2rem] border border-white/10 bg-white/[0.035] p-6">
               <h2 className="flex items-center gap-3 text-2xl font-black"><MessageSquareText className="h-6 w-6 text-cyan-300" />Answer-by-answer coaching debrief</h2>
